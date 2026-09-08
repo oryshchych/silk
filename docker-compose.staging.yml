@@ -1,0 +1,58 @@
+# ─────────────────────────────────────────────────────────────────────────
+# STAGING. Оверлей до docker-compose.yml.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d
+#
+# Урізаний по RAM: живе на тому ж VPS, що й production, і основне
+# обмеження — пам'ять.
+#
+# Захист від індексації ТРИШАРОВИЙ, одного шару недостатньо:
+#   1. basic auth на рівні Caddy / Dokploy (labels нижче)
+#   2. X-Robots-Tag: noindex, nofollow у відповіді
+#   3. robots.txt з Disallow: / (у застосунку)
+# robots.txt окремо не рятує: він забороняє обхід, а не індексацію.
+#
+# ПАСТКА: з basic auth виключаються ТОЧНІ POST-маршрути вебхуків
+# (STAGING_BASIC_AUTH_EXCLUDE), не префікс /api. Інакше провайдер
+# отримує 401 від reverse proxy і не доходить до перевірки підпису.
+# ─────────────────────────────────────────────────────────────────────────
+name: store-staging
+
+services:
+  web:
+    labels:
+      - 'traefik.enable=true'
+      - 'traefik.http.middlewares.staging-noindex.headers.customresponseheaders.X-Robots-Tag=noindex, nofollow'
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+
+  worker:
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+
+  postgres:
+    # Повний список, не додаток: перевизначення замінює command цілком.
+    # Архівування WAL тут вимкнене — на staging дані відновлюються з
+    # анонімізованого дампа продакшену, а не з PITR.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=128MB
+      - -c
+      - effective_cache_size=384MB
+      - -c
+      - work_mem=8MB
+      - -c
+      - max_connections=50
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - log_min_duration_statement=500
+    deploy:
+      resources:
+        limits:
+          memory: 768M

@@ -1,10 +1,24 @@
-# docker-compose.yml — production-стек на одному VPS
+# ─────────────────────────────────────────────────────────────────────────
+# БАЗА для розгорнутих середовищ (staging і production).
 #
-# Розгортання через Dokploy або Coolify: git push -> build -> deploy.
-# Staging і production — два окремі стеки з різними .env і різними volume.
+# Три стеки, як вимагає ENVIRONMENTS.md:
+#   local      — docker-compose.local.yml (окремий файл, не оверлей)
+#   staging    — docker compose -f docker-compose.yml -f docker-compose.staging.yml
+#   production — docker compose -f docker-compose.yml -f docker-compose.production.yml
 #
-# Caddy не описаний, бо його бере на себе Dokploy (він же керує сертифікатами).
-# Якщо ставите вручну — розкоментуйте блок caddy знизу.
+# Staging і production живуть на тому ж VPS як ОКРЕМІ compose-проєкти
+# (різні `name`) з ОКРЕМИМИ volume. Розгортання через Dokploy:
+# git push -> build -> deploy.
+#
+# ADR-10: на обидва середовища їде ОДИН image digest із різними .env.
+# Тому тут немає жодного значення, специфічного для середовища —
+# воно приходить із env_file.
+#
+# Caddy не описаний: його бере на себе Dokploy (він же керує сертифікатами).
+# Параметри Postgres (`command`) задаються в оверлеї повністю, а не
+# частково: перевизначення списку замінює його цілком, тому «половинчаста»
+# конфігурація неможлива за побудовою.
+# ─────────────────────────────────────────────────────────────────────────
 
 services:
   web:
@@ -19,25 +33,21 @@ services:
     environment:
       NODE_ENV: production
       # store_app: DML на потрібних таблицях, БЕЗ DDL і без DROP.
-      # Раніше тут був POSTGRES_USER, якого офіційний образ робить
-      # суперкористувачем — компрометація web давала можливість знищити схему.
+      # НЕ POSTGRES_USER, якого офіційний образ робить суперкористувачем —
+      # компрометація web давала б можливість знищити схему.
       DATABASE_URL: postgres://${POSTGRES_APP_USER}:${POSTGRES_APP_PASSWORD}@postgres:5432/${POSTGRES_DB}
     # ОКРЕМИЙ env-набір. web НЕ отримує креденшелів бекапів:
     # інакше один скомпрометований процес знищує і дані, і резервні копії.
     env_file: [.env.web]
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      test: ['CMD', 'wget', '-qO-', 'http://localhost:3000/api/health']
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 40s
     labels:
       # Dokploy/Traefik підхопить домен звідси
-      - "traefik.enable=true"
-    deploy:
-      resources:
-        limits:
-          memory: 1024M
+      - 'traefik.enable=true'
 
   # Той самий репозиторій, інший entrypoint. Моноліт із двох процесів.
   worker:
@@ -52,15 +62,11 @@ services:
       NODE_ENV: production
       DATABASE_URL: postgres://${POSTGRES_APP_USER}:${POSTGRES_APP_PASSWORD}@postgres:5432/${POSTGRES_DB}
     env_file: [.env.worker]
-    deploy:
-      resources:
-        limits:
-          memory: 512M
 
   postgres:
     # НЕ офіційний образ: потрібен український hunspell-словник у
-    # $SHAREDIR/tsearch_data для конфігурації text search 'ukrainian'.
-    # infra/postgres/Dockerfile: FROM postgres:16-alpine + hunspell-uk
+    # $SHAREDIR/tsearch_data і pgBackRest у тому ж контейнері
+    # (archive_command виконує сервер БД). Деталі — infra/postgres/Dockerfile.
     build:
       context: ./infra/postgres
       dockerfile: Dockerfile
@@ -69,116 +75,27 @@ services:
       POSTGRES_USER: ${POSTGRES_SUPERUSER}
       POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
-      # ICU, а не libc: на Alpine запис --locale=uk_UA.UTF-8 НЕ дає
-      # заявленого українського сортування (Ґ, Є, І, Ї стануть не там).
-      # Змінити після створення volume вже неможливо — тільки міграція.
-      POSTGRES_INITDB_ARGS: "--locale-provider=icu --icu-locale=uk-UA --encoding=UTF8"
+      POSTGRES_MIGRATE_USER: ${POSTGRES_MIGRATE_USER}
+      POSTGRES_MIGRATE_PASSWORD: ${POSTGRES_MIGRATE_PASSWORD}
+      POSTGRES_APP_USER: ${POSTGRES_APP_USER}
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD}
+      POSTGRES_BOSS_USER: ${POSTGRES_BOSS_USER}
+      POSTGRES_BOSS_PASSWORD: ${POSTGRES_BOSS_PASSWORD}
+      # ICU, а не libc: заявлене українське сортування (Ґ, Є, І, Ї) дає
+      # саме ICU. Змінити після створення volume вже неможливо —
+      # тільки міграція даних у нову БД.
+      POSTGRES_INITDB_ARGS: '--locale-provider=icu --icu-locale=uk-UA --encoding=UTF8'
     volumes:
-      - pgdata:/var/lib/postgresql/data
-      # Створює РОЗДІЛЕНІ ролі. web/worker НЕ ходять суперкористувачем:
-      # інакше компрометація web дає можливість знищити схему.
-      #   store_migrate — DDL, використовується тільки CI/деплоєм
-      #   store_app     — DML на потрібних таблицях, без DROP/ALTER
-      #   store_boss    — обмежений схемою pgboss
-      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+      # У 18+ образ тримає дані в /var/lib/postgresql/<major>/docker, тому
+      # том монтується на /var/lib/postgresql (mount на .../data — помилка).
+      - pgdata:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_SUPERUSER} -d ${POSTGRES_DB}"]
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_SUPERUSER} -d ${POSTGRES_DB}']
       interval: 10s
       timeout: 5s
       retries: 5
-    command:
-      - postgres
-      - -c
-      - shared_buffers=512MB
-      - -c
-      - effective_cache_size=1536MB
-      - -c
-      - work_mem=16MB
-      - -c
-      - max_connections=100
-      # Для аналізу повільних запитів на фазах 1 і 10
-      - -c
-      - shared_preload_libraries=pg_stat_statements
-      - -c
-      - log_min_duration_statement=500
-      # Безперервне архівування WAL у R2 (ADR: топологія).
-      # Щоденного pg_dump недостатньо — RPO до 24 годин неприйнятний
-      # для магазину з платежами.
-      - -c
-      - wal_level=replica
-      - -c
-      - archive_mode=on
-      - -c
-      - archive_command=pgbackrest --stanza=store archive-push %p
-      - -c
-      - archive_timeout=300
     # НЕ публікувати порт назовні. Доступ лише всередині docker-мережі.
-    # Для локального psql: docker compose exec postgres psql
-    deploy:
-      resources:
-        limits:
-          memory: 2048M
-
-  # Бекапи: pgBackRest із безперервним архівуванням WAL у Cloudflare R2.
-  #
-  # Щоденний pg_dump сам по собі НЕ достатній: він дає RPO до 24 годин.
-  # Сценарій, який він не покриває: диск на ноді Hetzner помер о 23:00 →
-  # втрачено день замовлень, гроші в еквайрі є, зв'язок замовлень із
-  # фіскальними чеками зник. WAL-архівування дає point-in-time recovery
-  # з RPO у хвилини.
-  #
-  # Розклад: full раз на тиждень, differential щодня, WAL безперервно.
-  # Раз на місяць — відновлення на чистий інстанс, включно з PITR (фаза 12).
-  backup:
-    build:
-      context: ./infra/backup
-      dockerfile: Dockerfile      # FROM alpine + pgbackrest + postgresql16-client
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-    # Власні креденшели й ОКРЕМИЙ bucket. Політика зберігання в R2
-    # налаштовується незалежно, щоб видалення копій не було доступне
-    # тому самому ключу, що їх створює.
-    env_file: [.env.backup]
-    environment:
-      PGBACKREST_STANZA: store
-      PGBACKREST_REPO1_TYPE: s3     # R2 сумісний з S3 API
-      PGBACKREST_REPO1_S3_ENDPOINT: ${R2_S3_ENDPOINT}
-      PGBACKREST_REPO1_S3_BUCKET: ${R2_BUCKET_BACKUPS}
-      PGBACKREST_REPO1_RETENTION_FULL: 4
-    volumes:
-      - ./infra/backup/pgbackrest.conf:/etc/pgbackrest/pgbackrest.conf:ro
-      - pgdata:/var/lib/postgresql/data   # pgBackRest потрібен доступ до PGDATA
-
-  # Локально листи нікуди не виходять — Mailpit ловить усе на :8025.
-  # У staging/production цей сервіс не запускається (профіль).
-  mailpit:
-    image: axllent/mailpit:latest
-    restart: unless-stopped
-    profiles: [local]
-    ports:
-      - "8025:8025"
-
-  # Опційно: самохостована аналітика замість GA4
-  # umami:
-  #   image: ghcr.io/umami-software/umami:postgresql-latest
-  #   restart: unless-stopped
-  #   depends_on: [postgres]
-  #   environment:
-  #     DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/umami
-  #     APP_SECRET: ${UMAMI_APP_SECRET}
-
-  # caddy:
-  #   image: caddy:2-alpine
-  #   restart: unless-stopped
-  #   ports: ["80:80", "443:443"]
-  #   volumes:
-  #     - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-  #     - caddy_data:/data
-  #     - caddy_config:/config
+    # Для psql: docker compose exec postgres psql
 
 volumes:
   pgdata:
-  # caddy_data:
-  # caddy_config:

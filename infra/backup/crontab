@@ -1,0 +1,5 @@
+# Full раз на тиждень, differential щодня, WAL — безперервно (з боку БД).
+# Перевірка репозиторію окремо: бекап, який ніколи не перевіряли, не існує.
+0 3 * * 0 pgbackrest --stanza=store --type=full backup
+0 3 * * 1-6 pgbackrest --stanza=store --type=diff backup
+30 4 * * * pgbackrest --stanza=store check
