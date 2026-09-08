@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    "strict": true,
+
+    // У TS 7 дефолт []. Перелічуємо явно вже зараз, щоб апгрейд
+    // не «загубив» типи Node (DEVELOPMENT.md §0).
+    "types": ["node"],
+    // У TS 7 дефолт і не конфігурується — вмикаємо заздалегідь.
+    "stableTypeOrdering": true,
+
+    // Найважливіший прапорець у переліку: arr[0] стає T | undefined.
+    // Вмикається у фазі 0, поки коду немає.
+    "noUncheckedIndexedAccess": true,
+
+    // { a?: string } більше не приймає { a: undefined } — інакше
+    // «очистити поле» і «не чіпати поле» виглядають однаково.
+    "exactOptionalPropertyTypes": true,
+
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+
+    // import type обов'язковий явно.
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+
+    // Забороняє TS enum, namespace, parameter properties — усе, що не стирається.
+    "erasableSyntaxOnly": true,
+
+    "skipLibCheck": true,
+    "moduleDetection": "force",
+    "target": "ES2024",
+    "lib": ["ES2024"],
+    "module": "preserve",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "noEmit": true
+  }
+}

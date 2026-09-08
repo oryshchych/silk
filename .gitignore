@@ -1,0 +1,32 @@
+# next-agents-md
+.next-docs/
+
+# ── Node / pnpm ───────────────────────────────────────────────────────
+node_modules/
+.pnpm-store/
+
+# ── Збірка ────────────────────────────────────────────────────────────
+.next/
+out/
+dist/
+build/
+*.tsbuildinfo
+
+# ── Кеш інструментів ──────────────────────────────────────────────────
+.turbo/
+coverage/
+.vitest/
+playwright-report/
+test-results/
+
+# ── Секрети. У репозиторій не потрапляє жоден .env, крім прикладу ────
+.env
+.env.*
+!.env.example
+
+# ── ОС / редактор ─────────────────────────────────────────────────────
+.DS_Store
+*.log
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json

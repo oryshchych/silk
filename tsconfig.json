@@ -1,0 +1,11 @@
+{
+  // Корінь: лише конфіги й скрипти рівня репозиторію. Код живе в
+  // apps/* і packages/*, кожен зі своїм tsconfig.
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": false
+  },
+  "include": ["*.ts", "*.js", "scripts/**/*.ts"],
+  "exclude": ["node_modules"]
+}

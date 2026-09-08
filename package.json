@@ -1,0 +1,44 @@
+{
+  "name": "store",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.3.4",
+  "engines": {
+    "node": ">=24.0.0 <25",
+    "pnpm": ">=10"
+  },
+  "scripts": {
+    "dev": "docker compose -f docker-compose.local.yml up -d --wait --build && turbo dev",
+    "dev:db": "docker compose -f docker-compose.local.yml up -d --wait --build",
+    "dev:db:stop": "docker compose -f docker-compose.local.yml down",
+    "build": "turbo build",
+    "typecheck": "tsc -p tsconfig.json --noEmit && turbo typecheck",
+    "lint": "eslint . --max-warnings 0",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run --project unit",
+    "test:int": "vitest run --project integration --passWithNoTests",
+    "test:coverage": "vitest run --project unit --coverage",
+    "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test",
+    "boundaries": "depcruise packages apps",
+    "knip": "knip",
+    "secrets": "./scripts/gitleaks.sh detect --redact --no-banner",
+    "prepare": "lefthook install"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^21.2.2",
+    "@commitlint/config-conventional": "^21.2.2",
+    "@types/node": "^24.13.3",
+    "@vitest/coverage-v8": "^5.0.0",
+    "dependency-cruiser": "^18.2.0",
+    "eslint": "^10.10.0",
+    "eslint-config-prettier": "^10.1.8",
+    "knip": "^6.34.0",
+    "lefthook": "^2.1.12",
+    "prettier": "^3.9.6",
+    "turbo": "^2.10.12",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.69.0",
+    "vitest": "^5.0.0"
+  }
+}

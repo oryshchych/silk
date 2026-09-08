@@ -1,0 +1,17 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+
+# pnpm 10+ блокує postinstall-скрипти залежностей за замовчуванням.
+# Найдешевший захист від supply-chain, тому список тримаємо коротким.
+onlyBuiltDependencies:
+  - sharp
+  - lefthook
+
+# Supply-chain: пакет, опублікований годину тому, у lockfile не потрапляє.
+# Значення задане явно (це дефолт pnpm 12), щоб політика була видима —
+# а не з'ясовувалася з падіння install у CI.
+minimumReleaseAge: 1440
+
+allowBuilds:
+  lefthook: set this to true or false
