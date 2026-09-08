@@ -1,0 +1,13 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "workspaces": {
+    ".": {
+      "project": ["**/*.{ts,js}"]
+    },
+    "packages/*": {
+      "entry": ["src/**/*.ts"],
+      "project": ["src/**/*.ts"]
+    }
+  },
+  "ignoreWorkspaces": ["packages/db"]
+}
