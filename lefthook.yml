@@ -1,0 +1,33 @@
+# Lefthook, а не husky: один бінарник, паралельне виконання, нормально
+# працює з монорепо.
+pre-commit:
+  parallel: true
+  commands:
+    format:
+      glob: '*.{ts,tsx,json,jsonc,md,css,yml,yaml}'
+      run: pnpm prettier --write {staged_files}
+      stage_fixed: true
+    lint:
+      glob: '*.{ts,tsx}'
+      # --no-warn-ignored: інакше файл під ignore дає warning, а
+      # --max-warnings 0 перетворює його на падіння хука.
+      run: pnpm eslint --fix --max-warnings 0 --no-warn-ignored {staged_files}
+      stage_fixed: true
+    secrets:
+      # Секрети не мають потрапляти в історію: з git їх не видалити.
+      run: ./scripts/gitleaks.sh protect --staged --redact --no-banner
+
+pre-push:
+  parallel: true
+  commands:
+    typecheck:
+      run: pnpm turbo typecheck
+    unit:
+      # Інтеграційні тести й e2e у хуках НЕ запускаються: pre-push мусить
+      # залишатися швидким, інакше його обходять через --no-verify.
+      run: pnpm test
+
+commit-msg:
+  commands:
+    commitlint:
+      run: pnpm commitlint --edit {1}
