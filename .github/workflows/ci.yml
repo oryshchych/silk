@@ -1,0 +1,140 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Скасовувати попередні прогони на тій самій гілці: черга з десяти
+# застарілих білдів не дає нічого, крім рахунку за CI.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Turborepo remote cache. Без секретів кеш просто локальний — джоби
+  # від цього не падають.
+  TURBO_TOKEN: ${{ secrets.TURBO_TOKEN }}
+  TURBO_TEAM: ${{ vars.TURBO_TEAM }}
+
+jobs:
+  # ── Required checks ──────────────────────────────────────────────────
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: pnpm format:check
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: pnpm lint
+
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: pnpm typecheck
+
+  test-unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: pnpm test
+
+  boundaries:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      # dependency-cruiser: core не залежить від Next, немає циклів.
+      - run: pnpm boundaries
+
+  knip:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: pnpm knip
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # gitleaks дивиться історію, а не лише HEAD.
+          fetch-depth: 0
+      # Обгортка бере бінарник, якщо він є, інакше офіційний образ.
+      - run: ./scripts/gitleaks.sh detect --redact --no-banner
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: pnpm audit --audit-level high
+
+  # Образ БД — не «просто Docker»: у ньому живуть український hunspell і
+  # ICU. Якщо він перестане збиратися, це видно тут, а не на міграції.
+  db-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Postgres image
+        run: docker build -t store-postgres:ci infra/postgres
+      - name: Українське сортування, словник і стоп-слова
+        run: |
+          docker run -d --name pg-ci \
+            -e POSTGRES_USER=store_root -e POSTGRES_PASSWORD=ci \
+            -e POSTGRES_DB=store \
+            -e POSTGRES_MIGRATE_USER=store_migrate -e POSTGRES_MIGRATE_PASSWORD=ci \
+            -e POSTGRES_APP_USER=store_app -e POSTGRES_APP_PASSWORD=ci \
+            -e POSTGRES_BOSS_USER=store_boss -e POSTGRES_BOSS_PASSWORD=ci \
+            -e POSTGRES_INITDB_ARGS="--locale-provider=icu --icu-locale=uk-UA --encoding=UTF8" \
+            store-postgres:ci
+          for i in $(seq 1 60); do
+            docker exec pg-ci pg_isready -U store_root -d store && break
+            sleep 2
+          done
+          docker exec pg-ci psql -U store_root -d store -v ON_ERROR_STOP=1 -c "
+            CREATE TEXT SEARCH DICTIONARY ukrainian_hunspell (
+              TEMPLATE = ispell, DictFile = uk_ua, AffFile = uk_ua, StopWords = ukrainian);
+            DO \$\$
+            DECLARE ordered text;
+            BEGIN
+              SELECT string_agg(l, ' ' ORDER BY l) INTO ordered
+              FROM unnest(ARRAY['ї','і','и','є','е','ґ','г']) l;
+              IF ordered <> 'г ґ е є и і ї' THEN
+                RAISE EXCEPTION 'українське сортування зламане: %', ordered;
+              END IF;
+              IF ts_lexize('ukrainian_hunspell','мереживні') IS NULL THEN
+                RAISE EXCEPTION 'hunspell-словник не завантажився';
+              END IF;
+              IF ts_lexize('ukrainian_hunspell','або') <> '{}' THEN
+                RAISE EXCEPTION 'стоп-слова не застосувалися';
+              END IF;
+            END \$\$;"
+      - name: Роли розділені (store_app не робить DDL)
+        run: |
+          ! docker exec -e PGPASSWORD=ci pg-ci psql -U store_app -h 127.0.0.1 -d store \
+              -c 'CREATE TABLE nope(id int);'
+      - if: always()
+        run: docker rm -f pg-ci
+
+  # ── Required checks, які з'являються далі ────────────────────────────
+  # Додаються разом із кодом, який вони перевіряють, а не «поки що
+  # зеленими» заглушками:
+  #   build            — apps/web (next build, Turbopack)
+  #   test:integration — Testcontainers із нашим образом Postgres
+  #   migrate:fresh    — порожня БД + усі міграції, включно з ручними
+  #   migrate:upgrade  — копія попередньої схеми + нові міграції
+  #   migrate:safety   — squawk на дангерні DDL
+  #   test:e2e         — Playwright, happy path checkout
+  #   size             — size-limit на клієнтський бандл
+  #   lighthouse       — PLP і PDP: Performance >= 85, SEO = 100
+  #   ai-sync          — синхронність дзеркал AI-конфігів

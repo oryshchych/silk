@@ -1,0 +1,16 @@
+name: Setup
+description: Node 24 + pnpm із кешем і --frozen-lockfile
+
+runs:
+  using: composite
+  steps:
+    - uses: pnpm/action-setup@v4
+    - uses: actions/setup-node@v4
+      with:
+        # Версія береться з .nvmrc — одна точка правди з локальною машиною.
+        node-version-file: .nvmrc
+        cache: pnpm
+    # frozen-lockfile: розбіжність lock і package.json мусить падати в CI,
+    # а не тихо оновлювати залежності на білді.
+    - run: pnpm install --frozen-lockfile
+      shell: bash
