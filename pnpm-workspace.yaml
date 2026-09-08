@@ -2,16 +2,20 @@ packages:
   - 'apps/*'
   - 'packages/*'
 
-# pnpm 10+ блокує postinstall-скрипти залежностей за замовчуванням.
-# Найдешевший захист від supply-chain, тому список тримаємо коротким.
-onlyBuiltDependencies:
-  - sharp
-  - lefthook
-
-# Supply-chain: пакет, опублікований годину тому, у lockfile не потрапляє.
-# Значення задане явно (це дефолт pnpm 12), щоб політика була видима —
-# а не з'ясовувалася з падіння install у CI.
-minimumReleaseAge: 1440
-
+# pnpm блокує postinstall-скрипти залежностей за замовчуванням — найдешевший
+# захист від supply-chain, тому список тримаємо коротким.
+#
+# УВАГА: у pnpm 12 ключ називається `allowBuilds` (мапа), а не
+# `onlyBuiltDependencies` (список) із pnpm 10. Старий ключ ще читається
+# `pnpm config get`, але інсталятор його НЕ застосовує: install падає з
+# ERR_PNPM_IGNORED_BUILDS, і на чистому клоні це ловиться одразу.
 allowBuilds:
-  lefthook: set this to true or false
+  # postinstall лише доставляє бінарник хук-менеджера.
+  lefthook: true
+  # Знадобиться в packages/media (обробка зображень).
+  sharp: true
+
+# Пакет, опублікований годину тому, у lockfile не потрапляє. Значення
+# задане явно (це дефолт pnpm 12), щоб політика була видима — а не
+# з'ясовувалася з падіння install у CI.
+minimumReleaseAge: 1440
