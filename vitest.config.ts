@@ -17,10 +17,11 @@ export default defineConfig({
           include: ['**/*.int.test.ts'],
           // Транзакції й локи не паралеляться через один pool.
           testTimeout: 30_000,
-          // globalSetup: './test/pg-container.ts' — Testcontainers із НАШИМ
-          // образом Postgres підключається в сесії схеми БД. Доти проєкт
-          // існує, але тестів у ньому немає, тому скрипт test:int передає
-          // --passWithNoTests (опція не приймається в конфізі проєкту).
+          // Testcontainers із НАШИМ образом Postgres (hunspell + ICU) і
+          // прогоном усіх міграцій на порожню БД — тобто migrate:fresh.
+          globalSetup: './packages/db/test/pg-container.ts',
+          // Збірка образу при першому прогоні + старт контейнера.
+          hookTimeout: 600_000,
         },
       },
     ],

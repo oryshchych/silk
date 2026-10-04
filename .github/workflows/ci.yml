@@ -126,12 +126,22 @@ jobs:
       - if: always()
         run: docker rm -f pg-ci
 
+  # Порожня БД + УСІ міграції, включно з ручними (0000_extensions,
+  # тригери, складені FK), на НАШОМУ образі через Testcontainers. Ловить те,
+  # чого `drizzle-kit check` не ловить: невиконуваний SQL, порядок extensions.
+  migrate-fresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: pnpm db:check
+      - run: pnpm migrate:fresh
+
   # ── Required checks, які з'являються далі ────────────────────────────
   # Додаються разом із кодом, який вони перевіряють, а не «поки що
   # зеленими» заглушками:
   #   build            — apps/web (next build, Turbopack)
   #   test:integration — Testcontainers із нашим образом Postgres
-  #   migrate:fresh    — порожня БД + усі міграції, включно з ручними
   #   migrate:upgrade  — копія попередньої схеми + нові міграції
   #   migrate:safety   — squawk на дангерні DDL
   #   test:e2e         — Playwright, happy path checkout
