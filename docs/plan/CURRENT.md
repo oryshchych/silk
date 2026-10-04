@@ -5,67 +5,58 @@
 
 ## Поточна фаза
 
-`phase-00-foundation.md` — інфраструктура зроблена; БД, застосунки,
-Testcontainers, AI-сетап і деплой не розпочаті.
+`phase-00-foundation.md` — інфраструктура й міграції зроблені; клієнт БД,
+seed, застосунки, AI-сетап і деплой не розпочаті. Гілка `feat/db-migrations`
+(не злита в `main`).
 
 ## Зроблено
 
-- `6728094` монорепо pnpm + Turborepo, пінування (Node 24, TS 6.0.3, PG 18)
-- `4a343fe` type-aware ESLint, Prettier, dependency-cruiser, knip
-- `56a06b3` `packages/shared/src/env.{schema,server}.ts` — zod, 12 тестів
-- `94f0a8d` lefthook, commitlint, Renovate
-- `8cf15f9` три стеки compose + власний образ Postgres 18 (hunspell + ICU)
-- `b659006` CI: format, lint, typecheck, test-unit, boundaries, knip, secrets,
-  audit, db-image
-- `cd35956` керований блок AGENTS.md (`@next/codemod agents-md`, 16.3.4)
-- `3d48a11` pnpm 12: `allowBuilds` замість `onlyBuiltDependencies`
+- `6728094`…`3d48a11` монорепо, тулінг, env (zod), lefthook, compose, образ
+  PG 18 (hunspell + ICU), CI, AGENTS.md, pnpm 12 `allowBuilds`
+- `5340064` drizzle-kit 0.31.11, `src/migrate.ts` (роль store_migrate,
+  `DATABASE_MIGRATE_URL`), lint/format/knip охоплюють `packages/db`
+- `37c32e9` міграції 0000–0005: extensions (вручну), schema (згенерована),
+  numbering, search, integrity (складені FK), touch_updated_at;
+  `GRANT CREATE ON DATABASE` для store_migrate в init-скрипті
+- `e2e49df` Testcontainers globalSetup + `migrate:fresh` (17 тестів), CI-джоб
 
 ## Наступний крок
 
-Сесія 2: схема БД і міграції. `packages/db/src/schema.ts` уже в репо (1962
-рядки) і типізується чисто — не чіпали. Потрібні: `0000_extensions.sql`
-вручну (згенерована → `0001`, див. REVIEW_TRIAGE), клієнт БД, seed, далі
-`migrate:fresh` / `migrate:upgrade` / `migrate:safety` в CI. Міграції
-запускати роллю `store_migrate` — default privileges видані саме їй.
+Клієнт БД (`@store/db/client`, tx першим параметром), seed-генератор,
+`pnpm db:seed`; далі `migrate:upgrade` / `migrate:safety`, ізоляція тестів
+через `TEMPLATE`. Дотичне — `NOTES.md`.
 
 ## Критерії, перевірені виконанням
 
-- `pnpm verify` зелений **на чистому клоні** (format + lint + typecheck 2
-  пакети + 12 unit)
-- `noUncheckedIndexedAccess` і `exactOptionalPropertyTypes` увімкнені; під ними
-  компілюється й `schema.ts`
-- падають на лінті: `any`, `as any`, `@ts-ignore`, короткий `@ts-expect-error`,
-  `next/*` у `packages/core`, глобальний `db`, `process.env` поза
-  `env.server.ts`, hex у `.tsx` (перевірено пробним файлом)
-- процес падає на старті без `EMAIL_TO_OVERRIDE` поза production
-- `pnpm dev:db` з чистого клону піднімає Postgres + Mailpit
-- образ БД: сортування `г ґ е є и і ї`, hunspell (`мереживні` →
-  `мереживний`), стоп-слова, store_app не робить DDL
-- коміт із секретом блокується gitleaks; pre-push жене typecheck + unit
-- `docker compose config` валідний для local / staging / production
-
-Решта критеріїв фази 0 — наступні сесії: `db:migrate`/`db:seed`,
-Testcontainers, `migrate:fresh`, `/` vs `/en`, токени Tailwind, `ai:check`,
-деплой, basic auth + noindex, бекапи в R2.
+- `pnpm migrate:fresh`: порожня БД нашого образу + 6 міграцій роллю
+  store_migrate, 17/17 тестів (тригер search_vector, backfill, STORED,
+  нумерація на межах, складені FK, права store_app, сортування `г ґ е є и і ї`)
+- негативні контролі: без 0000 → `operator class "gin_trgm_ops" does not
+  exist`; без `STORED` → `indexes on virtual generated columns are not supported`;
+  без `GRANT CREATE` → `permission denied to create extension`
+- `0001_schema.sql` побайтово = `docs/reference-migration-dryrun.sql`
+- `pnpm db:check` чистий; `pnpm verify`, `knip` зелені
+- з фази 0 раніше: verify на чистому клоні, lint-заборони, env падає на
+  старті, `pnpm dev:db`, образ БД, gitleaks, compose config
 
 ## Відкриті рішення, що чекають людину
 
 - Бухгалтер: сертифікати на нашій системі оподаткування; чи потрібен ПРРО
-- Підтвердження доступу до українського API Нової Пошти 2.0
-- Назва магазину замість `LACE & SILK`
-- Docker Desktop не бачить `~/Documents` (bind mount падає). Стек це вже не
-  використовує; для інших mount-ів додати шлях у Settings → File sharing
+- Доступ до українського API Нової Пошти 2.0; назва магазину (`LACE & SILK`)
+- Наявний локальний volume `pgdata_local` створений без `GRANT CREATE` —
+  `db:migrate` на ньому впаде. Перестворити volume або видати право вручну
+- Чек повернення → лише на чек `sale`: FK цього не виражає (NOTES.md)
 
 ## Відхилення від плану
 
-- TS **6.0.3**, не «6.0 + 7.0 через аліаси» з REVIEW_TRIAGE: `DEVELOPMENT.md` §0
-  цей варіант уже відкинув. Renovate тримає `< 7`
-- Postgres на **Debian**, не Alpine: в Alpine немає `hunspell-uk`
-- том монтується на `/var/lib/postgresql` (у 18+ дані в підкаталозі мажора)
-- `allowBuilds` замість `onlyBuiltDependencies` (перейменовано в pnpm 12)
-- init-скрипти Postgres вбудовані в образ, не монтуються
-- `typescript-eslint` 8.69.0: 8.70.0 не проходить `minimumReleaseAge`
+- TS 6.0.3; Postgres на Debian; том на `/var/lib/postgresql`; init-скрипти
+  в образі; `typescript-eslint` 8.69.0 (див. git log сесії 1)
+- 0000 створено `drizzle-kit generate --custom` ДО генерації схеми, а не
+  перейменуванням: журнал і снапшоти узгоджені без ручних правок
+- міграції застосовує `drizzle-orm` migrator (`src/migrate.ts`), не
+  `drizzle-kit migrate`: той самий код у CLI і Testcontainers
+- store_migrate отримав `CREATE ON DATABASE` (раніше лише CONNECT)
+- touch_updated_at і FK `orders.current_payment_attempt_id` теж із блоку SQL
+  schema.ts — не названі в задачі явно, але це той самий блок
+- `allowBuilds`: esbuild, ssh2, cpu-features, protobufjs явно `false`
 - `Money` і DTO-шар не робились — це доменний код
-- Prettier не форматує `docs/`, `CLAUDE.md`, `AGENTS.md`, `packages/db/`
-- плагіни jsx-a11y / drizzle / i18next / prettier-tailwind — разом із кодом,
-  який вони перевіряють
