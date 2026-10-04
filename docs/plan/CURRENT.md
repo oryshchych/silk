@@ -11,8 +11,7 @@ seed, застосунки, AI-сетап і деплой не розпочат�
 
 ## Зроблено
 
-- `6728094`…`3d48a11` монорепо, тулінг, env (zod), lefthook, compose, образ
-  PG 18 (hunspell + ICU), CI, AGENTS.md, pnpm 12 `allowBuilds`
+- `6728094`…`3d48a11` монорепо, тулінг, env, lefthook, compose, образ PG 18, CI
 - `5340064` drizzle-kit 0.31.11, `src/migrate.ts` (роль store_migrate,
   `DATABASE_MIGRATE_URL`), lint/format/knip охоплюють `packages/db`
 - `37c32e9` міграції 0000–0005: extensions (вручну), schema (згенерована),
