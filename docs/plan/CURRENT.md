@@ -6,8 +6,8 @@
 ## Поточна фаза
 
 `phase-00-foundation.md` — інфраструктура й міграції зроблені; клієнт БД,
-seed, застосунки, AI-сетап і деплой не розпочаті. Гілка `feat/db-migrations`
-(не злита в `main`).
+seed, застосунки, AI-сетап і деплой не розпочаті. PR #1
+`feat/db-migrations` → `main`, CI зелений, чекає мерджу.
 
 ## Зроблено
 
@@ -19,6 +19,7 @@ seed, застосунки, AI-сетап і деплой не розпочат�
   numbering, search, integrity (складені FK), touch_updated_at;
   `GRANT CREATE ON DATABASE` для store_migrate в init-скрипті
 - `e2e49df` Testcontainers globalSetup + `migrate:fresh` (17 тестів), CI-джоб
+- `3d40dc6` lockfile: brace-expansion 5.0.12 (2 high), fast-uri 3.1.8
 
 ## Наступний крок
 
@@ -35,14 +36,12 @@ seed, застосунки, AI-сетап і деплой не розпочат�
   exist`; без `STORED` → `indexes on virtual generated columns are not supported`;
   без `GRANT CREATE` → `permission denied to create extension`
 - `0001_schema.sql` побайтово = `docs/reference-migration-dryrun.sql`
-- `pnpm db:check` чистий; `pnpm verify`, `knip` зелені
-- з фази 0 раніше: verify на чистому клоні, lint-заборони, env падає на
-  старті, `pnpm dev:db`, образ БД, gitleaks, compose config
+- `pnpm db:check` чистий; CI PR #1 — усі 10 джобів зелені, `migrate-fresh` теж
+- раніше: verify на чистому клоні, lint-заборони, env, образ БД, gitleaks
 
 ## Відкриті рішення, що чекають людину
 
-- Бухгалтер: сертифікати на нашій системі оподаткування; чи потрібен ПРРО
-- Доступ до українського API Нової Пошти 2.0; назва магазину (`LACE & SILK`)
+- Бухгалтер (сертифікати, ПРРО); API НП 2.0; назва магазину (`LACE & SILK`)
 - Наявний локальний volume `pgdata_local` створений без `GRANT CREATE` —
   `db:migrate` на ньому впаде. Перестворити volume або видати право вручну
 - Чек повернення → лише на чек `sale`: FK цього не виражає (NOTES.md)
@@ -58,5 +57,5 @@ seed, застосунки, AI-сетап і деплой не розпочат�
 - store_migrate отримав `CREATE ON DATABASE` (раніше лише CONNECT)
 - touch_updated_at і FK `orders.current_payment_attempt_id` теж із блоку SQL
   schema.ts — не названі в задачі явно, але це той самий блок
-- `allowBuilds`: esbuild, ssh2, cpu-features, protobufjs явно `false`
-- `Money` і DTO-шар не робились — це доменний код
+- `allowBuilds`: esbuild, ssh2, cpu-features, protobufjs явно `false`;
+  moderate у audit — esbuild 0.18 усередині drizzle-kit (dev-only), лишено
