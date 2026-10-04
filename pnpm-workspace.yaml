@@ -14,6 +14,16 @@ allowBuilds:
   lefthook: true
   # Знадобиться в packages/media (обробка зображень).
   sharp: true
+  # Явно ЗАБОРОНЕНІ — щоб install не падав на ERR_PNPM_IGNORED_BUILDS, а
+  # рішення було видиме. Усі працюють без своїх postinstall:
+  #   esbuild (drizzle-kit) — бінарник приходить optional-пакетом платформи;
+  #   ssh2 / cpu-features (testcontainers → docker-modem) — нативне
+  #     прискорення опційне, є JS-fallback, а SSH до Docker ми не використовуємо;
+  #   protobufjs — postinstall лише перевіряє версію.
+  esbuild: false
+  ssh2: false
+  cpu-features: false
+  protobufjs: false
 
 # Пакет, опублікований годину тому, у lockfile не потрапляє. Значення
 # задане явно (це дефолт pnpm 12), щоб політика була видима — а не

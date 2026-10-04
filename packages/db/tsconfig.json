@@ -1,5 +1,10 @@
 {
   "extends": "../../tsconfig.base.json",
-  "include": ["src/**/*.ts"],
+  "compilerOptions": {
+    // migrate.ts запускається Node напряму (type stripping), а Node вимагає
+    // розширення у відносних імпортах. noEmit уже ввімкнений у базі.
+    "allowImportingTsExtensions": true
+  },
+  "include": ["src/**/*.ts", "test/**/*.ts", "drizzle.config.ts"],
   "exclude": ["node_modules", "dist"]
 }

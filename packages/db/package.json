@@ -4,16 +4,25 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./schema": "./src/schema.ts"
+    "./schema": "./src/schema.ts",
+    "./migrate": "./src/migrate.ts"
   },
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "db:check": "drizzle-kit check",
+    "db:migrate": "node src/migrate.ts"
   },
   "dependencies": {
-    "drizzle-orm": "0.45.2"
+    "drizzle-orm": "0.45.2",
+    "pg": "^8.23.1"
   },
   "devDependencies": {
+    "@testcontainers/postgresql": "^12.2.0",
     "@types/node": "^24.13.3",
+    "@types/pg": "^8.23.1",
+    "drizzle-kit": "0.31.11",
+    "testcontainers": "^12.2.0",
     "typescript": "^6.0.3"
   }
 }
