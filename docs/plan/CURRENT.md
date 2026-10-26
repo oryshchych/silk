@@ -17,7 +17,7 @@ seed, застосунки, AI-сетап і деплой не розпочат�
   numbering, search, integrity (складені FK), touch_updated_at;
   `GRANT CREATE ON DATABASE` для store_migrate в init-скрипті
 - `e2e49df` Testcontainers globalSetup + `migrate:fresh` (17 тестів), CI-джоб
-- `3d40dc6` lockfile: brace-expansion 5.0.12 (2 high), fast-uri 3.1.8
+- `3d40dc6`, `8d2b189` audit high: brace-expansion, fast-uri, source-map-js, vite, zod ^4.6.7, undici
 - `0598006` відповіді бухгалтера: ПРРО (Checkbox), сертифікати — лише шви
 
 ## Наступний крок
