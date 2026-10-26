@@ -5,9 +5,10 @@
 
 ## Поточна фаза
 
-`phase-00-foundation.md`, кроки 2–5 з 7 у `main` (`5bb9d28`, PR #3 і #6;
-#4 і #5 потрапили через #6). Далі: 6 деплой — сервер Hetzner CAX11
-(ARM, 4 ГБ, Ubuntu 24.04) створено, чекаємо IP, домен, SSH; 7 бекапи.
+`phase-00-foundation.md`, крок 6 (деплой). Сервер Hetzner CAX11 (ARM, 4 ГБ,
+Ubuntu 24.04, 49.12.64.197): swap 4 ГБ, SSH лише ключем, Hetzner Firewall
+22/80/443, Dokploy v0.30.10 на `https://dokploy.damazla.com`. Docker-образ
+вітрини — PR `feat/web-dockerfile`. Далі: GitHub → Dokploy, staging.
 
 ## Зроблено
 
@@ -21,8 +22,7 @@
 
 ## Наступний крок
 
-Хуки + `.claude/settings.json` вмикає власник (агенту заборонено).
-Далі `migrate:upgrade` / `migrate:safety`, крок 6. Див. `NOTES.md`.
+Staging у Dokploy; хуки `.claude/` вмикає власник; `migrate:upgrade`.
 
 ## Критерії, перевірені виконанням
 
