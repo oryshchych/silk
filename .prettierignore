@@ -21,3 +21,9 @@ packages/db/migrations/
 
 # Генерує Next
 next-env.d.ts
+
+# Джерело AI-правил і згенеровані дзеркала — проза, не форматуємо
+# (зміна переносів зламала б перевірку ai:check).
+ai/
+.cursor/
+.github/copilot-instructions.md

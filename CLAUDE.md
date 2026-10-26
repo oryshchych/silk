@@ -1,8 +1,15 @@
 # CLAUDE.md
 
+<!-- ЗГЕНЕРОВАНО з ai/claude-specific.md. Не редагувати. -->
+<!-- Правки: ai/claude-specific.md → pnpm ai:sync (перевіряє CI: pnpm ai:check). -->
+
 @AGENTS.md
 
 Канонічні правила — в `AGENTS.md`. Тут лише Claude-специфічне.
+
+**`AGENTS.md`, `CLAUDE.md` і дзеркала для Copilot / Cursor генеруються.**
+Правити `ai/canonical.md` або `ai/claude-specific.md`, потім `pnpm ai:sync`.
+CI (`ai-sync`) падає, якщо згенероване розійшлося з джерелом.
 
 ## Скіли
 
@@ -22,14 +29,21 @@
 | `security-auditor` | завершення фаз 4, 5, 12. Перевіряє **фактичну серіалізовану відповідь** для кожної ролі, не UI |
 | `seo-reviewer` | фази 1 і 6 |
 
-## Хуки
+## Хуки — спроєктовані, ще НЕ підключені
 
-- `PreToolUse` на `Edit|Write` → блокує правку **вже застосованої** міграції
-- `PreToolUse` на `Bash` → блокує продакшн: DDL, реальний платіж, реальна ТТН, `.env.production`
-- `PostToolUse` на `Edit|Write` → prettier + eslint --fix одразу, щоб не накопичувати 40 файлів під CI
-- `Stop` → typecheck. **Обов'язково через wrapper, що дає exit code 2 або
-  `decision: "block"`** — звичайний exit 1 хід не блокує, і запобіжник буде
-  фіктивним
+`.claude/settings.json` і `.claude/hooks/` змінюють дозволи й запускають код
+автоматично, тому вмикає їх людина, не агент. До того ці запобіжники —
+лише текст:
+
+- `PreToolUse` на `Edit|Write` → блокує правку **вже закоміченої** міграції
+  або її снапшота — тільки нова міграція
+- `PreToolUse` на `Bash` → блокує `.env.production`, `psql`/DDL на
+  production, `drizzle-kit push`, `git push --force`, прямі запити до
+  платіжок і створення ТТН, `APP_ENV=production`
+- `PostToolUse` на `Edit|Write` → prettier + eslint --fix одразу; залишкові
+  помилки лінту повертаються агенту (exit 2)
+- `Stop` → typecheck, якщо є незакомічені зміни. **Через wrapper з exit
+  code 2** — звичайний exit 1 хід не блокує, і запобіжник був би фіктивним
 
 ## Permissions
 
@@ -47,8 +61,11 @@
 
 ## MCP
 
-Postgres **read-only** до local/staging (щоб дивитися фактичну схему, а не
-припущення), Playwright (перевіряти свою роботу в браузері), Context7
-(актуальна документація Next 16 / Drizzle / Auth.js).
+Заплановано: Postgres **read-only** до local/staging (щоб дивитися фактичну
+схему, а не припущення), Playwright (перевіряти свою роботу в браузері),
+Context7 (актуальна документація Next 16 / Drizzle / Auth.js).
+
+Ще **не підключено**: для read-only Postgres потрібна окрема роль лише з
+`SELECT` — `store_app` має DML і для MCP не годиться.
 
 Продакшн-БД до MCP не підключається. Ніколи.

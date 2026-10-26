@@ -148,6 +148,15 @@ jobs:
       - uses: ./.github/actions/setup
       - run: pnpm --filter web build
 
+  # Правила для AI-інструментів генеруються з ai/ (docs/AI_SETUP.md §2).
+  # Розійшлися — три різні версії правил, і Cursor радить заборонене.
+  ai-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: pnpm ai:check
+
   # ── Required checks, які з'являються далі ────────────────────────────
   # Додаються разом із кодом, який вони перевіряють, а не «поки що
   # зеленими» заглушками:
@@ -157,4 +166,3 @@ jobs:
   #   test:e2e         — Playwright, happy path checkout
   #   size             — size-limit на клієнтський бандл
   #   lighthouse       — PLP і PDP: Performance >= 85, SEO = 100
-  #   ai-sync          — синхронність дзеркал AI-конфігів

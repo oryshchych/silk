@@ -28,6 +28,8 @@
     "boundaries": "depcruise packages apps",
     "knip": "knip",
     "secrets": "./scripts/gitleaks.sh detect --redact --no-banner",
+    "ai:sync": "node scripts/sync-ai-config.ts",
+    "ai:check": "node scripts/sync-ai-config.ts --check",
     "prepare": "lefthook install"
   },
   "devDependencies": {
