@@ -17,7 +17,7 @@
     "db:seed": "pnpm --filter @store/db db:seed",
     "build": "turbo build",
     "typecheck": "tsc -p tsconfig.json --noEmit && turbo typecheck",
-    "lint": "eslint . --max-warnings 0",
+    "lint": "pnpm --filter web typegen && eslint . --max-warnings 0",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run --project unit",
@@ -33,7 +33,7 @@
   "devDependencies": {
     "@commitlint/cli": "^21.2.4",
     "@commitlint/config-conventional": "^21.2.4",
-    "@next/eslint-plugin-next": "16.3.8",
+    "@next/eslint-plugin-next": "16.4.3",
     "@types/node": "^24.19.2",
     "@vitest/coverage-v8": "^5.0.5",
     "dependency-cruiser": "^18.7.0",
