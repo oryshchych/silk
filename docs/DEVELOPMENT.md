@@ -259,21 +259,19 @@ export default tseslint.config(
 Лінтер не зловить `price * quantity` з переплутаними одиницями. Це ловить
 система типів:
 
-```ts
-// packages/shared/money.ts
-declare const brand: unique symbol;
-export type Money = number & { readonly [brand]: 'Money' };  // копійки
+Реалізація — `packages/shared/src/money.ts` (`@store/shared/money`):
 
-export const money = (kopiyky: number): Money => {
-  if (!Number.isInteger(kopiyky)) throw new Error('Money must be integer kopiyky');
-  return kopiyky as Money;
-};
-export const add = (a: Money, b: Money): Money => (a + b) as Money;
-export const multiply = (a: Money, q: number): Money => (a * q) as Money;
-```
+- `money(n)` — єдиний конструктор, `Number.isSafeInteger`, інакше `RangeError`;
+- `add`, `subtract`, `sum`, `multiply(m, ціла кількість)`;
+- `percentOf(m, percent, 'floor' | 'half-up')` — округлення завжди явне;
+- `allocate(total, weights)` — largest remainder (ADR-15), основа для
+  `core/pricing`;
+- `parseHryvnias('1 299,50')` без `parseFloat`, `formatMoney(m, 'uk' | 'en')`.
 
-Тепер `Money` не змішується з `number`, і випадкове ділення без округлення
-не компілюється. Це те, що робить ADR-1 інваріантом, а не побажанням.
+Brand не забороняє операторів (`m / 3` компілюється), тому поверх нього
+лінт-правило `money/no-arithmetic` (`eslint-rules/money.js`): `+ - * / %`
+і унарний мінус над `Money` поза `money.ts` — помилка. Разом це робить
+ADR-1 інваріантом, а не побажанням.
 
 ---
 
