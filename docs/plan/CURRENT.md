@@ -5,24 +5,24 @@
 
 ## Поточна фаза
 
-`phase-00-foundation.md`, кроки 2–4 з 7: PR #3 (БД-клієнт + seed) → #4
-(Money + DTO) → #5 (apps/web), кожен поверх попереднього. Далі: 5 AI-сетап,
+`phase-00-foundation.md`, кроки 2–5 з 7: PR #3 (БД + seed) → #4 (Money,
+DTO) → #5 (apps/web) → #6 (AI-сетап), кожен поверх попереднього. Далі:
 6 деплой (Hetzner CX немає в наявності), 7 бекапи.
 
 ## Зроблено
 
 - `6728094`…`3d48a11` монорепо, тулінг, env, compose, образ PG 18, CI
-- PR #1 `fcb0655` міграції 0000–0005, Testcontainers + `migrate:fresh`
-- PR #2 відповіді бухгалтера: ПРРО (Checkbox), сертифікати — лише шви
+- PR #1 міграції + Testcontainers; PR #2 відповіді бухгалтера (ПРРО, шви)
 - `260ca10` порожні значення `.env` = не задано (`cp .env.example .env` працює)
 - `baae4fe` `createDb()` + тип `Tx`; `80e6681` seed; `f66d6e1` БД з шаблону
 - `e27e7d6` `Money`; `dde151f` лінт `money/no-arithmetic`; `2c65559` DTO
 - `ac09b60` apps/web: Next 16.3.8, next-intl, Tailwind v4; `b18c417` CI build
+- `7f3b456` ai/ → AGENTS/CLAUDE/Copilot/Cursor + `ai:check`; `2c13e65` скіли, агенти
 
 ## Наступний крок
 
-Крок 5: AI-сетап (`.claude/` скіли, агенти, хуки; `ai:check`). Потім
-`migrate:upgrade` / `migrate:safety`. Дотичне — `NOTES.md`.
+Хуки + `.claude/settings.json` вмикає власник (агенту заборонено).
+Далі `migrate:upgrade` / `migrate:safety`, крок 6. Див. `NOTES.md`.
 
 ## Критерії, перевірені виконанням
 
@@ -37,7 +37,7 @@
 - `pnpm db:seed` на локальній БД: 40 товарів, 15 замовлень; звірки резервів
   і сум — 0 розбіжностей; повтор і production відмовляють. `test:int` 30/30
 - `next start`: `/` uk, `/en` en, `/uk`→307 `/`, без cookie; без
-  EMAIL_TO_OVERRIDE процес завершується з кодом 1; grep blush|cream|pink — 0
+  EMAIL_TO_OVERRIDE — exit 1; grep blush|cream|pink — 0; `ai:check` зелений
 - раніше: verify на чистому клоні, lint-заборони, env, образ БД, gitleaks
 
 ## Відкриті рішення, що чекають людину
