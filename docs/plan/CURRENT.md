@@ -5,24 +5,23 @@
 
 ## Поточна фаза
 
-`phase-00-foundation.md`, кроки 2–3 з 7 зроблено: PR #3 (клієнт БД + seed),
-PR #4 (Money + DTO, поверх #3). Далі: 4 apps/web, 5 AI-сетап, 6 деплой
-(сервер Hetzner CX — немає в наявності), 7 бекапи.
+`phase-00-foundation.md`, кроки 2–4 з 7: PR #3 (БД-клієнт + seed) → #4
+(Money + DTO) → #5 (apps/web), кожен поверх попереднього. Далі: 5 AI-сетап,
+6 деплой (Hetzner CX немає в наявності), 7 бекапи.
 
 ## Зроблено
 
-- `6728094`…`3d48a11` монорепо, тулінг, env, lefthook, compose, образ PG 18, CI
-- `5340064`…`e2e49df` drizzle-kit, міграції 0000–0005, `src/migrate.ts`
-  (store_migrate), Testcontainers + `migrate:fresh` (PR #1, `fcb0655`)
-- `3d40dc6`, `8d2b189` audit high: brace-expansion, fast-uri, source-map-js, vite, zod ^4.6.7, undici
-- `0598006` відповіді бухгалтера: ПРРО (Checkbox), сертифікати — лише шви
+- `6728094`…`3d48a11` монорепо, тулінг, env, compose, образ PG 18, CI
+- PR #1 `fcb0655` міграції 0000–0005, Testcontainers + `migrate:fresh`
+- PR #2 відповіді бухгалтера: ПРРО (Checkbox), сертифікати — лише шви
 - `260ca10` порожні значення `.env` = не задано (`cp .env.example .env` працює)
 - `baae4fe` `createDb()` + тип `Tx`; `80e6681` seed; `f66d6e1` БД з шаблону
 - `e27e7d6` `Money`; `dde151f` лінт `money/no-arithmetic`; `2c65559` DTO
+- `ac09b60` apps/web: Next 16.3.8, next-intl, Tailwind v4; `b18c417` CI build
 
 ## Наступний крок
 
-Крок 4: `apps/web` (Next.js 16, `/` vs `/en`, токени Tailwind). Потім
+Крок 5: AI-сетап (`.claude/` скіли, агенти, хуки; `ai:check`). Потім
 `migrate:upgrade` / `migrate:safety`. Дотичне — `NOTES.md`.
 
 ## Критерії, перевірені виконанням
@@ -37,6 +36,8 @@ PR #4 (Money + DTO, поверх #3). Далі: 4 apps/web, 5 AI-сетап, 6 �
 - `pnpm db:check` чистий; CI PR #1 — усі 10 джобів зелені, `migrate-fresh` теж
 - `pnpm db:seed` на локальній БД: 40 товарів, 15 замовлень; звірки резервів
   і сум — 0 розбіжностей; повтор і production відмовляють. `test:int` 30/30
+- `next start`: `/` uk, `/en` en, `/uk`→307 `/`, без cookie; без
+  EMAIL_TO_OVERRIDE процес завершується з кодом 1; grep blush|cream|pink — 0
 - раніше: verify на чистому клоні, lint-заборони, env, образ БД, gitleaks
 
 ## Відкриті рішення, що чекають людину
@@ -53,6 +54,7 @@ PR #4 (Money + DTO, поверх #3). Далі: 4 apps/web, 5 AI-сетап, 6 �
 - store_migrate отримав `CREATE ON DATABASE` (раніше лише CONNECT)
 - touch_updated_at і FK `orders.current_payment_attempt_id` теж із блоку SQL
   schema.ts — не названі в задачі явно, але це той самий блок
+- Tailwind v4: токени в CSS `@theme`, не в `tailwind.config.ts`
 - `allocate` (largest remainder) у `shared/money`, не в `core/pricing`: це
   загальна функція; `core` додасть eligibility поверх неї (ADR-15)
 - `allowBuilds`: esbuild, ssh2, cpu-features, protobufjs явно `false`;

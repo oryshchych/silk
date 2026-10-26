@@ -4,7 +4,7 @@
 
 | Шар | Вибір | Обґрунтування |
 |---|---|---|
-| Застосунок | Next.js 16.3, App Router | Бекенд вбудований: server components читають БД напряму, route handlers приймають вебхуки, server actions роблять мутації. Ніякого окремого API-шару |
+| Застосунок | Next.js 16.4, App Router | Бекенд вбудований: server components читають БД напряму, route handlers приймають вебхуки, server actions роблять мутації. Ніякого окремого API-шару |
 | Runtime | Node.js 22 LTS | Next.js 16 вимагає мінімум 20.9; Node 18 більше не підтримується |
 | Мова | TypeScript 5.1+, `strict: true` | Мінімум для Next.js 16 |
 | Збірка | Turbopack (default) | У 16 стабільний і вмикається сам для `next dev` і `next build`. Кастомного webpack-конфігу в проєкті немає — і не має з'явитись, бо з ним білд впаде |

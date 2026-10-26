@@ -137,10 +137,20 @@ jobs:
       - run: pnpm db:check
       - run: pnpm migrate:fresh
 
+  # next build (Turbopack, без кастомного webpack). Ловить те, чого
+  # typecheck не ловить: серверні/клієнтські межі, пререндер, proxy.
+  build:
+    runs-on: ubuntu-latest
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: pnpm --filter web build
+
   # ── Required checks, які з'являються далі ────────────────────────────
   # Додаються разом із кодом, який вони перевіряють, а не «поки що
   # зеленими» заглушками:
-  #   build            — apps/web (next build, Turbopack)
   #   test:integration — Testcontainers із нашим образом Postgres
   #   migrate:upgrade  — копія попередньої схеми + нові міграції
   #   migrate:safety   — squawk на дангерні DDL
