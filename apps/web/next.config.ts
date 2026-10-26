@@ -1,5 +1,14 @@
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+
 import type { NextConfig } from 'next';
 import createNextIntlPlugin from 'next-intl/plugin';
+
+// Next читає .env лише з apps/web; у монорепо він лежить у корені
+// (`cp .env.example .env`). Змінні, задані середовищем, не перезаписуються,
+// тому в контейнері staging / production файл не потрібен і не впливає.
+const rootEnv = resolve(import.meta.dirname, '../../.env');
+if (existsSync(rootEnv)) process.loadEnvFile(rootEnv);
 
 const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts');
 
