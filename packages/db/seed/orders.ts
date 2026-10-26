@@ -7,6 +7,8 @@
  */
 import { eq, sql, type SQL } from 'drizzle-orm';
 
+import { allocate, money, multiply, percentOf, sum } from '@store/shared/money';
+
 import {
   orderItems,
   orders,
@@ -89,28 +91,21 @@ function pickLines(rng: Rng, variants: SeedVariant[], s: Scenario): Line[] {
 const subtotalOf = (lines: Line[]): number =>
   lines.reduce((sum, l) => sum + l.variant.unitPrice * l.quantity, 0);
 
-/** Розподіл знижки по позиціях; залишок від округлення — на останню. */
+/**
+ * Знижка — тим самим алгоритмом, що й у pricing (ADR-15): відсоток з явним
+ * округленням, розподіл по позиціях методом найбільшого залишку.
+ */
 function applyPromo(lines: Line[], promo: SeedPromo | undefined): void {
   if (promo === undefined || promo.type === 'free_shipping') return;
-  const gross = lines.map((l) => l.variant.unitPrice * l.quantity);
-  if (promo.type === 'percent') {
-    const subtotal = gross.reduce((a, b) => a + b, 0);
-    // WELCOME10 має стелю 500 ₴ — враховуємо її, як pricing у core.
-    const cap = promo.code === 'WELCOME10' ? 50000 : Number.POSITIVE_INFINITY;
-    const total = Math.min(Math.round((subtotal * promo.value) / 100), cap);
-    spread(lines, gross, total);
-    return;
-  }
-  spread(lines, gross, promo.value);
-}
-
-function spread(lines: Line[], gross: number[], total: number): void {
-  const subtotal = gross.reduce((a, b) => a + b, 0);
-  let left = total;
-  lines.forEach((line, i) => {
-    const share = i === lines.length - 1 ? left : Math.floor((total * (gross[i] ?? 0)) / subtotal);
-    line.discount = share;
-    left -= share;
+  const gross = lines.map((l) => multiply(money(l.variant.unitPrice), l.quantity));
+  const subtotal = sum(gross);
+  let total =
+    promo.type === 'percent' ? percentOf(subtotal, promo.value, 'half-up') : money(promo.value);
+  // WELCOME10 має стелю 500 ₴ (max_discount_amount).
+  if (promo.code === 'WELCOME10' && total > 50000) total = money(50000);
+  allocate(total, gross).forEach((share, i) => {
+    const line = lines[i];
+    if (line !== undefined) line.discount = share;
   });
 }
 
