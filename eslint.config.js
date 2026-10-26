@@ -7,6 +7,8 @@
 import tseslint from 'typescript-eslint';
 import prettierConfig from 'eslint-config-prettier';
 
+import money from './eslint-rules/money.js';
+
 export default tseslint.config(
   {
     ignores: [
@@ -72,6 +74,32 @@ export default tseslint.config(
       // strict-boolean-expressions свідомо НЕ вмикається: з
       // noUncheckedIndexedAccess воно дає стільку шуму, що люди
       // починають писати !!x механічно, і сенс губиться.
+    },
+  },
+
+  // ADR-1: арифметика над Money — лише через функції money.ts. Сам
+  // money.ts виключений: там операції обгорнуті конструктором із перевіркою.
+  {
+    files: ['**/*.ts', '**/*.tsx'],
+    ignores: ['packages/shared/src/money.ts'],
+    plugins: { money },
+    rules: { 'money/no-arithmetic': 'error' },
+  },
+
+  // DTO — allowlist полів (AGENTS.md §4b.3). Схема, що пропускає невідомі
+  // ключі, перетворює DTO на повний Drizzle-об'єкт.
+  {
+    files: ['packages/shared/src/dto/**/*.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            'CallExpression[callee.property.name=/^(passthrough|catchall|loose|looseObject)$/]',
+          message:
+            'DTO мусить відкидати невідомі ключі: лише z.object без passthrough / catchall / loose.',
+        },
+      ],
     },
   },
 
