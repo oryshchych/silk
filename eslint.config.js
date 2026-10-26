@@ -16,8 +16,11 @@ export default tseslint.config(
       '**/coverage/**',
       '**/.turbo/**',
       '.next-docs/**',
-      // Схема БД і міграції — окрема сесія фази 0. Тут не чіпаємо.
-      'packages/db/**',
+      // schema.ts — канонічний файл зі своїми `(): any` у self-reference FK
+      // (обмеження Drizzle). Не чіпаємо його в цій фазі; решта packages/db
+      // (раннер міграцій, тести) лінтиться як звичайний код.
+      'packages/db/src/schema.ts',
+      'packages/db/migrations/**',
     ],
   },
 

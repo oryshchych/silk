@@ -35,7 +35,15 @@ module.exports = {
     {
       name: 'no-orphans',
       severity: 'warn',
-      from: { orphan: true, pathNot: ['\\.d\\.ts$', '(^|/)\\.[^/]+\\.(js|cjs|mjs|ts)$'] },
+      from: {
+        orphan: true,
+        pathNot: [
+          '\\.d\\.ts$',
+          '(^|/)\\.[^/]+\\.(js|cjs|mjs|ts)$',
+          // Точки входу інструментів: їх імпортує CLI, а не наш код.
+          '(^|/)drizzle\\.config\\.ts$',
+        ],
+      },
       to: {},
     },
   ],

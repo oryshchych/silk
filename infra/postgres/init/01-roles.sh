@@ -32,6 +32,13 @@ GRANT CONNECT ON DATABASE ${POSTGRES_DB} TO ${POSTGRES_MIGRATE_USER};
 GRANT CONNECT ON DATABASE ${POSTGRES_DB} TO ${POSTGRES_APP_USER};
 GRANT CONNECT ON DATABASE ${POSTGRES_DB} TO ${POSTGRES_BOSS_USER};
 
+-- CREATE на базі — лише міграційній ролі. Потрібне для двох речей:
+--   - CREATE EXTENSION (0000_extensions): pg_trgm, unaccent, btree_gin,
+--     pgcrypto — trusted, тож суперкористувач не потрібен, але CREATE на
+--     базі потрібен;
+--   - схема журналу міграцій drizzle (CREATE SCHEMA IF NOT EXISTS).
+GRANT CREATE ON DATABASE ${POSTGRES_DB} TO ${POSTGRES_MIGRATE_USER};
+
 -- Схему public віддаємо міграційній ролі; застосунок у ній нічого не створює.
 ALTER SCHEMA public OWNER TO ${POSTGRES_MIGRATE_USER};
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;

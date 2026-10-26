@@ -14,5 +14,7 @@ AGENTS.md
 CLAUDE.md
 docs/
 
-# Схема БД і міграції — сесія фази 0 (БД). Тут не чіпаємо.
-packages/db/
+# Схема БД — канонічний файл, не форматується. Міграції — згенерований
+# drizzle-kit SQL і його журнал: застосовані файли не змінюються взагалі.
+packages/db/src/schema.ts
+packages/db/migrations/
