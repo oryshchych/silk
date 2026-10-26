@@ -6,8 +6,7 @@
 ## Поточна фаза
 
 `phase-00-foundation.md` — інфраструктура й міграції зроблені; клієнт БД,
-seed, застосунки, AI-сетап і деплой не розпочаті. PR #1
-`feat/db-migrations` → `main`, CI зелений, чекає мерджу.
+seed, застосунки, AI-сетап і деплой не розпочаті. PR #1 злито (`fcb0655`).
 
 ## Зроблено
 
@@ -18,7 +17,8 @@ seed, застосунки, AI-сетап і деплой не розпочат�
   numbering, search, integrity (складені FK), touch_updated_at;
   `GRANT CREATE ON DATABASE` для store_migrate в init-скрипті
 - `e2e49df` Testcontainers globalSetup + `migrate:fresh` (17 тестів), CI-джоб
-- `3d40dc6` lockfile: brace-expansion 5.0.12 (2 high), fast-uri 3.1.8
+- `3d40dc6`, `8d2b189` audit high: brace-expansion, fast-uri, source-map-js, vite, zod ^4.6.7, undici
+- `0598006` відповіді бухгалтера: ПРРО (Checkbox), сертифікати — лише шви
 
 ## Наступний крок
 
@@ -40,9 +40,8 @@ seed, застосунки, AI-сетап і деплой не розпочат�
 
 ## Відкриті рішення, що чекають людину
 
-- Бухгалтер (сертифікати, ПРРО); API НП 2.0; назва магазину (`LACE & SILK`)
-- Наявний локальний volume `pgdata_local` створений без `GRANT CREATE` —
-  `db:migrate` на ньому впаде. Перестворити volume або видати право вручну
+- API НП 2.0; назва магазину (`LACE & SILK`); акаунт Checkbox
+- COD: друк паперового чека в коробку при комплектації (NOTES.md)
 - Чек повернення → лише на чек `sale`: FK цього не виражає (NOTES.md)
 
 ## Відхилення від плану
