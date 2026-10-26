@@ -1,0 +1,51 @@
+@import 'tailwindcss';
+
+/*
+ * Дизайн-токени — СЕМАНТИЧНІ (ADR-21, AGENTS.md §4b.8): названі за роллю
+ * (--surface, --text-primary, --accent), а не за відтінком. Значення
+ * тимчасові нейтральні, доки немає брендової палітри; зміна палітри —
+ * правка тут, а не в компонентах.
+ *
+ * Tailwind v4 налаштовується в CSS (@theme), не в tailwind.config.ts.
+ */
+:root {
+  /* Вітрина у v1 лише світла: браузер не інвертує нативні контроли. */
+  color-scheme: light;
+
+  --surface: #ffffff;
+  --surface-raised: #f7f5f2;
+  --text-primary: #1a1a1a;
+  --text-muted: #6b6560;
+  --border: #e6e1dc;
+  --accent: #1a1a1a;
+  --accent-contrast: #ffffff;
+  --focus-ring: #8a5a44;
+
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-display: Georgia, 'Times New Roman', serif;
+}
+
+@theme inline {
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-text-primary: var(--text-primary);
+  --color-text-muted: var(--text-muted);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-accent-contrast: var(--accent-contrast);
+  --color-focus-ring: var(--focus-ring);
+  --font-sans: var(--font-sans);
+  --font-display: var(--font-display);
+}
+
+body {
+  background: var(--surface);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}

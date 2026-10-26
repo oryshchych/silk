@@ -6,7 +6,7 @@
 - Монорепо: pnpm workspaces + Turborepo. Структура за `ARCHITECTURE.md` §2.
 - `packages/db`: Drizzle schema, міграції, seed.
 - Postgres 16 у Docker, розширення `pg_trgm`, `unaccent`, `btree_gin`.
-- `apps/web`: **Next.js 16.3**, App Router, TS strict, Tailwind, shadcn/ui.
+- `apps/web`: **Next.js 16.4**, App Router, TS strict, Tailwind, shadcn/ui.
   - Node 22 LTS у Dockerfile (мінімум для 16 — 20.9; Node 18 не підтримується).
   - Turbopack дефолтний, прапорців не треба. Кастомний webpack не додавати — з ним `next build` впаде.
   - `next lint` не існує — ESLint CLI, flat config.

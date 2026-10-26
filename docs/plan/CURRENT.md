@@ -5,24 +5,24 @@
 
 ## Поточна фаза
 
-`phase-00-foundation.md`, крок 2 з 7 зроблено (клієнт БД + seed), PR
-`feat/db-client-seed`. Далі: 3 Money/DTO, 4 apps/web, 5 AI-сетап, 6 деплой
-(сервер Hetzner CX — немає в наявності), 7 бекапи.
+`phase-00-foundation.md`, кроки 2–5 з 7: PR #3 (БД + seed) → #4 (Money,
+DTO) → #5 (apps/web) → #6 (AI-сетап), кожен поверх попереднього. Далі:
+6 деплой (Hetzner CX немає в наявності), 7 бекапи.
 
 ## Зроблено
 
-- `6728094`…`3d48a11` монорепо, тулінг, env, lefthook, compose, образ PG 18, CI
-- `5340064`…`e2e49df` drizzle-kit, міграції 0000–0005, `src/migrate.ts`
-  (store_migrate), Testcontainers + `migrate:fresh` (PR #1, `fcb0655`)
-- `3d40dc6`, `8d2b189` audit high: brace-expansion, fast-uri, source-map-js, vite, zod ^4.6.7, undici
-- `0598006` відповіді бухгалтера: ПРРО (Checkbox), сертифікати — лише шви
+- `6728094`…`3d48a11` монорепо, тулінг, env, compose, образ PG 18, CI
+- PR #1 міграції + Testcontainers; PR #2 відповіді бухгалтера (ПРРО, шви)
 - `260ca10` порожні значення `.env` = не задано (`cp .env.example .env` працює)
 - `baae4fe` `createDb()` + тип `Tx`; `80e6681` seed; `f66d6e1` БД з шаблону
+- `e27e7d6` `Money`; `dde151f` лінт `money/no-arithmetic`; `2c65559` DTO
+- `ac09b60` apps/web: Next 16.3.8, next-intl, Tailwind v4; `b18c417` CI build
+- `7f3b456` ai/ → AGENTS/CLAUDE/Copilot/Cursor + `ai:check`; `2c13e65` скіли, агенти
 
 ## Наступний крок
 
-Крок 3: тип `Money` (branded, копійки) і DTO-шар у `packages/shared`.
-Потім `migrate:upgrade` / `migrate:safety`. Дотичне — `NOTES.md`.
+Хуки + `.claude/settings.json` вмикає власник (агенту заборонено).
+Далі `migrate:upgrade` / `migrate:safety`, крок 6. Див. `NOTES.md`.
 
 ## Критерії, перевірені виконанням
 
@@ -36,6 +36,8 @@
 - `pnpm db:check` чистий; CI PR #1 — усі 10 джобів зелені, `migrate-fresh` теж
 - `pnpm db:seed` на локальній БД: 40 товарів, 15 замовлень; звірки резервів
   і сум — 0 розбіжностей; повтор і production відмовляють. `test:int` 30/30
+- `next start`: `/` uk, `/en` en, `/uk`→307 `/`, без cookie; без
+  EMAIL_TO_OVERRIDE — exit 1; grep blush|cream|pink — 0; `ai:check` зелений
 - раніше: verify на чистому клоні, lint-заборони, env, образ БД, gitleaks
 
 ## Відкриті рішення, що чекають людину
@@ -50,7 +52,8 @@
   в образі; `typescript-eslint` 8.69.0 (див. git log сесії 1)
 - 0000 через `generate --custom` до схеми; міграції — `drizzle-orm` migrator
 - store_migrate отримав `CREATE ON DATABASE` (раніше лише CONNECT)
-- touch_updated_at і FK `orders.current_payment_attempt_id` теж із блоку SQL
-  schema.ts — не названі в задачі явно, але це той самий блок
-- `allowBuilds`: esbuild, ssh2, cpu-features, protobufjs явно `false`;
-  moderate у audit — esbuild 0.18 усередині drizzle-kit (dev-only), лишено
+- touch_updated_at і FK `orders.current_payment_attempt_id` — з блоку SQL schema.ts
+- Tailwind v4: токени в CSS `@theme`, не в `tailwind.config.ts`
+- `allocate` (largest remainder) у `shared/money`, не в `core/pricing`: це
+  загальна функція; `core` додасть eligibility поверх неї (ADR-15)
+- `allowBuilds`: заборонені postinstall перелічені явно; audit high — 0

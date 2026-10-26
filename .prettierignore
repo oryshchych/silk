@@ -18,3 +18,12 @@ docs/
 # drizzle-kit SQL і його журнал: застосовані файли не змінюються взагалі.
 packages/db/src/schema.ts
 packages/db/migrations/
+
+# Генерує Next
+next-env.d.ts
+
+# Джерело AI-правил і згенеровані дзеркала — проза, не форматуємо
+# (зміна переносів зламала б перевірку ai:check).
+ai/
+.cursor/
+.github/copilot-instructions.md

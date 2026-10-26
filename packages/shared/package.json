@@ -5,7 +5,11 @@
   "type": "module",
   "exports": {
     "./env": "./src/env.server.ts",
-    "./env-schema": "./src/env.schema.ts"
+    "./env-schema": "./src/env.schema.ts",
+    "./money": "./src/money.ts",
+    "./dto/serialize": "./src/dto/serialize.ts",
+    "./dto/catalog": "./src/dto/catalog.ts",
+    "./dto/order": "./src/dto/order.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"

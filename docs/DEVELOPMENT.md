@@ -19,7 +19,7 @@ TS 5.x, PG 16). Виправлено.
 | **Node.js** | **24 LTS** | Active LTS. 22 перейшов у Maintenance, 26 — Current (травень 2026) і для продакшену ще не бажаний. Пін через `.nvmrc` + `engines` + `engine-strict=true` |
 | **TypeScript** | **6.0** | Не 7. Обґрунтування нижче |
 | **PostgreSQL** | **18** | 18.6 стабільна, 19 у beta. Було 16 — два мажори тому |
-| Next.js | 16.3 | |
+| Next.js | 16.4 | |
 | React | 19.2 | |
 | pnpm | 10+ | postinstall-скрипти блоковані за замовчуванням |
 
@@ -259,21 +259,19 @@ export default tseslint.config(
 Лінтер не зловить `price * quantity` з переплутаними одиницями. Це ловить
 система типів:
 
-```ts
-// packages/shared/money.ts
-declare const brand: unique symbol;
-export type Money = number & { readonly [brand]: 'Money' };  // копійки
+Реалізація — `packages/shared/src/money.ts` (`@store/shared/money`):
 
-export const money = (kopiyky: number): Money => {
-  if (!Number.isInteger(kopiyky)) throw new Error('Money must be integer kopiyky');
-  return kopiyky as Money;
-};
-export const add = (a: Money, b: Money): Money => (a + b) as Money;
-export const multiply = (a: Money, q: number): Money => (a * q) as Money;
-```
+- `money(n)` — єдиний конструктор, `Number.isSafeInteger`, інакше `RangeError`;
+- `add`, `subtract`, `sum`, `multiply(m, ціла кількість)`;
+- `percentOf(m, percent, 'floor' | 'half-up')` — округлення завжди явне;
+- `allocate(total, weights)` — largest remainder (ADR-15), основа для
+  `core/pricing`;
+- `parseHryvnias('1 299,50')` без `parseFloat`, `formatMoney(m, 'uk' | 'en')`.
 
-Тепер `Money` не змішується з `number`, і випадкове ділення без округлення
-не компілюється. Це те, що робить ADR-1 інваріантом, а не побажанням.
+Brand не забороняє операторів (`m / 3` компілюється), тому поверх нього
+лінт-правило `money/no-arithmetic` (`eslint-rules/money.js`): `+ - * / %`
+і унарний мінус над `Money` поза `money.ts` — помилка. Разом це робить
+ADR-1 інваріантом, а не побажанням.
 
 ---
 

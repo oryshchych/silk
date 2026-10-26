@@ -137,14 +137,32 @@ jobs:
       - run: pnpm db:check
       - run: pnpm migrate:fresh
 
+  # next build (Turbopack, без кастомного webpack). Ловить те, чого
+  # typecheck не ловить: серверні/клієнтські межі, пререндер, proxy.
+  build:
+    runs-on: ubuntu-latest
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: pnpm --filter web build
+
+  # Правила для AI-інструментів генеруються з ai/ (docs/AI_SETUP.md §2).
+  # Розійшлися — три різні версії правил, і Cursor радить заборонене.
+  ai-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: pnpm ai:check
+
   # ── Required checks, які з'являються далі ────────────────────────────
   # Додаються разом із кодом, який вони перевіряють, а не «поки що
   # зеленими» заглушками:
-  #   build            — apps/web (next build, Turbopack)
   #   test:integration — Testcontainers із нашим образом Postgres
   #   migrate:upgrade  — копія попередньої схеми + нові міграції
   #   migrate:safety   — squawk на дангерні DDL
   #   test:e2e         — Playwright, happy path checkout
   #   size             — size-limit на клієнтський бандл
   #   lighthouse       — PLP і PDP: Performance >= 85, SEO = 100
-  #   ai-sync          — синхронність дзеркал AI-конфігів
