@@ -52,10 +52,8 @@ DTO) → #5 (apps/web) → #6 (AI-сетап), кожен поверх попе�
   в образі; `typescript-eslint` 8.69.0 (див. git log сесії 1)
 - 0000 через `generate --custom` до схеми; міграції — `drizzle-orm` migrator
 - store_migrate отримав `CREATE ON DATABASE` (раніше лише CONNECT)
-- touch_updated_at і FK `orders.current_payment_attempt_id` теж із блоку SQL
-  schema.ts — не названі в задачі явно, але це той самий блок
+- touch_updated_at і FK `orders.current_payment_attempt_id` — з блоку SQL schema.ts
 - Tailwind v4: токени в CSS `@theme`, не в `tailwind.config.ts`
 - `allocate` (largest remainder) у `shared/money`, не в `core/pricing`: це
   загальна функція; `core` додасть eligibility поверх неї (ADR-15)
-- `allowBuilds`: esbuild, ssh2, cpu-features, protobufjs явно `false`;
-  moderate у audit — esbuild 0.18 усередині drizzle-kit (dev-only), лишено
+- `allowBuilds`: заборонені postinstall перелічені явно; audit high — 0
