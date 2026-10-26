@@ -25,7 +25,10 @@ services:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
-      # standalone-білд Next.js: output: 'standalone' у next.config.ts
+      # standalone-білд Next.js: output: 'standalone' у next.config.ts.
+      # NEXT_PUBLIC_SITE_URL вшивається під час збірки (ADR-10).
+      args:
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL}
     restart: unless-stopped
     depends_on:
       postgres:
@@ -40,7 +43,14 @@ services:
     # інакше один скомпрометований процес знищує і дані, і резервні копії.
     env_file: [.env.web]
     healthcheck:
-      test: ['CMD', 'wget', '-qO-', 'http://localhost:3000/api/health']
+      # node, не wget: у node:24-slim немає wget/curl (apps/web/Dockerfile).
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
       interval: 30s
       timeout: 5s
       retries: 3
