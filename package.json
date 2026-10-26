@@ -14,6 +14,7 @@
     "db:generate": "pnpm --filter @store/db db:generate",
     "db:check": "pnpm --filter @store/db db:check",
     "db:migrate": "pnpm --filter @store/db db:migrate",
+    "db:seed": "pnpm --filter @store/db db:seed",
     "build": "turbo build",
     "typecheck": "tsc -p tsconfig.json --noEmit && turbo typecheck",
     "lint": "eslint . --max-warnings 0",

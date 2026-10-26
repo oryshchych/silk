@@ -10,7 +10,7 @@
     },
     "packages/db": {
       "entry": ["test/**/*.ts"],
-      "project": ["src/**/*.ts", "test/**/*.ts"]
+      "project": ["src/**/*.ts", "seed/**/*.ts", "test/**/*.ts"]
     }
   }
 }
