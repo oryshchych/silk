@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { parseEnv as parseDotenv } from 'node:util';
+
 import { describe, expect, it } from 'vitest';
 
 import { parseEnv } from './env.schema';
@@ -53,6 +56,25 @@ describe('parseEnv', () => {
     expect(() =>
       parseEnv({ ...base, APP_ENV: 'staging', EMAIL_TO_OVERRIDE: 'dev@example.com' }),
     ).toThrow(/STAGING_BASIC_AUTH_USER/);
+  });
+
+  it('`cp .env.example .env` дає робоче local-середовище', () => {
+    // Порожні рядки (`AUTH_SECRET=`) — це «не задано», а не невалідне значення.
+    const example = parseDotenv(
+      readFileSync(new URL('../../../.env.example', import.meta.url), 'utf8'),
+    );
+    expect(parseEnv(example).APP_ENV).toBe('local');
+  });
+
+  it('порожній секрет у production — відсутній, а не заданий', () => {
+    expect(() =>
+      parseEnv({
+        ...withoutOverride,
+        APP_ENV: 'production',
+        ...productionSecrets,
+        MONO_PLATA_TOKEN: '',
+      }),
+    ).toThrow(/MONO_PLATA_TOKEN/);
   });
 
   it('відкидає невідомий APP_ENV', () => {

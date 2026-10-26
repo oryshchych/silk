@@ -5,26 +5,24 @@
 
 ## Поточна фаза
 
-`phase-00-foundation.md` — інфраструктура й міграції зроблені; клієнт БД,
-seed, застосунки, AI-сетап і деплой не розпочаті. PR #1 злито (`fcb0655`).
+`phase-00-foundation.md`, крок 2 з 7 зроблено (клієнт БД + seed), PR
+`feat/db-client-seed`. Далі: 3 Money/DTO, 4 apps/web, 5 AI-сетап, 6 деплой
+(сервер Hetzner CX — немає в наявності), 7 бекапи.
 
 ## Зроблено
 
 - `6728094`…`3d48a11` монорепо, тулінг, env, lefthook, compose, образ PG 18, CI
-- `5340064` drizzle-kit 0.31.11, `src/migrate.ts` (роль store_migrate,
-  `DATABASE_MIGRATE_URL`), lint/format/knip охоплюють `packages/db`
-- `37c32e9` міграції 0000–0005: extensions (вручну), schema (згенерована),
-  numbering, search, integrity (складені FK), touch_updated_at;
-  `GRANT CREATE ON DATABASE` для store_migrate в init-скрипті
-- `e2e49df` Testcontainers globalSetup + `migrate:fresh` (17 тестів), CI-джоб
+- `5340064`…`e2e49df` drizzle-kit, міграції 0000–0005, `src/migrate.ts`
+  (store_migrate), Testcontainers + `migrate:fresh` (PR #1, `fcb0655`)
 - `3d40dc6`, `8d2b189` audit high: brace-expansion, fast-uri, source-map-js, vite, zod ^4.6.7, undici
 - `0598006` відповіді бухгалтера: ПРРО (Checkbox), сертифікати — лише шви
+- `260ca10` порожні значення `.env` = не задано (`cp .env.example .env` працює)
+- `baae4fe` `createDb()` + тип `Tx`; `80e6681` seed; `f66d6e1` БД з шаблону
 
 ## Наступний крок
 
-Клієнт БД (`@store/db/client`, tx першим параметром), seed-генератор,
-`pnpm db:seed`; далі `migrate:upgrade` / `migrate:safety`, ізоляція тестів
-через `TEMPLATE`. Дотичне — `NOTES.md`.
+Крок 3: тип `Money` (branded, копійки) і DTO-шар у `packages/shared`.
+Потім `migrate:upgrade` / `migrate:safety`. Дотичне — `NOTES.md`.
 
 ## Критерії, перевірені виконанням
 
@@ -36,6 +34,8 @@ seed, застосунки, AI-сетап і деплой не розпочат�
   без `GRANT CREATE` → `permission denied to create extension`
 - `0001_schema.sql` побайтово = `docs/reference-migration-dryrun.sql`
 - `pnpm db:check` чистий; CI PR #1 — усі 10 джобів зелені, `migrate-fresh` теж
+- `pnpm db:seed` на локальній БД: 40 товарів, 15 замовлень; звірки резервів
+  і сум — 0 розбіжностей; повтор і production відмовляють. `test:int` 30/30
 - раніше: verify на чистому клоні, lint-заборони, env, образ БД, gitleaks
 
 ## Відкриті рішення, що чекають людину
@@ -48,10 +48,7 @@ seed, застосунки, AI-сетап і деплой не розпочат�
 
 - TS 6.0.3; Postgres на Debian; том на `/var/lib/postgresql`; init-скрипти
   в образі; `typescript-eslint` 8.69.0 (див. git log сесії 1)
-- 0000 створено `drizzle-kit generate --custom` ДО генерації схеми, а не
-  перейменуванням: журнал і снапшоти узгоджені без ручних правок
-- міграції застосовує `drizzle-orm` migrator (`src/migrate.ts`), не
-  `drizzle-kit migrate`: той самий код у CLI і Testcontainers
+- 0000 через `generate --custom` до схеми; міграції — `drizzle-orm` migrator
 - store_migrate отримав `CREATE ON DATABASE` (раніше лише CONNECT)
 - touch_updated_at і FK `orders.current_payment_attempt_id` теж із блоку SQL
   schema.ts — не названі в задачі явно, але це той самий блок

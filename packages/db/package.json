@@ -5,15 +5,19 @@
   "type": "module",
   "exports": {
     "./schema": "./src/schema.ts",
+    "./client": "./src/client.ts",
+    "./types": "./src/types.ts",
     "./migrate": "./src/migrate.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:check": "drizzle-kit check",
-    "db:migrate": "node src/migrate.ts"
+    "db:migrate": "node --env-file-if-exists=../../.env src/migrate.ts",
+    "db:seed": "node --env-file-if-exists=../../.env --import tsx seed/index.ts"
   },
   "dependencies": {
+    "@store/shared": "workspace:*",
     "drizzle-orm": "0.45.2",
     "pg": "^8.23.1"
   },
@@ -23,6 +27,7 @@
     "@types/pg": "^8.23.1",
     "drizzle-kit": "0.31.11",
     "testcontainers": "^12.2.0",
+    "tsx": "4.23.13",
     "typescript": "^6.0.3"
   }
 }

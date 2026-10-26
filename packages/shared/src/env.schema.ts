@@ -123,8 +123,19 @@ export type Env = z.infer<typeof envSchema>;
 export const formatEnvIssues = (error: z.ZodError): string =>
   error.issues.map((issue) => `  ${issue.path.join('.') || '(root)'}: ${issue.message}`).join('\n');
 
+/**
+ * `KEY=` у .env означає «не задано». Без цього порожній рядок валився б на
+ * `min(1)`, і `cp .env.example .env` не давав би робочого середовища. Для
+ * production це безпечно: порожній секрет стає відсутнім і ловиться
+ * перевіркою обов'язкових секретів.
+ */
+const dropEmptyStrings = (raw: unknown): unknown =>
+  typeof raw === 'object' && raw !== null
+    ? Object.fromEntries(Object.entries(raw).filter(([, value]) => value !== ''))
+    : raw;
+
 export const parseEnv = (raw: unknown): Env => {
-  const result = envSchema.safeParse(raw);
+  const result = envSchema.safeParse(dropEmptyStrings(raw));
   if (!result.success) {
     throw new Error(`Некоректне середовище:\n${formatEnvIssues(result.error)}`);
   }

@@ -7,10 +7,15 @@
  *
  * Міграції застосовуються тут, роллю store_migrate, на ПОРОЖНЮ БД. Якщо
  * будь-яка з них падає — падає весь прогін. Це і є перевірка migrate:fresh.
+ *
+ * Далі змігрована БД копіюється в `store_template`; тести, яким потрібна
+ * власна БД, створюють її з шаблону (`test/db.ts`) — на порядок швидше за
+ * прогін міграцій і без транзакційних трюків (DEVELOPMENT.md §5).
  */
 import { fileURLToPath } from 'node:url';
 
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
+import pg from 'pg';
 import { GenericContainer } from 'testcontainers';
 import type { TestProject } from 'vitest/node';
 
@@ -24,11 +29,14 @@ declare module 'vitest' {
     pgMigrateUrl: string;
     /** store_app — DML, як web і worker. */
     pgAppUrl: string;
+    /** Шаблон для `CREATE DATABASE ... TEMPLATE`. */
+    pgTemplateDb: string;
   }
 }
 
 const IMAGE = 'store-postgres:test';
 const DB = 'store';
+const TEMPLATE_DB = 'store_template';
 const PASSWORD = 'test';
 const context = fileURLToPath(new URL('../../../infra/postgres', import.meta.url));
 
@@ -59,9 +67,19 @@ export default async function setup(project: TestProject): Promise<() => Promise
   const migrateUrl = urlFor(container, 'store_migrate');
   await runMigrations(migrateUrl);
 
+  // Шаблон знімається, поки до `store` ніхто не підключений.
+  const root = new pg.Client({ connectionString: urlFor(container, 'store_root') });
+  await root.connect();
+  try {
+    await root.query(`CREATE DATABASE ${TEMPLATE_DB} TEMPLATE ${DB}`);
+  } finally {
+    await root.end();
+  }
+
   project.provide('pgRootUrl', urlFor(container, 'store_root'));
   project.provide('pgMigrateUrl', migrateUrl);
   project.provide('pgAppUrl', urlFor(container, 'store_app'));
+  project.provide('pgTemplateDb', TEMPLATE_DB);
 
   return async () => {
     await container.stop();
