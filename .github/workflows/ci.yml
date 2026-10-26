@@ -157,6 +157,35 @@ jobs:
       - uses: ./.github/actions/setup
       - run: pnpm ai:check
 
+  # Docker-образ вітрини збирається з чистого контексту (.dockerignore):
+  # ловить файли, що не потрапили в standalone, і зламаний Dockerfile до
+  # деплою, а не на сервері.
+  web-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build web image
+        run: docker build -f apps/web/Dockerfile -t store-web:ci --build-arg NEXT_PUBLIC_SITE_URL=https://staging.example.com .
+      - name: Smoke test
+        run: |
+          docker run -d --name web-ci -p 3000:3000 \
+            -e APP_ENV=local -e EMAIL_TO_OVERRIDE=ci@example.com \
+            -e DATABASE_URL=postgres://x:y@localhost:5432/store store-web:ci
+          # Чекаємо HEALTHCHECK самого образу: на холодному старті Docker уже
+          # приймає з'єднання, а Next ще ні — curl отримує reset (exit 56).
+          for i in $(seq 1 60); do
+            status=$(docker inspect -f '{{.State.Health.Status}}' web-ci)
+            [ "$status" = healthy ] && break
+            [ "$status" = unhealthy ] && { docker logs web-ci; exit 1; }
+            sleep 2
+          done
+          [ "$status" = healthy ] || { docker logs web-ci; exit 1; }
+          curl -sf http://localhost:3000/api/health
+          curl -sf http://localhost:3000/ | grep -q '<html lang="uk"'
+          curl -sf http://localhost:3000/en | grep -q '<html lang="en"'
+      - if: always()
+        run: docker rm -f web-ci
+
   # ── Required checks, які з'являються далі ────────────────────────────
   # Додаються разом із кодом, який вони перевіряють, а не «поки що
   # зеленими» заглушками:

@@ -1,0 +1,22 @@
+# Контекст збірки — корінь монорепо. Секрети й локальні артефакти в образ
+# не потрапляють ніколи: .env* виключені явно (крім прикладу).
+.env
+.env.*
+!.env.example
+
+.git
+**/node_modules
+**/.next
+**/.turbo
+**/coverage
+**/dist
+.next-docs
+.claude
+.cursor
+.vscode
+.DS_Store
+docs
+infra
+packages/db/test
+**/*.unit.test.ts
+**/*.int.test.ts

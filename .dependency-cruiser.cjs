@@ -42,6 +42,8 @@ module.exports = {
           '(^|/)\\.[^/]+\\.(js|cjs|mjs|ts)$',
           // Точки входу інструментів: їх імпортує CLI, а не наш код.
           '(^|/)(drizzle|next|postcss)\\.config\\.(ts|mjs)$',
+          // Файлові конвенції App Router: їх знаходить роутер за іменем.
+          '^apps/web/src/app/.*/(page|layout|route|loading|error|not-found)\\.tsx?$',
         ],
       },
       to: {},

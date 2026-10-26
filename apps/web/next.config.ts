@@ -13,6 +13,12 @@ if (existsSync(rootEnv)) process.loadEnvFile(rootEnv);
 const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts');
 
 const nextConfig: NextConfig = {
+  // Docker-образ: .next/standalone з мінімальним server.js і лише
+  // потрібними файлами node_modules (apps/web/Dockerfile).
+  output: 'standalone',
+  // Трасування від кореня монорепо, інакше пакети workspace
+  // (@store/shared) не потраплять у standalone.
+  outputFileTracingRoot: resolve(import.meta.dirname, '../..'),
   poweredByHeader: false,
   // Пакети монорепо — TypeScript-джерела, їх компілює Next.
   transpilePackages: ['@store/shared'],
