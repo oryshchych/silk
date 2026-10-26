@@ -5,9 +5,9 @@
 
 ## Поточна фаза
 
-`phase-00-foundation.md`, кроки 2–5 з 7: PR #3 (БД + seed) → #4 (Money,
-DTO) → #5 (apps/web) → #6 (AI-сетап), кожен поверх попереднього. Далі:
-6 деплой (Hetzner CX немає в наявності), 7 бекапи.
+`phase-00-foundation.md`, кроки 2–5 з 7 у `main` (`5bb9d28`, PR #3 і #6;
+#4 і #5 потрапили через #6). Далі: 6 деплой — сервер Hetzner CAX11
+(ARM, 4 ГБ, Ubuntu 24.04) створено, чекаємо IP, домен, SSH; 7 бекапи.
 
 ## Зроблено
 
@@ -16,7 +16,7 @@ DTO) → #5 (apps/web) → #6 (AI-сетап), кожен поверх попе�
 - `260ca10` порожні значення `.env` = не задано (`cp .env.example .env` працює)
 - `baae4fe` `createDb()` + тип `Tx`; `80e6681` seed; `f66d6e1` БД з шаблону
 - `e27e7d6` `Money`; `dde151f` лінт `money/no-arithmetic`; `2c65559` DTO
-- `ac09b60` apps/web: Next 16.3.8, next-intl, Tailwind v4; `b18c417` CI build
+- `ac09b60` apps/web: next-intl, Tailwind v4; `52a5e0b` Next **16.4.3** (critical CVE)
 - `7f3b456` ai/ → AGENTS/CLAUDE/Copilot/Cursor + `ai:check`; `2c13e65` скіли, агенти
 
 ## Наступний крок
@@ -53,6 +53,7 @@ DTO) → #5 (apps/web) → #6 (AI-сетап), кожен поверх попе�
 - 0000 через `generate --custom` до схеми; міграції — `drizzle-orm` migrator
 - store_migrate отримав `CREATE ON DATABASE` (раніше лише CONNECT)
 - touch_updated_at і FK `orders.current_payment_attempt_id` — з блоку SQL schema.ts
+- Next 16.4.3, не 16.3: у ≤ 16.4.0 критичні RCE, патча для 16.3 немає
 - Tailwind v4: токени в CSS `@theme`, не в `tailwind.config.ts`
 - `allocate` (largest remainder) у `shared/money`, не в `core/pricing`: це
   загальна функція; `core` додасть eligibility поверх неї (ADR-15)
