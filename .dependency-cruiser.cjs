@@ -41,7 +41,7 @@ module.exports = {
           '\\.d\\.ts$',
           '(^|/)\\.[^/]+\\.(js|cjs|mjs|ts)$',
           // Точки входу інструментів: їх імпортує CLI, а не наш код.
-          '(^|/)drizzle\\.config\\.ts$',
+          '(^|/)(drizzle|next|postcss)\\.config\\.(ts|mjs)$',
         ],
       },
       to: {},

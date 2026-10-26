@@ -24,6 +24,10 @@ allowBuilds:
   ssh2: false
   cpu-features: false
   protobufjs: false
+  #   @swc/core, @parcel/watcher (next-intl) — бінарники приходять
+  #     optional-пакетами платформи; postinstall лише збирає fallback з вихідних кодів.
+  '@swc/core': false
+  '@parcel/watcher': false
 
 # Пакет, опублікований годину тому, у lockfile не потрапляє. Значення
 # задане явно (це дефолт pnpm 12), щоб політика була видима — а не

@@ -30,3 +30,6 @@ test-results/
 .vscode/*
 !.vscode/settings.json
 !.vscode/extensions.json
+
+# Генерує Next (next dev / build / typegen)
+next-env.d.ts
