@@ -58,7 +58,7 @@ const COLORS = [
   ['black', 'Чорний', 'Black', '#1A1A1A'],
   ['white', 'Білий', 'White', '#F7F5F0'],
   ['nude', 'Тілесний', 'Nude', '#D9B8A0'],
-  ['powder', 'Пудровий', 'Powder pink', '#E8C4C4'],
+  ['powder', 'Пудровий', 'Powder rose', '#E8C4C4'],
   ['burgundy', 'Бордовий', 'Burgundy', '#6D1A2B'],
   ['navy', 'Темно-синій', 'Navy', '#1F2A44'],
   ['emerald', 'Смарагдовий', 'Emerald', '#1F5E4A'],
