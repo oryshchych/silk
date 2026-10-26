@@ -19,7 +19,7 @@ TS 5.x, PG 16). Виправлено.
 | **Node.js** | **24 LTS** | Active LTS. 22 перейшов у Maintenance, 26 — Current (травень 2026) і для продакшену ще не бажаний. Пін через `.nvmrc` + `engines` + `engine-strict=true` |
 | **TypeScript** | **6.0** | Не 7. Обґрунтування нижче |
 | **PostgreSQL** | **18** | 18.6 стабільна, 19 у beta. Було 16 — два мажори тому |
-| Next.js | 16.3 | |
+| Next.js | 16.4 | |
 | React | 19.2 | |
 | pnpm | 10+ | postinstall-скрипти блоковані за замовчуванням |
 
