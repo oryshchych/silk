@@ -5,6 +5,8 @@
 // Тому області для `no-restricted-imports` зроблені НЕПЕРЕТИННИМИ через
 // `ignores`, а спільні заборони дублюються явно.
 import tseslint from 'typescript-eslint';
+import nextPlugin from '@next/eslint-plugin-next';
+import i18next from 'eslint-plugin-i18next';
 import prettierConfig from 'eslint-config-prettier';
 
 import money from './eslint-rules/money.js';
@@ -18,6 +20,7 @@ export default tseslint.config(
       '**/coverage/**',
       '**/.turbo/**',
       '.next-docs/**',
+      '**/next-env.d.ts',
       // schema.ts — канонічний файл зі своїми `(): any` у self-reference FK
       // (обмеження Drizzle). Не чіпаємо його в цій фазі; решта packages/db
       // (раннер міграцій, тести) лінтиться як звичайний код.
@@ -169,6 +172,25 @@ export default tseslint.config(
         },
       ],
     },
+  },
+
+  // Next.js: правила core-web-vitals (next/image, next/link, шрифти).
+  {
+    files: ['apps/web/**/*.{ts,tsx}'],
+    plugins: { '@next/next': nextPlugin },
+    rules: {
+      ...nextPlugin.configs['core-web-vitals'].rules,
+      // Правило для pages/ — у нас лише App Router.
+      '@next/next/no-html-link-for-pages': 'off',
+    },
+  },
+
+  // Жодних хардкоджених рядків у JSX: усе через next-intl, ключі в uk і en
+  // (AGENTS.md §3). Атрибути на кшталт className / href — не текст.
+  {
+    files: ['apps/web/**/*.tsx'],
+    plugins: { i18next },
+    rules: { 'i18next/no-literal-string': ['error', { mode: 'jsx-only' }] },
   },
 
   // Заборона hex у компонентах (ADR-21).
