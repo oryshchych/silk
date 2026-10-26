@@ -59,19 +59,12 @@ services:
       # Dokploy/Traefik підхопить домен звідси
       - 'traefik.enable=true'
 
-  # Той самий репозиторій, інший entrypoint. Моноліт із двох процесів.
-  worker:
-    build:
-      context: .
-      dockerfile: apps/worker/Dockerfile
-    restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      NODE_ENV: production
-      DATABASE_URL: postgres://${POSTGRES_APP_USER}:${POSTGRES_APP_PASSWORD}@postgres:5432/${POSTGRES_DB}
-    env_file: [.env.worker]
+  # worker (pg-boss: cron і черги) — той самий репозиторій, інший entrypoint.
+  # Тимчасово НЕ описаний: apps/worker ще немає, і compose з неіснуючим
+  # Dockerfile не підніметься. Повертається разом із кодом воркера
+  # (фаза 0.5): build apps/worker/Dockerfile, depends_on postgres,
+  # DATABASE_URL роллю store_app, env_file [.env.worker] — окремий від web
+  # набір секретів. Повний попередній блок — в історії git цього файла.
 
   postgres:
     # НЕ офіційний образ: потрібен український hunspell-словник у

@@ -28,11 +28,7 @@ services:
         limits:
           memory: 768M
 
-  worker:
-    deploy:
-      resources:
-        limits:
-          memory: 384M
+  # worker: memory 384M — повертається разом з apps/worker (фаза 0.5).
 
   postgres:
     # Повний список, не додаток: перевизначення замінює command цілком.
