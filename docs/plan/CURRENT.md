@@ -8,7 +8,8 @@
 `phase-00-foundation.md`, крок 6 (деплой). Сервер Hetzner CAX11 (ARM, 4 ГБ,
 Ubuntu 24.04, 49.12.64.197): swap 4 ГБ, SSH лише ключем, Hetzner Firewall
 22/80/443, Dokploy v0.30.10 на `https://dokploy.damazla.com`. Docker-образ
-вітрини — PR `feat/web-dockerfile`. Далі: GitHub → Dokploy, staging.
+вітрини в `main`; міграції як compose-сервіс, basic auth у застосунку — PR
+`feat/staging-deploy`. Далі: проєкт staging у Dokploy, секрети, seed.
 
 ## Зроблено
 
