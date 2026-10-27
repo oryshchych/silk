@@ -25,6 +25,14 @@ services:
         limits:
           memory: 768M
 
+  dump:
+    environment:
+      BACKUP_PREFIX: staging
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+
   # worker: memory 384M — повертається разом з apps/worker (фаза 0.5).
 
   postgres:
