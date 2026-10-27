@@ -70,9 +70,13 @@ Google сам вирішує, який вважати основним.
 
 Захист **тришаровий**, одного шару недостатньо:
 
-1. Basic auth на рівні Caddy / Dokploy
-2. `X-Robots-Tag: noindex, nofollow` у відповіді
-3. `robots.txt` з `Disallow: /`
+1. Basic auth — у застосунку (`apps/web/src/proxy.ts` +
+   `src/lib/staging-gate.ts`), не на рівні Caddy / Dokploy: так виключення
+   точних POST-маршрутів вебхуків (`STAGING_BASIC_AUTH_EXCLUDE`) і
+   `/api/health` покриті тестами й однакові на будь-якому хостингу
+2. `X-Robots-Tag: noindex, nofollow` у відповіді — на всьому поза production
+3. `robots.txt` з `Disallow: /` — `APP_ENV` читається під час запиту, тож той
+   самий образ у production віддає `Allow`
 
 `robots.txt` окремо не рятує — він забороняє обхід, а не індексацію. URL, на
 який є зовнішнє посилання, може потрапити в індекс без обходу.
