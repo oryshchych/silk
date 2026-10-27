@@ -69,3 +69,12 @@
   оверлеї разом із кодом воркера (фаза 0.5); попередній блок — в історії git.
 - Образ — 386 МБ (arm64), більшість — `node:24-slim`. Оптимізувати не
   поспішаємо.
+
+## Крок 6 — деплой staging (2026-10-27)
+
+- **Production ще посилається на `env_file: [.env.backup]`** (сервіс
+  `backup` у `docker-compose.production.yml`). Dokploy створює лише `.env` —
+  перед запуском production перевести backup на явний перелік змінних, як web.
+- **Dokploy запускає compose власною командою** (поле Command у Advanced):
+  `-f docker-compose.yml -f docker-compose.staging.yml`, бо за замовчуванням
+  бере один файл.

@@ -12,7 +12,7 @@
 #
 # ADR-10: на обидва середовища їде ОДИН image digest із різними .env.
 # Тому тут немає жодного значення, специфічного для середовища —
-# воно приходить із env_file.
+# воно приходить зі змінних оточення (Dokploy: .env проєкту).
 #
 # Caddy не описаний: його бере на себе Dokploy (він же керує сертифікатами).
 # Параметри Postgres (`command`) задаються в оверлеї повністю, а не
@@ -31,17 +31,38 @@ services:
         NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL}
     restart: unless-stopped
     depends_on:
-      postgres:
-        condition: service_healthy
+      # Сайт стартує лише після УСПІШНИХ міграцій: нова версія коду не
+      # бачить старої схеми.
+      migrate:
+        condition: service_completed_successfully
+    # ЯВНИЙ перелік змінних (allowlist), а не env_file: Dokploy тримає все в
+    # одному .env, а web НЕ мусить отримати пароль суперкористувача,
+    # міграційної ролі чи креденшели бекапів — інакше один скомпрометований
+    # процес знищує і схему, і резервні копії. Порожнє значення = не задано
+    # (packages/shared/src/env.schema.ts).
     environment:
       NODE_ENV: production
+      APP_ENV: ${APP_ENV:?APP_ENV обов'язковий}
       # store_app: DML на потрібних таблицях, БЕЗ DDL і без DROP.
-      # НЕ POSTGRES_USER, якого офіційний образ робить суперкористувачем —
-      # компрометація web давала б можливість знищити схему.
+      # НЕ POSTGRES_USER, якого офіційний образ робить суперкористувачем.
       DATABASE_URL: postgres://${POSTGRES_APP_USER}:${POSTGRES_APP_PASSWORD}@postgres:5432/${POSTGRES_DB}
-    # ОКРЕМИЙ env-набір. web НЕ отримує креденшелів бекапів:
-    # інакше один скомпрометований процес знищує і дані, і резервні копії.
-    env_file: [.env.web]
+      EMAIL_TO_OVERRIDE: ${EMAIL_TO_OVERRIDE:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
+      AUTH_SECRET: ${AUTH_SECRET:-}
+      MONO_PLATA_TOKEN: ${MONO_PLATA_TOKEN:-}
+      WAYFORPAY_MERCHANT_ACCOUNT: ${WAYFORPAY_MERCHANT_ACCOUNT:-}
+      WAYFORPAY_SECRET_KEY: ${WAYFORPAY_SECRET_KEY:-}
+      NOVA_POSHTA_API_KEY: ${NOVA_POSHTA_API_KEY:-}
+      UKRPOSHTA_API_KEY: ${UKRPOSHTA_API_KEY:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      R2_ACCOUNT_ID: ${R2_ACCOUNT_ID:-}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      R2_BUCKET_MEDIA: ${R2_BUCKET_MEDIA:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      STAGING_BASIC_AUTH_USER: ${STAGING_BASIC_AUTH_USER:-}
+      STAGING_BASIC_AUTH_PASSWORD: ${STAGING_BASIC_AUTH_PASSWORD:-}
+      STAGING_BASIC_AUTH_EXCLUDE: ${STAGING_BASIC_AUTH_EXCLUDE:-}
     healthcheck:
       # node, не wget: у node:24-slim немає wget/curl (apps/web/Dockerfile).
       test:
@@ -58,6 +79,23 @@ services:
     labels:
       # Dokploy/Traefik підхопить домен звідси
       - 'traefik.enable=true'
+
+  # Одноразовий: застосовує міграції роллю store_migrate і завершується.
+  # Перезапускається на кожному `up` (деплої); вже застосовані міграції
+  # пропускає журнал drizzle. Seed — тим самим образом:
+  #   docker compose run --rm -w /repo/packages/db \
+  #     -e APP_ENV=staging -e EMAIL_TO_OVERRIDE=... -e DATABASE_URL=<store_app> \
+  #     migrate node --import tsx seed/index.ts
+  migrate:
+    build:
+      context: .
+      dockerfile: packages/db/Dockerfile
+    restart: 'no'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_MIGRATE_URL: postgres://${POSTGRES_MIGRATE_USER}:${POSTGRES_MIGRATE_PASSWORD}@postgres:5432/${POSTGRES_DB}
 
   # worker (pg-boss: cron і черги) — той самий репозиторій, інший entrypoint.
   # Тимчасово НЕ описаний: apps/worker ще немає, і compose з неіснуючим

@@ -7,9 +7,9 @@
 # обмеження — пам'ять.
 #
 # Захист від індексації ТРИШАРОВИЙ, одного шару недостатньо:
-#   1. basic auth на рівні Caddy / Dokploy (labels нижче)
-#   2. X-Robots-Tag: noindex, nofollow у відповіді
-#   3. robots.txt з Disallow: / (у застосунку)
+#   1. basic auth — у застосунку (apps/web/src/proxy.ts), STAGING_BASIC_AUTH_*
+#   2. X-Robots-Tag: noindex, nofollow у відповіді (там само)
+#   3. robots.txt з Disallow: / (apps/web/src/app/robots.ts)
 # robots.txt окремо не рятує: він забороняє обхід, а не індексацію.
 #
 # ПАСТКА: з basic auth виключаються ТОЧНІ POST-маршрути вебхуків
@@ -20,9 +20,6 @@ name: store-staging
 
 services:
   web:
-    labels:
-      - 'traefik.enable=true'
-      - 'traefik.http.middlewares.staging-noindex.headers.customresponseheaders.X-Robots-Tag=noindex, nofollow'
     deploy:
       resources:
         limits:
