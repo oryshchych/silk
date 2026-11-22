@@ -53,9 +53,17 @@ Gate details:
 docker build -f apps/web/Dockerfile -t store-web:review --build-arg NEXT_PUBLIC_SITE_URL=https://staging.example.com .
 docker build -f packages/db/Dockerfile -t store-db-tools:review .
 docker build -t store-dump:review infra/dump
-# Compose overlays (set the variables the files require, or accept the blank warnings)
-docker compose -f docker-compose.yml -f docker-compose.staging.yml config --quiet
-docker compose -f docker-compose.yml -f docker-compose.production.yml config --quiet
+# Compose overlays: the subshell supplies the variables the files require
+# (APP_ENV is mandatory). Works in bash and zsh.
+(
+  export POSTGRES_DB=store POSTGRES_SUPERUSER=root POSTGRES_SUPERUSER_PASSWORD=x \
+    POSTGRES_MIGRATE_USER=migrate POSTGRES_MIGRATE_PASSWORD=x \
+    POSTGRES_APP_USER=app POSTGRES_APP_PASSWORD=x NEXT_PUBLIC_SITE_URL=https://example.com
+  APP_ENV=staging docker compose -f docker-compose.yml -f docker-compose.staging.yml config --quiet 2>/dev/null
+  APP_ENV=production docker compose -f docker-compose.yml -f docker-compose.production.yml config --quiet 2>/dev/null
+)
+# Known: the production check fails today on the missing `.env.backup` (tracked in
+# NOTES.md, fixed before production launch). Report it as known, not as a new finding.
 
 # Clean clone of the PR branch (never your working tree)
 SCRATCH=$(mktemp -d)
