@@ -22,7 +22,9 @@ export function money(kopiyky: number): Money {
     throw new RangeError(`Money — лише цілі копійки, отримано ${String(kopiyky)}`);
   }
   // Єдине місце, де number стає Money: перевірка вище й є причиною існування brand.
-  return kopiyky as Money;
+  // `|| 0` turns -0 into 0: Object.is(-0, 0) is false, so equality checks and
+  // `toBe(0)` would disagree with the value JSON shows.
+  return (kopiyky || 0) as Money;
 }
 
 export const ZERO: Money = money(0);
