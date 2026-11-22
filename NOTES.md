@@ -129,3 +129,34 @@
   attempt, or whose `localReference` matches no attempt (`webhook_quarantine`).
 - **Provider routing for refunds** (by the attempt's provider, GIFT_CARDS.md section 0) is enforced
   in core, with a test, in the refund slice.
+
+## Retro review of PRs #1-#14 (2026-11-22): open nits
+
+Fixed in PRs: dump failure detection, nested `.env` in `.dockerignore`, seed target guard,
+`parseFloat`/`toFixed` lint ban, `-0`. Owner decisions are in `docs/plan/OWNER_QUEUE.md` (RR1-RR6).
+Left as notes:
+
+- **`money/no-arithmetic` has no RuleTester test and returns `{}` silently when type information
+  is missing** (`eslint-rules/money.js:33`). It should throw, and have cases for `m / 3`, `m += x`,
+  `m++`, `-m`, one-sided `Money`, and passing cases for comparisons.
+- **`packages/db/seed/orders.ts` does raw `number` arithmetic on totals** (`subtotalOf`, order
+  body, `reduce`) next to the money-typed `applyPromo`. Type them as `Money`.
+- **`allocate` / `percentOf` have only point-example tests.** Add a property test (sum exact,
+  share <= weight, zero weights get zero) and document that ties break by input index, so callers
+  pass weights sorted by `id` (ADR-15).
+- **`moneyDto` accepts negatives and values above the Postgres integer max**; add a non-negative
+  variant for price and total fields. The DTO lint selector misses aliased `looseObject` imports.
+- **`proxy.ts` `isPage` regex** skips locale routing for paths with a dot (a slug like
+  `bra-1.5` would 404). Fix before the PDP.
+- **`01-roles.sh` and `docker-compose.yml`** interpolate passwords into SQL and into the
+  `DATABASE_URL` without escaping: keep passwords to `[A-Za-z0-9]` or encode them.
+- **Base images are not pinned by digest** (`node:24-slim`, `postgres:18`, `alpine`,
+  `mailpit:latest`); the local compose publishes Postgres on all interfaces (bind `127.0.0.1`).
+- **`APP_ENV=local` is accepted by the deployed compose** and turns the staging gate off; refuse it
+  when `NODE_ENV=production` outside loopback. `AUTH_SECRET` has no minimum length.
+- **Migrations**: `: any` in `schema.ts` self-references needs a reason comment; the ownership
+  test checks only `pg_class` (add functions and text-search objects); composite FKs from 0004
+  have no index on the referencing side.
+- **A Next.js tool rewrites `apps/web/AGENTS.md`** (heading level) during `pnpm verify`; the
+  generated mirror then differs from `ai/` in the working tree.
+- Missing `not-found` page, no `Sitemap:` line, no security headers: phase 1 / 6 (see RR6).
