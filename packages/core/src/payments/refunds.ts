@@ -27,15 +27,15 @@ import {
   auditLog,
   orderStatusHistory,
   orders,
+  outbox,
   paymentAttempts,
   refundOperations,
 } from '@store/db/schema';
 import type { Tx } from '@store/db/types';
 import type { PaymentProvider, RefundResult } from '@store/payments/types';
+import { add, money, subtract, type Money } from '@store/shared/money';
 
 import { RefundBudgetError, RefundNotAllowedError, RefundRoutingError } from '../errors.ts';
-import { money } from '@store/shared/money';
-
 import { acquireLocks } from '../locks/acquire-locks.ts';
 
 /** States that hold budget: an `unknown` or in-flight refund may already have moved money. */
@@ -53,24 +53,28 @@ export interface RefundRequest {
   orderId: string;
   attemptId: string;
   /** Positive whole kopiykas. */
-  amount: number;
+  amount: Money;
   reason: string | null;
   /** Who asked (admin user id); null for the system. */
   initiatedBy: string | null;
-  /** Providers that can refund (`routesOf(providers)`): routing is checked BEFORE any amount is reserved. */
-  routes: readonly string[];
+  /**
+   * The registered providers, the same map `processRefund` uses: routing is checked BEFORE any
+   * amount is reserved, and there is no second list that could drift from the first.
+   */
+  providers: ProviderMap;
 }
 
 export interface RefundReservation {
   operationId: string;
   localReference: string;
   attemptId: string;
-  amount: number;
+  amount: Money;
 }
 
-async function remainingBudget(tx: Tx, attemptId: string, captured: number): Promise<number> {
+/** Budget left on an attempt. The held sum is read as bigint and converted through `money`. */
+async function remainingBudget(tx: Tx, attemptId: string, captured: number): Promise<Money> {
   const [held] = await tx
-    .select({ sum: sql<number>`coalesce(sum(${refundOperations.amount}), 0)::int` })
+    .select({ sum: sql<string>`coalesce(sum(${refundOperations.amount}), 0)::bigint` })
     .from(refundOperations)
     .where(
       and(
@@ -78,7 +82,7 @@ async function remainingBudget(tx: Tx, attemptId: string, captured: number): Pro
         inArray(refundOperations.state, [...HOLDS_BUDGET]),
       ),
     );
-  return captured - (held?.sum ?? 0);
+  return subtract(money(captured), money(Number(held?.sum ?? 0)));
 }
 
 type Attempt = typeof paymentAttempts.$inferSelect;
@@ -96,7 +100,9 @@ async function reserveUnderLocks(
     // Free text can carry customer data: keep it short, use a code where possible.
     throw new RefundNotAllowedError('the reason is too long');
   }
-  if (!input.routes.includes(attempt.provider)) throw new RefundRoutingError(attempt.provider);
+  if (!routesOf(input.providers).includes(attempt.provider)) {
+    throw new RefundRoutingError(attempt.provider);
+  }
   if (attempt.capturedAmount <= 0) throw new RefundNotAllowedError('nothing was captured');
   if (attempt.externalId === null) {
     throw new RefundNotAllowedError('the attempt has no provider invoice to refund');
@@ -153,6 +159,8 @@ export async function requestFullRefund(
   input: Omit<RefundRequest, 'attemptId' | 'amount'>,
 ): Promise<RefundReservation[]> {
   // Every lock up front, in ADR-22 order: the helper refuses a later request for a lower level.
+  // The candidate list is read after the ORDER lock (nothing can add a captured attempt now) and
+  // BEFORE the attempt locks, because those need the ids; the budget is recomputed under them.
   await acquireLocks(tx, { orders: [input.orderId] });
   const candidates = await tx
     .select({ id: paymentAttempts.id })
@@ -192,7 +200,7 @@ export interface Claim {
   provider: string;
   externalId: string;
   localReference: string;
-  amount: number;
+  amount: Money;
 }
 
 /** pending -> in_flight exactly once, so a double click cannot call the provider twice. */
@@ -241,7 +249,7 @@ export async function claimRefund(
     provider: attempt.provider,
     externalId: attempt.externalId,
     localReference: operation.localReference,
-    amount: operation.amount,
+    amount: money(operation.amount),
   };
 }
 
@@ -250,23 +258,26 @@ export interface SettleResult {
   state: string;
 }
 
+type Confirmation = { by: string | null };
+
 /**
- * Records the outcome. Idempotent: only an open operation moves.
+ * Where an outcome comes from decides what it may do.
  *
- * Provenance: an operation in `unknown` may already have moved money, so it can be closed as
- * `succeeded` or `failed` ONLY with an explicit `confirmation` (the provider's answer found by
- * reconciliation, or a person who checked, recorded in the audit log). Closing it as failed
- * without that would free the budget and allow the double refund `unknown` exists to prevent.
- * `unknown` never turns back into `in_flight`, and an `unknown` result cannot demote anything
- * but the in-flight call that just produced it.
+ * - `provider-call`: the result of OUR OWN call, made by `processRefund` right after it claimed the
+ *   operation (state `in_flight`). It may settle, fail or mark it unknown.
+ * - `confirmed`: a reconciliation or a person who checked with the provider, recorded in the audit
+ *   log. It is the only way to close an `in_flight` or `unknown` operation as succeeded or failed
+ *   from outside the call: a crash can leave a refund that WAS sent in either state, and closing it
+ *   as failed without proof would free the budget and allow the double refund this design prevents.
+ *
+ * A `pending` operation was never claimed, so it can be neither settled nor failed here: it goes
+ * through `claimRefund`, or is withdrawn with `cancelPendingRefund`.
  */
-export async function settleRefund(
+type Source = { kind: 'provider-call' } | { kind: 'confirmed'; confirmation: Confirmation };
+
+async function applyOutcome(
   tx: Tx,
-  input: {
-    operationId: string;
-    outcome: RefundResult;
-    confirmation?: { by: string | null };
-  },
+  input: { operationId: string; outcome: RefundResult; source: Source },
 ): Promise<SettleResult> {
   const [probe] = await tx
     .select({ orderId: refundOperations.orderId, attemptId: refundOperations.paymentAttemptId })
@@ -282,37 +293,38 @@ export async function settleRefund(
     .where(eq(refundOperations.id, input.operationId));
   if (operation === undefined) throw new RefundNotAllowedError('no such refund operation');
   if (!['pending', 'in_flight', 'unknown'].includes(operation.state)) {
-    return { changed: false, state: operation.state };
+    return { changed: false, state: operation.state }; // already settled: idempotent
   }
 
-  const { outcome } = input;
-  if (operation.state === 'unknown') {
-    if (outcome.state === 'unknown' || outcome.state === 'in_flight') {
+  const { outcome, source } = input;
+  if (operation.state === 'pending') {
+    throw new RefundNotAllowedError('a refund that was never claimed cannot be settled');
+  }
+  const closes = outcome.state === 'succeeded' || outcome.state === 'failed';
+  if (!closes) {
+    // `unknown` and `in_flight` only describe our own call: they never demote or re-open anything else.
+    const fromOurCall = source.kind === 'provider-call' && operation.state === 'in_flight';
+    if (!fromOurCall || outcome.state === 'in_flight') {
       return { changed: false, state: operation.state };
     }
-    if (input.confirmation === undefined) {
-      throw new RefundNotAllowedError('an unknown refund needs a confirmation to be settled');
-    }
-  }
-  if (operation.state === 'in_flight' && outcome.state === 'in_flight') {
-    return { changed: false, state: operation.state };
+  } else if (source.kind !== 'confirmed' && operation.state !== 'in_flight') {
+    throw new RefundNotAllowedError('an unknown refund needs a confirmation to be settled');
   }
 
   const error = 'error' in outcome ? outcome.error.slice(0, 200) : null;
   const providerReference = 'providerReference' in outcome ? outcome.providerReference : null;
-  const settled = outcome.state === 'succeeded' || outcome.state === 'failed';
   await tx
     .update(refundOperations)
     .set({
       state: outcome.state,
       lastError: error,
       providerReference,
-      settledAt: settled ? sql`now()` : null,
+      settledAt: closes ? sql`now()` : null,
     })
     .where(eq(refundOperations.id, operation.id));
-  if (input.confirmation !== undefined) {
+  if (source.kind === 'confirmed') {
     await tx.insert(auditLog).values({
-      userId: input.confirmation.by,
+      userId: source.confirmation.by,
       action: 'refund',
       entity: 'order',
       entityId: operation.orderId,
@@ -321,9 +333,29 @@ export async function settleRefund(
   }
 
   if (outcome.state === 'succeeded') {
-    await applySucceeded(tx, operation.orderId, operation.amount, operation.id);
+    await applySucceeded(tx, operation.orderId, money(operation.amount), operation.id);
   }
   return { changed: true, state: outcome.state };
+}
+
+/**
+ * Closes an `in_flight` or `unknown` refund with the provider's confirmation (reconciliation) or a
+ * person's, audited. Idempotent: a settled operation does not move again. The result of our own
+ * provider call does NOT come through here (see `processRefund`).
+ */
+export async function settleRefund(
+  tx: Tx,
+  input: {
+    operationId: string;
+    outcome: RefundResult;
+    confirmation: Confirmation;
+  },
+): Promise<SettleResult> {
+  return await applyOutcome(tx, {
+    operationId: input.operationId,
+    outcome: input.outcome,
+    source: { kind: 'confirmed', confirmation: input.confirmation },
+  });
 }
 
 /**
@@ -349,12 +381,12 @@ export async function cancelPendingRefund(tx: Tx, operationId: string): Promise<
 async function applySucceeded(
   tx: Tx,
   orderId: string,
-  amount: number,
+  amount: Money,
   operationId: string,
 ): Promise<void> {
   const [before] = await tx.select().from(orders).where(eq(orders.id, orderId));
   if (before === undefined) throw new Error(`order ${orderId} vanished`);
-  const refunded = before.refundedTotal + amount;
+  const refunded = add(money(before.refundedTotal), amount);
   const next = refunded >= before.capturedTotal ? 'refunded' : 'partially_refunded';
   // orders_refund_lte_captured is the database's last line: it fails the transaction on overshoot.
   await tx
@@ -377,6 +409,16 @@ async function applySucceeded(
     entityId: orderId,
     diff: { operationId, amount, state: 'succeeded', refundedTotal: refunded },
   });
+  // Event, state, history and outbox commit together (AGENTS.md 5b); the buyer's mail leaves
+  // through the outbox, once per operation.
+  await tx
+    .insert(outbox)
+    .values({
+      topic: 'email.refund-issued',
+      payload: { orderId, operationId },
+      dedupKey: `refund:${operationId}`,
+    })
+    .onConflictDoNothing();
 }
 
 export interface RefundDeps {
@@ -413,13 +455,14 @@ export async function processRefund(
     outcome = await provider.refund({
       localReference: claim.localReference,
       externalId: claim.externalId,
-      amount: money(claim.amount), // inside the try: a throw here must not leave a silent in-flight
+      amount: claim.amount,
     });
   } catch {
     outcome = { state: 'unknown', error: 'the provider call threw: result unknown' };
   }
   const settled = await deps.runInTransaction(
-    async (tx) => await settleRefund(tx, { operationId, outcome }),
+    async (tx) =>
+      await applyOutcome(tx, { operationId, outcome, source: { kind: 'provider-call' } }),
   );
   return { called: true, state: settled.state };
 }

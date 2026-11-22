@@ -10,6 +10,8 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import type { DbHandle } from '@store/db/client';
 import { orders, refundOperations } from '@store/db/schema';
 import { MonoProvider } from '@store/payments/mono';
+import type { PaymentProvider } from '@store/payments/types';
+import { money } from '@store/shared/money';
 import { startFakeMono, type FakeMono } from '@store/payments/test/fake-mono';
 
 import { setCartItem, startCheckout } from '../src/cart/cart.ts';
@@ -113,6 +115,15 @@ async function paidAttempt(externalId: string, provider: 'mono' | 'wayforpay'): 
   return id;
 }
 
+const wayforpayStandIn: PaymentProvider = {
+  code: 'wayforpay',
+  createPayment: async (a) => await mono.createPayment(a),
+  getPaymentStatus: async (id) => await mono.getPaymentStatus(id),
+  verifyWebhook: async (b, h) => await mono.verifyWebhook(b, h),
+  refund: async (r) => await mono.refund(r),
+  buildWebhookResponse: () => mono.buildWebhookResponse(),
+};
+
 const deps = (handle: DbHandle = world.connect()): RefundDeps => ({
   providers: { mono },
   runInTransaction: async (fn) => await handle.db.transaction(async (tx) => await fn(tx)),
@@ -121,10 +132,10 @@ const deps = (handle: DbHandle = world.connect()): RefundDeps => ({
 const request = (over: Partial<RefundRequest> = {}): RefundRequest => ({
   orderId,
   attemptId,
-  amount: total,
+  amount: money(total),
   reason: 'customer request',
   initiatedBy: null,
-  routes: routesOf({ mono }),
+  providers: { mono },
   ...over,
 });
 
@@ -134,7 +145,7 @@ const reserve = async (over: Partial<RefundRequest> = {}, handle: DbHandle = wor
 const cancelCalls = (): number =>
   fake.requests.filter((r) => r.url === '/api/merchant/invoice/cancel').length;
 
-async function money() {
+async function orderMoney() {
   const [row] = await admin.db
     .select({
       payment: orders.paymentStatus,
@@ -189,7 +200,7 @@ describe('a full refund through refund_operations', () => {
       amount: total,
     });
     expect(await opStates()).toEqual(['succeeded']);
-    expect(await money()).toEqual({ payment: 'refunded', captured: total, refunded: total });
+    expect(await orderMoney()).toEqual({ payment: 'refunded', captured: total, refunded: total });
     expect(
       await admin.db.execute(
         sql`SELECT 1 FROM order_status_history WHERE source = 'refund' AND to_status = 'refunded'`,
@@ -204,16 +215,16 @@ describe('a full refund through refund_operations', () => {
   });
 
   it('a partial refund leaves the order partially_refunded and the rest refundable', async () => {
-    const reservation = await reserve({ amount: 30000 });
+    const reservation = await reserve({ amount: money(30000) });
     await processRefund(deps(), reservation.operationId);
-    expect(await money()).toEqual({
+    expect(await orderMoney()).toEqual({
       payment: 'partially_refunded',
       captured: total,
       refunded: 30000,
     });
-    const rest = await reserve({ amount: total - 30000 });
+    const rest = await reserve({ amount: money(total - 30000) });
     await processRefund(deps(), rest.operationId);
-    expect(await money()).toEqual({ payment: 'refunded', captured: total, refunded: total });
+    expect(await orderMoney()).toEqual({ payment: 'refunded', captured: total, refunded: total });
   });
 });
 
@@ -248,13 +259,13 @@ describe('criterion 12: two simultaneous refunds of one payment', () => {
       ready = resolve;
     });
     const first = handle.db.transaction(async (tx) => {
-      const reservation = await requestRefund(tx, request({ amount: sixty }));
+      const reservation = await requestRefund(tx, request({ amount: money(sixty) }));
       ready();
       await gate; // the first transaction stays open, holding the order and attempt locks
       return reservation;
     });
     await started;
-    const second = reserve({ amount: sixty }).catch((e: unknown) => e);
+    const second = reserve({ amount: money(sixty) }).catch((e: unknown) => e);
     await waitUntilBlocked(); // the second request really queued behind the first
     release();
     await first;
@@ -275,7 +286,7 @@ describe('criterion 12: two simultaneous refunds of one payment', () => {
     );
     expect(results.filter((r) => r.called)).toHaveLength(1);
     expect(cancelCalls()).toBe(1);
-    expect(await money()).toMatchObject({ refunded: total });
+    expect(await orderMoney()).toMatchObject({ refunded: total });
   });
 });
 
@@ -288,7 +299,7 @@ describe('uncertain outcomes never free the budget by themselves', () => {
       state: 'unknown',
     });
     expect(await opStates()).toEqual(['unknown']);
-    expect(await money()).toMatchObject({ payment: 'paid', refunded: 0 });
+    expect(await orderMoney()).toMatchObject({ payment: 'paid', refunded: 0 });
     const before = cancelCalls();
 
     // running it again does not call the provider (the operation is past pending)
@@ -305,7 +316,7 @@ describe('uncertain outcomes never free the budget by themselves', () => {
         confirmation: { by: null },
       });
     });
-    expect(await money()).toMatchObject({ payment: 'refunded', refunded: total });
+    expect(await orderMoney()).toMatchObject({ payment: 'refunded', refunded: total });
   });
 
   it('unknown resolved as failed frees the budget for a new refund', async () => {
@@ -327,7 +338,7 @@ describe('uncertain outcomes never free the budget by themselves', () => {
     fake.onCancel(() => ({ status: 400, json: {} }));
     const reservation = await reserve();
     expect(await processRefund(deps(), reservation.operationId)).toMatchObject({ state: 'failed' });
-    expect(await money()).toMatchObject({ payment: 'paid', refunded: 0 });
+    expect(await orderMoney()).toMatchObject({ payment: 'paid', refunded: 0 });
     await expect(reserve()).resolves.toBeDefined();
   });
 
@@ -337,7 +348,7 @@ describe('uncertain outcomes never free the budget by themselves', () => {
     expect(await processRefund(deps(), reservation.operationId)).toMatchObject({
       state: 'in_flight',
     });
-    expect(await money()).toMatchObject({ payment: 'paid', refunded: 0 });
+    expect(await orderMoney()).toMatchObject({ payment: 'paid', refunded: 0 });
     await expect(reserve()).rejects.toBeInstanceOf(RefundBudgetError);
   });
 
@@ -381,19 +392,23 @@ describe('routing and guards', () => {
       .map((r) => (JSON.parse(r.body) as { invoiceId: string }).invoiceId)
       .toSorted();
     expect(invoices).toEqual(['inv-1', 'inv-2']);
-    expect(await money()).toMatchObject({
+    expect(await orderMoney()).toMatchObject({
       payment: 'refunded',
       refunded: total * 2,
       captured: total * 2,
     });
   });
 
-  it.each([0, -5, 1.5])('amount %s is refused', async (amount) => {
-    await expect(reserve({ amount })).rejects.toBeInstanceOf(RefundBudgetError);
+  it.each([0, -5])('amount %s is refused', async (amount) => {
+    await expect(reserve({ amount: money(amount) })).rejects.toBeInstanceOf(RefundBudgetError);
+  });
+
+  it('a fractional amount cannot even be built (Money refuses it)', () => {
+    expect(() => money(1.5)).toThrow(RangeError);
   });
 
   it('more than was captured is refused, and so is an attempt without a capture', async () => {
-    await expect(reserve({ amount: total + 1 })).rejects.toBeInstanceOf(RefundBudgetError);
+    await expect(reserve({ amount: money(total + 1) })).rejects.toBeInstanceOf(RefundBudgetError);
     await admin.db.execute(sql`UPDATE payment_attempts SET captured_amount = 0, status = 'failed'`);
     await expect(reserve()).rejects.toBeInstanceOf(RefundNotAllowedError);
   });
@@ -419,10 +434,11 @@ describe('routing and guards', () => {
         await settleRefund(tx, {
           operationId: reservation.operationId,
           outcome: { state: 'succeeded', providerReference: null },
+          confirmation: { by: null },
         }),
     );
     expect(again).toEqual({ changed: false, state: 'succeeded' });
-    expect(await money()).toMatchObject({ refunded: total });
+    expect(await orderMoney()).toMatchObject({ refunded: total });
   });
 });
 
@@ -439,9 +455,8 @@ describe('review round: shipping, cancelling and recovery around a refund', () =
       world.connect().db.transaction(async (tx) => await shipOrder(tx, { orderId, source: 't' })),
     ).rejects.toThrow(/refund/);
 
-    // a reservation withdrawn before sending frees the order to ship again
-    const other = await reserve({ amount: 0 + 1 }).catch(() => null); // budget is held: refused
-    expect(other).toBeNull();
+    // the held budget also refuses another refund of the same money
+    await expect(reserve({ amount: money(1) })).rejects.toBeInstanceOf(RefundBudgetError);
   });
 
   it('a withdrawn pending refund frees the order: it ships', async () => {
@@ -482,7 +497,7 @@ describe('review round: shipping, cancelling and recovery around a refund', () =
     const both = results.every((r) => r.status === 'fulfilled');
     if (both) {
       const order = await admin.db.execute<{ after: boolean }>(
-        sql`SELECT (SELECT created_at FROM refund_operations LIMIT 1) >= shipped_at AS after
+        sql`SELECT (SELECT min(created_at) FROM refund_operations) >= shipped_at AS after
               FROM orders WHERE id = ${orderId}`,
       );
       expect(order.rows[0]?.after).toBe(true);
@@ -491,7 +506,10 @@ describe('review round: shipping, cancelling and recovery around a refund', () =
 
   it('routes registered at reservation but missing at execution: nothing is sent, the reservation stays pending and can be withdrawn', async () => {
     const other = await paidAttempt('wfp-2', 'wayforpay');
-    const reservation = await reserve({ attemptId: other, routes: ['mono', 'wayforpay'] });
+    const reservation = await reserve({
+      attemptId: other,
+      providers: { mono, wayforpay: wayforpayStandIn },
+    });
     const before = cancelCalls();
     await expect(processRefund(deps(), reservation.operationId)).rejects.toBeInstanceOf(
       RefundRoutingError,
@@ -523,28 +541,70 @@ describe('review round: shipping, cancelling and recovery around a refund', () =
     await expect(reserve()).rejects.toBeInstanceOf(RefundBudgetError); // budget stays held
   });
 
-  it('an unknown refund cannot be closed without a confirmation; it never turns back into in flight', async () => {
+  it('an unknown refund never turns back into in flight, and a pending one cannot be settled at all', async () => {
     fake.onCancel(() => ({ status: 200, hang: true }));
     const reservation = await reserve();
-    await processRefund(deps(), reservation.operationId);
-    const settle = async (outcome: Parameters<typeof settleRefund>[1]['outcome']) =>
+    const settle = async (
+      operationId: string,
+      outcome: Parameters<typeof settleRefund>[1]['outcome'],
+    ) =>
       await world
         .connect()
         .db.transaction(
-          async (tx) => await settleRefund(tx, { operationId: reservation.operationId, outcome }),
+          async (tx) =>
+            await settleRefund(tx, { operationId, outcome, confirmation: { by: null } }),
         );
-    await expect(settle({ state: 'failed', error: 'x' })).rejects.toBeInstanceOf(
-      RefundNotAllowedError,
-    );
-    await expect(settle({ state: 'succeeded', providerReference: null })).rejects.toBeInstanceOf(
-      RefundNotAllowedError,
-    );
-    expect(await settle({ state: 'in_flight', providerReference: null })).toMatchObject({
+    // pending: never claimed, so it cannot be closed (not even with a confirmation)
+    await expect(
+      settle(reservation.operationId, { state: 'failed', error: 'x' }),
+    ).rejects.toBeInstanceOf(RefundNotAllowedError);
+
+    await processRefund(deps(), reservation.operationId); // now unknown
+    expect(
+      await settle(reservation.operationId, { state: 'in_flight', providerReference: null }),
+    ).toMatchObject({
       changed: false,
     });
-    expect(await settle({ state: 'unknown', error: 'again' })).toMatchObject({ changed: false });
+    expect(
+      await settle(reservation.operationId, { state: 'unknown', error: 'again' }),
+    ).toMatchObject({
+      changed: false,
+    });
     expect(await opStates()).toEqual(['unknown']);
     await expect(reserve()).rejects.toBeInstanceOf(RefundBudgetError);
+  });
+
+  it('settleRefund needs a confirmation by type, and it leaves an audit row naming who confirmed', async () => {
+    fake.onCancel(() => ({ status: 200, hang: true }));
+    const reservation = await reserve();
+    await processRefund(deps(), reservation.operationId);
+    await world.connect().db.transaction(async (tx) => {
+      await settleRefund(tx, {
+        operationId: reservation.operationId,
+        outcome: { state: 'failed', error: 'provider says it never happened' },
+        confirmation: { by: null },
+      });
+    });
+    const audit = await admin.db.execute(
+      sql`SELECT 1 FROM audit_log WHERE action = 'refund' AND diff ->> 'confirmed' = 'failed'`,
+    );
+    expect(audit.rowCount).toBe(1);
+  });
+
+  it('settling twice leaves exactly one refund-issued outbox row', async () => {
+    const reservation = await reserve();
+    await processRefund(deps(), reservation.operationId);
+    await world.connect().db.transaction(async (tx) => {
+      await settleRefund(tx, {
+        operationId: reservation.operationId,
+        outcome: { state: 'succeeded', providerReference: null },
+        confirmation: { by: null },
+      });
+    });
+    const rows = await admin.db.execute(
+      sql`SELECT 1 FROM outbox WHERE topic = 'email.refund-issued' AND dedup_key = ${`refund:${reservation.operationId}`}`,
+    );
+    expect(rows.rowCount).toBe(1);
   });
 
   it('five parallel settles of one in-flight operation change it once and refund once', async () => {
@@ -562,12 +622,13 @@ describe('review round: shipping, cancelling and recovery around a refund', () =
             await settleRefund(tx, {
               operationId: reservation.operationId,
               outcome: { state: 'succeeded', providerReference: null },
+              confirmation: { by: null },
             }),
         );
       }),
     );
     expect(results.filter((r) => r.changed)).toHaveLength(1);
-    expect(await money()).toMatchObject({ payment: 'refunded', refunded: total });
+    expect(await orderMoney()).toMatchObject({ payment: 'refunded', refunded: total });
   });
 
   it('a full refund racing a partial one reserves at most the captured amount', async () => {
@@ -582,14 +643,14 @@ describe('review round: shipping, cancelling and recovery around a refund', () =
     })();
     const part = (async () => {
       await barrier.wait();
-      return await reserve({ amount: 1000 }, handlePart);
+      return await reserve({ amount: money(1000) }, handlePart);
     })();
     await Promise.allSettled([full, part]);
     const sum = await admin.db.execute<{ s: number }>(
       sql`SELECT coalesce(sum(amount), 0)::int AS s FROM refund_operations`,
     );
-    expect(sum.rows[0]?.s).toBeLessThanOrEqual(total);
-    expect(sum.rows[0]?.s).toBeGreaterThan(0);
+    // whichever came first, the other took exactly the rest or was refused: the whole capture
+    expect(sum.rows[0]?.s).toBe(total);
   });
 
   it('a full refund is all-or-nothing: one attempt without a route refuses the whole request', async () => {
@@ -604,5 +665,87 @@ describe('review round: shipping, cancelling and recovery around a refund', () =
     await expect(reserve({ reason: 'x'.repeat(201) })).rejects.toBeInstanceOf(
       RefundNotAllowedError,
     );
+  });
+});
+
+describe('review round 2: the order lock matters, partial refunds, shipping afterwards', () => {
+  /** Holds a refund reservation open; returns release/done like the other overlap proofs. */
+  async function heldReservation(over: Partial<RefundRequest> = {}) {
+    const handle = world.connect();
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let ready: () => void = () => undefined;
+    const started = new Promise<void>((resolve) => {
+      ready = resolve;
+    });
+    const done = handle.db.transaction(async (tx) => {
+      const reservation = await requestRefund(tx, request(over));
+      ready();
+      await gate;
+      return reservation;
+    });
+    done.catch(() => {
+      ready();
+    });
+    await started;
+    return { release, done };
+  }
+
+  it('ship waits for a held refund reservation (the ORDER lock), then is refused', async () => {
+    const held = await heldReservation();
+    const shipping = world
+      .connect()
+      .db.transaction(async (tx) => await shipOrder(tx, { orderId, source: 't' }))
+      .catch((e: unknown) => e);
+    await waitUntilBlocked();
+    held.release();
+    await held.done;
+    expect(await shipping).toBeInstanceOf(OrderNotShippableError);
+  });
+
+  it('cancel waits for a held refund reservation, then announces no second refund', async () => {
+    const held = await heldReservation();
+    const cancelling = world
+      .connect()
+      .db.transaction(async (tx) => await cancelOrder(tx, { orderId, source: 't', reason: null }))
+      .catch((e: unknown) => e);
+    await waitUntilBlocked();
+    held.release();
+    await held.done;
+    expect(await cancelling).toMatchObject({ changed: true });
+    const alerts = await admin.db.execute(
+      sql`SELECT 1 FROM outbox WHERE topic = 'alert.refund-due'`,
+    );
+    expect(alerts.rowCount).toBe(0);
+  });
+
+  it('a full refund queues behind a held partial reservation and takes exactly the rest', async () => {
+    const held = await heldReservation({ amount: money(1000) });
+    const full = world
+      .connect()
+      .db.transaction(async (tx) => await requestFullRefund(tx, request()))
+      .catch((e: unknown) => e);
+    await waitUntilBlocked();
+    held.release();
+    await held.done;
+    const reservations = await full;
+    if (!Array.isArray(reservations)) throw new Error('the full refund must have been reserved');
+    expect(reservations).toHaveLength(1);
+    expect(reservations[0]).toMatchObject({ amount: total - 1000 });
+    const sum = await admin.db.execute<{ s: number }>(
+      sql`SELECT coalesce(sum(amount), 0)::int AS s FROM refund_operations`,
+    );
+    expect(sum.rows[0]?.s).toBe(total);
+  });
+
+  it('after a SUCCEEDED partial refund the order is partially_refunded and does not ship', async () => {
+    const reservation = await reserve({ amount: money(30000) });
+    await processRefund(deps(), reservation.operationId);
+    expect(await orderMoney()).toMatchObject({ payment: 'partially_refunded' });
+    await expect(
+      world.connect().db.transaction(async (tx) => await shipOrder(tx, { orderId, source: 't' })),
+    ).rejects.toBeInstanceOf(OrderNotShippableError);
   });
 });

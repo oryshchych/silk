@@ -11,6 +11,7 @@ export const OUTBOX_TOPICS = [
   'alert.double-payment',
   'alert.payment-mismatch',
   'alert.refund-due',
+  'email.refund-issued',
 ] as const;
 
 /** Jobs that exhausted their retries land here. Someone must watch this queue. */

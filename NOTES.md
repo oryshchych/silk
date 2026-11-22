@@ -247,6 +247,14 @@ Left as notes:
   but leaves the status `refunded`; re-deriving it is a phase 5 admin concern.
 - **`requestFullRefund` is all-or-nothing**: one attempt without a route (COD, gift card, an unregistered
   provider) refuses the whole request; refund such attempts separately with `requestRefund`.
+- **Refund state changes are provenance-checked**: the result of our own provider call (`processRefund`) is the
+  only way to settle an `in_flight` operation without a confirmation; `settleRefund` always takes a
+  `confirmation` (audited), `pending` operations cannot be settled at all, and `unknown` never reopens.
+- **A refund reservation is serialised by both locks and by Postgres foreign-key locks**: removing the
+  explicit order lock from `requestRefund` is caught only by the full-vs-partial race test, because the
+  insert's FK lock on `orders` already blocks a concurrent ship. The explicit lock stays (it carries the
+  ADR-22 protocol).
+- **Refund reconciliation has no owner yet**: queued as Q17.
 - **Refund reason is limited to 200 characters**; use codes, not customer text.
 - **Returns**: stock goes back only through the physical receipt of a return (a later phase); a refund
   does not touch `stock_quantity`.
