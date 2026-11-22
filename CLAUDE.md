@@ -47,6 +47,21 @@ CI (`ai-sync`) падає, якщо згенероване розійшлося 
   словами не блокуються. Обгортки на кшталт `ssh host '…'` не розбираються
 - `PostToolUse` на `Edit|Write|MultiEdit` → `post-edit-verify`: prettier +
   eslint --fix одразу; помилки, які `--fix` не виправив, повертаються агенту
+- `PreToolUse` on `Bash` → `guard-merge`: every Bash command is classified (no
+  text prefilter) and `gh pr merge` goes through the gate. It refuses unless the
+  PR is open, targets `main`, is not a draft, is mergeable, every CI job from
+  `ci.yml` **on `main`** has a successful check run, the latest `review-pr-silk`
+  report (by the authenticated user, header on the first line, 12+ hex sha) is a
+  PASS for the current head commit, the command pins it with
+  `--match-head-commit <full sha>`, the PR does **not** touch the guard rails
+  (`.claude/**`, gate scripts, workflows, `docs/AUTONOMOUS_MODE.md`: the owner
+  merges those) and the gate files in the checkout equal `origin/main`. It also
+  refuses `--admin`, `--auto`, merges through `gh api`, shell wrappers that hide
+  a merge, unknown `gh` subcommands (aliases), and any push to `main`; `gh`/`git`
+  are found at any position, and words built by the shell are refused. It fails
+  closed (`scripts/merge-gate.ts`, `scripts/guard-merge.ts`). Because heredoc
+  bodies are read as commands too, write prose that quotes these commands with
+  the Write/Edit tools, not a Bash heredoc
 - `Stop` → `stop-typecheck`: `pnpm typecheck`, якщо є незакомічені зміни.
   **Через exit code 2** — звичайний exit 1 хід не блокує. Повторний Stop
   (`stop_hook_active`) пропускається, щоб не зациклитись
@@ -55,19 +70,23 @@ CI (`ai-sync`) падає, якщо згенероване розійшлося 
 
 ## Permissions
 
-`deny` у `.claude/settings.json`: примусовий `git push`, `psql *production*`,
-`drizzle-kit push`, `Read` для `.env`, `.env.local`, `.env.staging`,
-`.env.production` (`.env.example` читається). Список `allow` **не додано**:
-`Bash(pnpm *)` дозволив би запуск довільного коду проєкту без запиту.
+`deny` in `.claude/settings.json`: forced `git push`, `psql *production*`,
+`drizzle-kit push`, and `Read` of `.env`, `.env.local`, `.env.staging` and
+`.env.production` (`.env.example` stays readable).
 
-`drizzle-kit push` заборонений свідомо: він змінює схему без файлу міграції,
-тобто локально «працює», а в продакшн нічого не доїжджає.
+`allow` has exactly one entry, `Bash(gh pr merge *)`, and it is only usable
+together with the `guard-merge` hook (autonomous mode,
+`docs/AUTONOMOUS_MODE.md`). `Bash(pnpm *)` stays off the list: it would allow
+running arbitrary project code without a prompt.
 
-**Обмеження, яке треба знати:** заборони `Read`/`Edit` не контролюють
-довільні Node-процеси, які самі відкривають файли, а дозвіл `Bash(pnpm *)`
-дає запуск коду проєкту. Тому продакшн-секретів не повинно бути у
-файловій системі та env середовища, де працює агент. Це питання ізоляції,
-а не списку дозволів. Деталі — `docs/AI_SETUP.md`.
+`drizzle-kit push` is denied on purpose: it changes the schema without a
+migration file, so it "works" locally and never reaches production.
+
+**A limit to know:** `Read` and `Edit` denials do not control arbitrary Node
+processes that open files themselves, and `Bash(pnpm *)` would run project
+code. So production secrets must not exist on the filesystem or in the
+environment where the agent runs. That is an isolation question, not a
+permission-list question. Details: `docs/AI_SETUP.md`.
 
 ## MCP
 

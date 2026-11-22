@@ -1,0 +1,32 @@
+# Owner queue
+
+Everything that needs the owner. Sessions add entries as they find them; the
+owner answers when back. Protocol: `docs/AUTONOMOUS_MODE.md`.
+
+- **BLOCKER**: the work cannot continue without the answer.
+- **DEFER**: work continues with the recommended default; the owner can overrule.
+
+Newest entries go at the top of the open table. Move answered entries to
+"Answered" with the decision and date.
+
+## Open
+
+| ID | Raised | Item | Class | Needed by | Options and recommendation |
+|---|---|---|---|---|---|
+| Q11 | 2026-11-22 | The merge gate (PR #19) still fails its third security audit: a command-text classifier cannot be made complete (dynamic program names, `gh api` writes, flag clusters, heredoc quoting, git config redirection, editable gate files). The allow rule for the merge command is already live in that branch's settings | BLOCKER for unattended merging | when you are back | Option A (recommended): enable branch protection on `main` (Q9), then merge #19 as a guard rail and merge PRs yourself or let sessions do it. Option B: drop the allow rule and keep merging manual. Option C: another fix round of the classifier plus a deny on editing the gate files, accepting it stays advisory |
+| Q10 | 2026-11-22 | PRs that change the guard rails (`.claude/**`, gate scripts, workflows, `docs/AUTONOMOUS_MODE.md`) are never merged by a session; the first one is the merge-gate PR itself (#19) | BLOCKER for that PR only | when you are back | Review and merge them yourself; sessions keep working on everything else |
+| Q1 | 2026-11-22 | Shop name (`LACE & SILK` is a placeholder), brand palette and fonts | DEFER | before launch | Keep the placeholder and neutral tokens; branding is a token change, not a rewrite |
+| Q2 | 2026-11-22 | Nova Poshta API 2.0 access (key) | DEFER | phase 2 live shipping | Build against a recorded fake; plug the real key in at the end of phase 2 |
+| Q3 | 2026-11-22 | Checkbox account (test cash register) | DEFER | phase 3 fiscal sandbox | Build `FiscalProvider` against the documented API with a fake; verify against the sandbox when the account exists |
+| Q4 | 2026-11-22 | COD paper receipt printed into the parcel | DEFER | phase 5 | Recommend a printable receipt view in the admin order screen; printer and format are the owner's call |
+| Q5 | 2026-11-22 | A return receipt may point only to a `sale` receipt; a foreign key cannot express it | DEFER | phase 3 / 5 | Recommend a `kind` column plus a composite FK so the DB enforces it |
+| Q6 | 2026-11-22 | Phase 0 scope not done: CI jobs `migrate:upgrade`, `migrate:safety`, `size-limit`; Playwright; shadcn/ui; `jsx-a11y` (waits for ESLint 10 support) | DEFER | phases 0.5 to 1 | The orchestrator adds the `test:integration` CI job first; the rest when the first real flow needs them |
+| Q7 | 2026-11-22 | Merged branches still on GitHub: `docs/accountant-answers`, `feat/db-migrations`, `feat/db-client-seed`, `feat/money-dto` | DEFER | whenever | Delete them in the GitHub Branches page; agents are not allowed to delete remote branches |
+| Q8 | 2026-11-22 | Phase 0 criterion 20: the first scheduled nightly backup after 03:00 Kyiv on 2026-11-23 | DEFER | 2026-11-23 | The orchestrator checks the R2 bucket (`staging/` must hold a second file); otherwise the owner does |
+| Q9 | 2026-11-22 | `main` has no branch protection. The merge gate only covers commands run by agent sessions; an agent script, a typo or a leaked token could still push to `main`. Found by the security audit of the merge gate | DEFER (recommended soon) | before long unattended runs | Enable a ruleset on `main`: require a pull request, require the CI checks, block direct pushes (keep yourself as bypass actor if you want). Agents may not change repository settings, so this is yours |
+
+## Answered
+
+| ID | Answered | Decision |
+|---|---|---|
+| | | |

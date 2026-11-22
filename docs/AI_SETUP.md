@@ -152,6 +152,10 @@ Findings are BLOCKER, SHOULD-FIX or NIT. The session fixes them in small
 commits, pushes, and re-runs the **whole** skill (at most 3 rounds, then asks the
 owner). The final report is posted as a PR comment.
 
+Under autonomous mode a PASS is also what unlocks the merge: the `guard-merge`
+hook (`scripts/merge-gate.ts`) refuses `gh pr merge` unless CI is green and the
+latest report is a PASS for the PR's current head commit.
+
 The checklist is the living memory of our review standards: when review or
 production exposes a new class of defect, add one line with the lesson.
 

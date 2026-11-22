@@ -35,7 +35,8 @@ strings (`messages/uk.json`), product and seed content, legal texts.
 **One phase per session.** Every phase starts in a new session. When a phase is
 done: deliver the report (skill `/phase-report`), update `docs/plan/CURRENT.md`,
 stop. The next phase starts fresh and reads `CURRENT.md` as its input, only
-after the owner's explicit go-ahead.
+after the owner's go-ahead: explicit, or the standing one while autonomous mode
+is in force (`docs/AUTONOMOUS_MODE.md`).
 
 ---
 
@@ -339,7 +340,11 @@ read it as a checklist). It runs the gates and the specialist reviewers, lists
 findings by severity, and you fix them and re-run the whole skill until the
 verdict is PASS (at most 3 rounds, then stop and ask the owner). Record the
 result in a PR comment. A PR is not ready for the owner before PASS. Every PR
-targets `main`; never stack PRs on each other. Only the owner merges.
+targets `main`; never stack PRs on each other. The owner merges; while
+autonomous mode is in force a session may merge too, but only through the
+`guard-merge` hook (CI green, review-pr-silk PASS on the current head commit).
+Operating limits and the owner queue are in `docs/AUTONOMOUS_MODE.md` and
+`docs/plan/OWNER_QUEUE.md`.
 
 **Не покладатися на `/compact`.** Стиснення може перетворити «я запропонував
 X» на «ми вирішили X», і хибний висновок поїде далі. Замість цього:
@@ -361,6 +366,7 @@ X» на «ми вирішили X», і хибний висновок поїд�
 | Промокоди | `docs/PROMO_CODES.md` |
 | Сертифікати | `docs/GIFT_CARDS.md` |
 | Конфіги агента | `docs/AI_SETUP.md` |
+| Autonomous operation, owner away, decisions for the owner | `docs/AUTONOMOUS_MODE.md`, `docs/plan/OWNER_QUEUE.md` |
 | **Перед тим, як «виправити» дивне рішення** | `docs/REVIEW_TRIAGE.md` — там обґрунтування ~60 рішень, які вже тричі обговорені |
 | Мутація в адмінці | `docs/SECURITY.md` (фаза 4) |
 | Інцидент | `docs/RUNBOOK.md` (фаза 12) |

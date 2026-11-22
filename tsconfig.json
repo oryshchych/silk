@@ -4,7 +4,9 @@
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "allowJs": true,
-    "checkJs": false
+    "checkJs": false,
+    // Scripts import each other with the .ts extension so Node can run them directly.
+    "allowImportingTsExtensions": true
   },
   "include": ["*.ts", "*.js", "scripts/**/*.ts"],
   "exclude": ["node_modules"]
