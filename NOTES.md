@@ -116,3 +116,16 @@
   accounts exist; `promo_code_redemptions.customer_id` is not set yet.
 - **Converted carts are terminal.** After an order the cart token cannot take new items
   (`CART_CONVERTED`); the web layer must mint a new token and cookie on that error.
+
+## Phase 0.5, slice 5: payments package (2026-11-22)
+
+- **Mono adapter is tested only against a local fake** (real HTTP, real EC key, webhooks signed
+  like the real service). It has not been run against the sandbox: that needs the owner's token.
+  Facts to confirm there: the shape of a partial `reversed` webhook (the adapter maps `reversed`
+  to `refunded` and leaves refund state to `refund_operations`), whether `modifiedDate` is always
+  present, and whether `/invoice/cancel` returns an id of its own.
+- **Webhook body must be read as bytes** (`arrayBuffer()`, not `text()`) in the route handler.
+- **Core must reject** a webhook whose `currency` is not UAH, whose amount differs from the
+  attempt, or whose `localReference` matches no attempt (`webhook_quarantine`).
+- **Provider routing for refunds** (by the attempt's provider, GIFT_CARDS.md section 0) is enforced
+  in core, with a test, in the refund slice.
