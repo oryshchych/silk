@@ -5,9 +5,10 @@
 import { env } from '@store/shared/env';
 
 import { createDb } from '../src/client.ts';
-import { assertSeedAllowed, seed } from './seed.ts';
+import { assertSeedAllowed, assertSeedTargetAllowed, seed } from './seed.ts';
 
 assertSeedAllowed(env.APP_ENV);
+assertSeedTargetAllowed(env.DATABASE_URL);
 
 const { db, close } = createDb(env.DATABASE_URL, { max: 1 });
 try {

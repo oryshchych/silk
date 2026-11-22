@@ -15,7 +15,14 @@ import { count, sql } from 'drizzle-orm';
 
 import type { AppEnv } from '@store/shared/env-schema';
 
-import { orders, productVariants, products, promoCodes, reviews } from '../src/schema.ts';
+import {
+  customers,
+  orders,
+  productVariants,
+  products,
+  promoCodes,
+  reviews,
+} from '../src/schema.ts';
 import type { Tx } from '../src/types.ts';
 import { seedCatalog } from './catalog.ts';
 import { seedCustomers } from './customers.ts';
@@ -37,7 +44,25 @@ export interface SeedSummary {
 
 export function assertSeedAllowed(appEnv: AppEnv): void {
   if (appEnv === 'production') {
-    throw new Error('seed заборонений у production (APP_ENV=production)');
+    throw new Error('seed is forbidden in production (APP_ENV=production)');
+  }
+}
+
+/**
+ * Hosts a seed may write to: loopback and the compose service name of the
+ * deployed stacks. APP_ENV alone is not a safe key: `APP_ENV=staging` with a
+ * production DATABASE_URL would pass `assertSeedAllowed`, and production is
+ * empty before the first catalog import, so the non-empty check would not
+ * stop it either.
+ */
+const SEED_DB_HOSTS: ReadonlySet<string> = new Set(['localhost', '127.0.0.1', '[::1]', 'postgres']);
+
+export function assertSeedTargetAllowed(databaseUrl: string): void {
+  const { hostname } = new URL(databaseUrl);
+  if (!SEED_DB_HOSTS.has(hostname)) {
+    throw new Error(
+      `seed refuses database host "${hostname}": allowed hosts are ${[...SEED_DB_HOSTS].join(', ')}`,
+    );
   }
 }
 
@@ -45,8 +70,18 @@ export async function seed(tx: Tx): Promise<SeedSummary> {
   const [existing] = await tx.select({ n: count() }).from(products);
   if (existing !== undefined && existing.n > 0) {
     throw new Error(
-      `каталог не порожній (${String(existing.n)} товарів) — seed працює лише на порожній БД`,
+      `catalog is not empty (${String(existing.n)} products): seed needs an empty database`,
     );
+  }
+
+  for (const [name, table] of [
+    ['orders', orders],
+    ['customers', customers],
+  ] as const) {
+    const [row] = await tx.select({ n: count() }).from(table);
+    if (row !== undefined && row.n > 0) {
+      throw new Error(`${name} is not empty (${String(row.n)} rows): seed needs an empty database`);
+    }
   }
 
   const rng = createRng(RNG_SEED);
