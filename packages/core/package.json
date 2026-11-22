@@ -4,14 +4,16 @@
   "private": true,
   "type": "module",
   "exports": {
-    "./locks": "./src/locks/acquire-locks.ts"
+    "./locks": "./src/locks/acquire-locks.ts",
+    "./pricing": "./src/pricing/calculate-cart.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@store/db": "workspace:*",
-    "drizzle-orm": "0.45.2"
+    "drizzle-orm": "0.45.2",
+    "@store/shared": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",
