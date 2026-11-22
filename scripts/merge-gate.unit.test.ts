@@ -345,13 +345,27 @@ describe('guard-merge hook (a real process, with a fake gh)', () => {
     return dir;
   }
 
-  function run(command: string, ghDir?: string, cwd = root): number | null {
-    const path = `${ghDir === undefined ? '' : `${ghDir}:`}/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin`;
+  /**
+   * Runs the hook with a hermetic environment: a throwaway HOME, and a PATH that
+   * holds only the fake gh (when given) and, if asked, the system tools. No real
+   * gh is ever reachable, so nothing here touches the network or the repo.
+   */
+  function run(
+    command: string,
+    options: { ghDir?: string; cwd?: string; system?: boolean } = {},
+  ): number | null {
+    const cwd = options.cwd ?? root;
+    const parts = [options.ghDir, options.system === false ? undefined : '/usr/bin:/bin'];
+    const empty = mkdtempSync(join(tmpdir(), 'empty-path-'));
     return spawnSync(process.execPath, [hook], {
       cwd,
       input: JSON.stringify({ tool_input: { command } }),
       encoding: 'utf8',
-      env: { PATH: path, CLAUDE_PROJECT_DIR: cwd, HOME: cwd },
+      env: {
+        PATH: parts.filter((part) => part !== undefined).join(':') || empty,
+        CLAUDE_PROJECT_DIR: cwd,
+        HOME: mkdtempSync(join(tmpdir(), 'home-')),
+      },
     }).status;
   }
 
@@ -360,25 +374,25 @@ describe('guard-merge hook (a real process, with a fake gh)', () => {
   const merge = `gh pr merge 7 --merge --match-head-commit ${HEAD}`;
 
   it('lets a ready PR through', () => {
-    expect(run(merge, fakeGh(view()))).toBe(0);
+    expect(run(merge, { ghDir: fakeGh(view()) })).toBe(0);
   });
 
   it('blocks a PR that is not ready, with a clear reason', () => {
-    expect(run(merge, fakeGh(view({ isDraft: true })))).toBe(2);
+    expect(run(merge, { ghDir: fakeGh(view({ isDraft: true })) })).toBe(2);
   });
 
   it('does not crash open when GitHub returns nulls', () => {
-    expect(run(merge, fakeGh(view({ statusCheckRollup: null as never })))).toBe(2);
-    expect(run(merge, fakeGh('null'))).toBe(2);
-    expect(run(merge, fakeGh('not json'))).toBe(2);
+    expect(run(merge, { ghDir: fakeGh(view({ statusCheckRollup: null as never })) })).toBe(2);
+    expect(run(merge, { ghDir: fakeGh('null') })).toBe(2);
+    expect(run(merge, { ghDir: fakeGh('not json') })).toBe(2);
   });
 
   it('fails closed when gh itself fails', () => {
-    expect(run(merge, fakeGh(view(), 1))).toBe(2);
+    expect(run(merge, { ghDir: fakeGh(view(), 1) })).toBe(2);
   });
 
   it('fails closed when gh is not installed', () => {
-    expect(run(merge)).toBe(2);
+    expect(run(merge, { system: false })).toBe(2);
   });
 
   it.each([
@@ -411,9 +425,9 @@ describe('guard-merge hook (a real process, with a fake gh)', () => {
         env: { PATH: '/usr/bin:/bin', HOME: repo },
       });
     git('init', '-q', '-b', 'main');
-    expect(run('git push', undefined, repo)).toBe(2);
+    expect(run('git push', { cwd: repo })).toBe(2);
     git('checkout', '-q', '-b', 'feat/x');
-    expect(run('git push', undefined, repo)).toBe(0);
+    expect(run('git push', { cwd: repo })).toBe(0);
   });
 
   it('does not block on garbage input', () => {
