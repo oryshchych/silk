@@ -96,3 +96,23 @@ export class IntentExpiredError extends DomainError {
     super('CHECKOUT_INTENT_EXPIRED', 'The checkout intent expired; start checkout again');
   }
 }
+
+export class OrderNotPayableError extends DomainError {
+  constructor(reason: string) {
+    super('PAYMENT_ORDER_NOT_PAYABLE', `The order cannot take a new payment attempt: ${reason}`);
+  }
+}
+
+/** A previous attempt is in `unknown`: reconcile it with the provider before starting another. */
+export class AttemptUnresolvedError extends DomainError {
+  constructor() {
+    super('PAYMENT_ATTEMPT_UNRESOLVED', 'A previous payment attempt has an unknown result');
+  }
+}
+
+/** A previous invoice is still live at the provider; the buyer could pay both. */
+export class AttemptStillOpenError extends DomainError {
+  constructor() {
+    super('PAYMENT_ATTEMPT_STILL_OPEN', 'The previous payment attempt is still open');
+  }
+}
