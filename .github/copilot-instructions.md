@@ -14,6 +14,28 @@ PostgreSQL — 18.** Багато API розійшлися з тим, що ти 
 
 ---
 
+## 0. Language and sessions
+
+**All technical text is English.** Code comments, documentation, agent
+instructions, commit messages, PR titles and descriptions, test names, log and
+error messages. Ukrainian is allowed only for **site content**: user-facing
+strings (`messages/uk.json`), product and seed content, legal texts.
+
+- When you modify an existing Ukrainian technical file, rewrite the part you
+  touch in English. Do not mass-translate files you are not changing: the
+  dedicated translation is scheduled separately.
+- Commit messages are checked by commitlint (`no-cyrillic`). PR texts and
+  comments are not machine-checked, so the rule is on you.
+- Talk to the owner in the language they write in; everything you write into
+  the repository or GitHub is English.
+
+**One phase per session.** Every phase starts in a new session. When a phase is
+done: deliver the report (skill `/phase-report`), update `docs/plan/CURRENT.md`,
+stop. The next phase starts fresh and reads `CURRENT.md` as its input, only
+after the owner's explicit go-ahead.
+
+---
+
 ## 1. Робочий режим
 
 **Одна фаза за раз. Зупинка після кожної.**
