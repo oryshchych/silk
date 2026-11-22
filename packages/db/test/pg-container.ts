@@ -21,19 +21,6 @@ import type { TestProject } from 'vitest/node';
 
 import { runMigrations } from '../src/migrate.ts';
 
-declare module 'vitest' {
-  export interface ProvidedContext {
-    /** Суперкористувач: лише для службових перевірок у тестах. */
-    pgRootUrl: string;
-    /** store_migrate — DDL. */
-    pgMigrateUrl: string;
-    /** store_app — DML, як web і worker. */
-    pgAppUrl: string;
-    /** Шаблон для `CREATE DATABASE ... TEMPLATE`. */
-    pgTemplateDb: string;
-  }
-}
-
 const IMAGE = 'store-postgres:test';
 const DB = 'store';
 const TEMPLATE_DB = 'store_template';

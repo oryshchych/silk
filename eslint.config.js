@@ -116,6 +116,8 @@ export default tseslint.config(
   // Область 1: домен. Не імпортує ні Next.js, ні глобальний db.
   {
     files: ['packages/core/**'],
+    // Tests build their own pools and may inspect locks with raw SQL.
+    ignores: ['packages/core/test/**'],
     rules: {
       'no-restricted-imports': [
         'error',
@@ -132,6 +134,24 @@ export default tseslint.config(
                 'Приймай tx параметром. Глобальний db у домені = частковий коміт (AGENTS.md §4b.1).',
             },
           ],
+        },
+      ],
+    },
+  },
+  // ADR-22: row locks in domain code go through `acquireLocks` only.
+  {
+    files: ['packages/core/**'],
+    ignores: ['packages/core/src/locks/acquire-locks.ts', 'packages/core/test/**'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'TemplateElement[value.raw=/FOR\\s+(NO\\s+KEY\\s+)?UPDATE/i]',
+          message: 'Take row locks through acquireLocks (ADR-22), not raw FOR UPDATE.',
+        },
+        {
+          selector: 'CallExpression[callee.property.name="for"]',
+          message: 'Take row locks through acquireLocks (ADR-22), not the query builder .for().',
         },
       ],
     },
