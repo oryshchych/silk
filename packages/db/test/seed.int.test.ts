@@ -7,6 +7,7 @@ import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createDb, type DbHandle } from '../src/client.ts';
+import { customers } from '../src/schema.ts';
 import { seed, type SeedSummary } from '../seed/seed.ts';
 import { createTestDatabase, type TestDatabase } from './db.ts';
 
@@ -141,7 +142,7 @@ describe('seed', () => {
 
   it('повторний запуск відмовляє й нічого не змінює', async () => {
     await expect(handle.db.transaction(async (tx) => await seed(tx))).rejects.toThrow(
-      /каталог не порожній/,
+      /catalog is not empty/,
     );
     const [r] = await rows<{ n: number }>('SELECT count(*)::int AS n FROM products');
     expect(r?.n).toBe(40);
@@ -161,6 +162,22 @@ describe('seed', () => {
       const [b] = (await otherClient.query<{ f: string }>(fingerprint)).rows;
       await otherClient.end();
       expect(b?.f).toBe(a?.f);
+    } finally {
+      await otherHandle.close();
+      await other.drop();
+    }
+  });
+});
+
+describe('seed on a database that is not empty', () => {
+  it('refuses when customers exist even though the catalog is empty', async () => {
+    const other = await createTestDatabase();
+    const otherHandle = createDb(other.appUrl, { max: 1 });
+    try {
+      await otherHandle.db.insert(customers).values({ email: 'someone@example.com' });
+      await expect(otherHandle.db.transaction(async (tx) => await seed(tx))).rejects.toThrow(
+        /customers is not empty/,
+      );
     } finally {
       await otherHandle.close();
       await other.drop();

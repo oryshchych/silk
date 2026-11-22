@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { createRng } from './random.ts';
-import { assertSeedAllowed } from './seed.ts';
+import { assertSeedAllowed, assertSeedTargetAllowed } from './seed.ts';
 import { SCENARIOS, statusPath } from './scenarios.ts';
 
 describe('assertSeedAllowed', () => {
@@ -16,6 +16,24 @@ describe('assertSeedAllowed', () => {
       assertSeedAllowed('local');
       assertSeedAllowed('staging');
     }).not.toThrow();
+  });
+});
+
+describe('assertSeedTargetAllowed', () => {
+  it.each([
+    'postgres://app:x@localhost:5432/store',
+    'postgres://app:x@127.0.0.1:54322/store',
+    'postgres://app:x@postgres:5432/store',
+  ])('allows %s', (url) => {
+    expect(() => {
+      assertSeedTargetAllowed(url);
+    }).not.toThrow();
+  });
+
+  it('refuses a remote host even when APP_ENV is not production', () => {
+    expect(() => {
+      assertSeedTargetAllowed('postgres://app:x@db.prod.example.com:5432/store');
+    }).toThrow(/refuses database host/);
   });
 });
 
