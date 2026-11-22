@@ -16,6 +16,8 @@ declare module 'vitest' {
     pgMigrateUrl: string;
     /** store_app: DML, like web and worker. */
     pgAppUrl: string;
+    /** store_boss: owner of the pgboss schema. */
+    pgBossUrl: string;
     /** Template for `CREATE DATABASE ... TEMPLATE`. */
     pgTemplateDb: string;
   }
@@ -26,6 +28,8 @@ export interface TestDatabase {
   appUrl: string;
   /** store_migrate — для службових дій (setval, DDL). */
   migrateUrl: string;
+  /** store_boss: owner of the pgboss schema (queues). */
+  bossUrl: string;
   drop: () => Promise<void>;
 }
 
@@ -49,6 +53,7 @@ export async function createTestDatabase(): Promise<TestDatabase> {
   return {
     appUrl: withDatabase(inject('pgAppUrl'), name),
     migrateUrl: withDatabase(inject('pgMigrateUrl'), name),
+    bossUrl: withDatabase(inject('pgBossUrl'), name),
     drop: async () => {
       const admin = new pg.Client({ connectionString: rootUrl });
       await admin.connect();

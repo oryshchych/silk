@@ -180,3 +180,25 @@ Left as notes:
 - **A Next.js tool rewrites `apps/web/AGENTS.md`** (heading level) during `pnpm verify`; the
   generated mirror then differs from `ai/` in the working tree.
 - Missing `not-found` page, no `Sitemap:` line, no security headers: phase 1 / 6 (see RR6).
+
+## Phase 0.5, slice 7: outbox relay (2026-11-22)
+
+- **Worker deployment is not wired**: no `apps/worker` Dockerfile, no compose service, no `main.ts`
+  (no loop that calls `relayOutbox` on a timer), no env variable for the `store_boss` URL. This
+  slice delivers the relay, queue setup (`startBoss`, `createSchema: false` because `store_boss`
+  cannot CREATE in the database), `registerWorkers` and tests. The deploy wiring belongs with the
+  first worker task that has to run on staging.
+- **No real email sender yet**: `deliverJob` takes a `MessageSender`; the Resend adapter arrives
+  with `packages/email`. The "once" guarantee rests on the provider idempotency key, which a
+  provider keeps for a limited time (about 24 h for Resend). A retry after a longer outage can
+  send twice; a consumer-side "sent" record keyed by the dedup key would close that gap.
+- **Stuck rows are reported, not yet alerted**: `relayOutbox` returns `stuck` (rows at the attempt
+  limit). The loop that calls it must raise an alert (Telegram) when `stuck > 0`; money alerts are
+  themselves outbox topics, so this alert must not go through the same outbox.
+- **Dead-letter queue** `outbox.dead` collects jobs whose consumer retries ran out; it needs the
+  same kind of watcher.
+- **`exclusive` queues** collapse a re-send only while the first job is queued or active; they are
+  a duplicate guard, not a delivery guarantee. Delivery relies on retries, the dead-letter queue and
+  the idempotency key.
+- **Batch hold time**: the batch locks are held while sending (default 20 rows, 10 s per send
+  timeout, a streak of 3 failures with nothing sent ends the batch).
