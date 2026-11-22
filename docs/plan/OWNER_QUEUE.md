@@ -13,6 +13,7 @@ Newest entries go at the top of the open table. Move answered entries to
 
 | ID | Raised | Item | Class | Needed by | Options and recommendation |
 |---|---|---|---|---|---|
+| Q11 | 2026-11-22 | The merge gate (PR #19) still fails its third security audit: a command-text classifier cannot be made complete (dynamic program names, `gh api` writes, flag clusters, heredoc quoting, git config redirection, editable gate files). The allow rule for the merge command is already live in that branch's settings | BLOCKER for unattended merging | when you are back | Option A (recommended): enable branch protection on `main` (Q9), then merge #19 as a guard rail and merge PRs yourself or let sessions do it. Option B: drop the allow rule and keep merging manual. Option C: another fix round of the classifier plus a deny on editing the gate files, accepting it stays advisory |
 | Q10 | 2026-11-22 | PRs that change the guard rails (`.claude/**`, gate scripts, workflows, `docs/AUTONOMOUS_MODE.md`) are never merged by a session; the first one is the merge-gate PR itself (#19) | BLOCKER for that PR only | when you are back | Review and merge them yourself; sessions keep working on everything else |
 | Q1 | 2026-11-22 | Shop name (`LACE & SILK` is a placeholder), brand palette and fonts | DEFER | before launch | Keep the placeholder and neutral tokens; branding is a token change, not a rewrite |
 | Q2 | 2026-11-22 | Nova Poshta API 2.0 access (key) | DEFER | phase 2 live shipping | Build against a recorded fake; plug the real key in at the end of phase 2 |
