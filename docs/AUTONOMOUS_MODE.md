@@ -23,17 +23,37 @@ limits below. Everything that needs the owner goes into
 ## The merge gate (mechanical)
 
 `gh pr merge` is allowed in `.claude/settings.json` only through the
-`guard-merge` hook (`scripts/merge-gate.ts`, 33 tests). It refuses unless:
+`guard-merge` hook (`scripts/merge-gate.ts`, 116 tests). It refuses unless:
 
-- the PR is open, targets `main`, is not a draft, has no conflicts;
-- every CI check is green;
-- the latest `review-pr-silk` comment is a **PASS for the PR's current head
-  commit**, so any push after the review invalidates it;
-- `--admin` is not used. If GitHub cannot be queried, the merge is refused.
+- the PR is open, targets `main`, is not a draft, and GitHub reports it as
+  mergeable (no conflicts, not still computing);
+- **every CI job defined in `ci.yml` at the PR head succeeded**: a job that
+  never reported, was skipped, or is still running blocks the merge;
+- the latest `review-pr-silk` report, written by the authenticated GitHub user,
+  is a **PASS for the PR's current head commit**. The header must be the first
+  line of the comment and name the commit with at least 12 hex characters, so
+  a quote, a code block or someone else's comment cannot stand in for it, and
+  any push after the review invalidates it;
+- the command pins the commit with `--match-head-commit <full sha>`, so GitHub
+  itself refuses the merge if the PR changed after the check.
 
-The gate cannot judge whether a PR is wise. That is the skill's job, so a
-merge never replaces the review. Only merge PRs that were reviewed with the
-skill; leave anything else (for example a dependency bot's PR) in the queue.
+Refused outright: `--admin`, `--auto` (it merges later without re-checking),
+`gh api` merge endpoints and GraphQL merge mutations, a merge hidden in
+`bash -c`, `eval`, `xargs` or a command substitution, more than one merge in one
+command, and `git push` to `main` (explicit, `--all`, `--mirror`, or a bare push
+while `main` is checked out). Wrappers such as `time`, `timeout`, `nohup`,
+`sudo`, `env` and a full path to `gh` are looked through. The body of a quoted
+heredoc (`<<'EOF'`) is data and is skipped, unless a shell receives it. Once a
+command could merge or push, any problem (GitHub unreachable, an unexpected
+answer, an internal error) refuses it.
+
+What it is not: a sandbox. A script run by an interpreter (`python`, `node`) can
+still call GitHub. The real backstop is branch protection on `main` (required
+PR, required checks, no direct push), which the owner has to enable: see Q9 in
+the owner queue. The gate also cannot judge whether a PR is wise; that is the
+skill's job, so a merge never replaces the review. Only merge PRs that were
+reviewed with the skill; leave anything else (for example a dependency bot's PR)
+in the queue.
 
 ## Hard stops: never, in any mode
 

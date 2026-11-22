@@ -206,10 +206,11 @@ Verdict: PASS | FAIL (b blockers, s should-fix)
 ## 7. Record the result
 
 The first line of the comment must follow this format exactly (`FAIL` instead
-of `PASS` for a failed run; the sha is the PR head, 7 or more characters):
+of `PASS` for a failed run; the sha is the PR head, at least 12 characters, for
+example `git rev-parse --short=12 HEAD`):
 
 ```
-## review-pr-silk: PASS (iteration N of 3), `branch-name` @ `abc1234`
+## review-pr-silk: PASS (iteration N of 3), `branch-name` @ `abc123456789`
 ```
 
 The `guard-merge` hook parses that line and compares the sha with the PR head,
@@ -220,7 +221,14 @@ Post the full report as a PR comment in English (`gh pr comment <number> --body-
 ## 8. Merge (autonomous mode only)
 
 While autonomous mode is in force (`docs/AUTONOMOUS_MODE.md`) and the verdict is
-PASS with CI green on the same commit, merge with `gh pr merge <number> --merge`.
+PASS with CI green on the same commit, merge in two steps. The hook reads the
+command as text, so the sha must be written out, not computed inline:
+
+```bash
+gh pr view <number> --json headRefOid -q .headRefOid          # the full sha
+gh pr merge <number> --merge --match-head-commit <that sha>
+```
+
 The `guard-merge` hook re-checks everything and refuses otherwise; do not work
 around a refusal, fix its reason. After the merge, check that staging is healthy
 (`curl -s https://staging.damazla.com/api/health`). Outside autonomous mode, or

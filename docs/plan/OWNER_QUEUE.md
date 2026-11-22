@@ -21,6 +21,7 @@ Newest entries go at the top of the open table. Move answered entries to
 | Q6 | 2026-11-22 | Phase 0 scope not done: CI jobs `migrate:upgrade`, `migrate:safety`, `size-limit`; Playwright; shadcn/ui; `jsx-a11y` (waits for ESLint 10 support) | DEFER | phases 0.5 to 1 | The orchestrator adds the `test:integration` CI job first; the rest when the first real flow needs them |
 | Q7 | 2026-11-22 | Merged branches still on GitHub: `docs/accountant-answers`, `feat/db-migrations`, `feat/db-client-seed`, `feat/money-dto` | DEFER | whenever | Delete them in the GitHub Branches page; agents are not allowed to delete remote branches |
 | Q8 | 2026-11-22 | Phase 0 criterion 20: the first scheduled nightly backup after 03:00 Kyiv on 2026-11-23 | DEFER | 2026-11-23 | The orchestrator checks the R2 bucket (`staging/` must hold a second file); otherwise the owner does |
+| Q9 | 2026-11-22 | `main` has no branch protection. The merge gate only covers commands run by agent sessions; an agent script, a typo or a leaked token could still push to `main`. Found by the security audit of the merge gate | DEFER (recommended soon) | before long unattended runs | Enable a ruleset on `main`: require a pull request, require the CI checks, block direct pushes (keep yourself as bypass actor if you want). Agents may not change repository settings, so this is yours |
 
 ## Answered
 
