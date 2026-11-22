@@ -1,10 +1,10 @@
-#!/bin/sh
+#!/bin/bash
 # Один бекап: pg_dump → R2 → перевірка, що файл у R2 читається.
 # Запуск вручну: docker exec <контейнер dump> backup-now
 #
 # Бекап, який ніколи не відновлювали, не існує: після завантаження файл
 # читається НАЗАД із R2 і перевіряється pg_restore --list.
-set -eu
+set -euo pipefail
 
 : "${PGHOST:?}" "${PGUSER:?}" "${PGPASSWORD:?}" "${PGDATABASE:?}"
 : "${BACKUP_PREFIX:?BACKUP_PREFIX — напр. staging або production}"
@@ -24,7 +24,14 @@ target="r2:${R2_BUCKET_BACKUPS}/${name}"
 started=$(date +%s)
 
 # -Fc: стиснений custom-формат, відновлюється вибірково через pg_restore.
-pg_dump --format=custom --compress=6 --no-owner | rclone rcat --s3-chunk-size 16M "$target"
+# pipefail: a pg_dump that dies midway must fail the backup. Without it the
+# pipeline status is rclone's, a truncated archive is uploaded, and the check
+# below can still pass because the TOC sits at the start of the file.
+if ! pg_dump --format=custom --compress=6 --no-owner | rclone rcat --s3-chunk-size 16M "$target"; then
+  rclone deletefile "$target" || true
+  echo "BACKUP FAILED: ${name} — pg_dump or the upload failed; the partial object was removed" >&2
+  exit 1
+fi
 
 size=$(rclone size --json "$target" | sed -n 's/.*"bytes":\([0-9]*\).*/\1/p')
 tables=$(rclone cat "$target" | pg_restore --list | grep -c ' TABLE DATA ' || true)
