@@ -482,7 +482,7 @@ describe('review round: shipping, cancelling and recovery around a refund', () =
     expect(alerts.rowCount).toBe(0);
   });
 
-  it('ship racing a refund reservation: if both succeed the refund came AFTER the shipment', async () => {
+  it('ship racing a refund reservation: the refund is always reserved, the shipment either happens or is refused, never half', async () => {
     const barrier = new Barrier(2);
     const run = async (kind: 'ship' | 'refund') => {
       const handle = world.connect();
@@ -492,15 +492,28 @@ describe('review round: shipping, cancelling and recovery around a refund', () =
         ? await handle.db.transaction(async (tx) => await shipOrder(tx, { orderId, source: 't' }))
         : await reserve({}, handle);
     };
-    const results = await Promise.allSettled([run('ship'), run('refund')]);
-    expect(results.filter((r) => r.status === 'fulfilled').length).toBeGreaterThanOrEqual(1);
-    const both = results.every((r) => r.status === 'fulfilled');
-    if (both) {
-      const order = await admin.db.execute<{ after: boolean }>(
-        sql`SELECT (SELECT min(created_at) FROM refund_operations) >= shipped_at AS after
-              FROM orders WHERE id = ${orderId}`,
-      );
-      expect(order.rows[0]?.after).toBe(true);
+    const [shipped, refunded] = await Promise.allSettled([run('ship'), run('refund')]);
+
+    // A refund after shipping is legitimate (a return), so the reservation never fails here.
+    expect(refunded.status).toBe('fulfilled');
+    expect(await opStates()).toEqual(['pending']);
+
+    // Timestamps cannot order two transactions (now() is the transaction START), so the check is
+    // on the outcome: shipped means the goods left, refused means nothing moved at all.
+    const stock = await admin.db.execute<{ stock: number; reserved: number }>(
+      sql`SELECT stock_quantity AS stock, reserved_quantity AS reserved FROM product_variants
+           WHERE id = ${world.fixture.variantIds[0]}`,
+    );
+    const status = await admin.db.execute<{ status: string }>(
+      sql`SELECT status FROM orders WHERE id = ${orderId}`,
+    );
+    if (shipped.status === 'fulfilled') {
+      expect(status.rows[0]?.status).toBe('shipped');
+      expect(stock.rows[0]).toEqual({ stock: 0, reserved: 0 });
+    } else {
+      expect(shipped.reason).toBeInstanceOf(OrderNotShippableError);
+      expect(status.rows[0]?.status).toBe('pending');
+      expect(stock.rows[0]).toEqual({ stock: 1, reserved: 1 });
     }
   });
 
