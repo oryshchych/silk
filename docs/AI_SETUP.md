@@ -136,6 +136,25 @@ extensions після залежних індексів, `ALTER TABLE` із бл
 чим перевірено; непройдені з причиною; відхилення від плану; що потребує
 рішення людини. І **не** переходить до наступної фази.
 
+### `review-pr-silk`
+
+Reviews a pull request against the project's best practices and loops until it
+passes. **Mandatory for every PR**, whichever session opens it (rule in
+`ai/canonical.md`, section 8b).
+
+What it does: scopes the diff, runs the mechanical gates that match the change
+(verify, knip, boundaries, ai:check, db:check, migrate:fresh, test:int, builds,
+clean-clone verify, CI status), dispatches the specialist subagents
+(`money-reviewer`, `migration-reviewer`, `security-auditor`, `seo-reviewer`),
+and walks a checklist (PR hygiene, language, architecture, money and stock,
+database, web, security and env, tests, infrastructure, docs and state).
+Findings are BLOCKER, SHOULD-FIX or NIT. The session fixes them in small
+commits, pushes, and re-runs the **whole** skill (at most 3 rounds, then asks the
+owner). The final report is posted as a PR comment.
+
+The checklist is the living memory of our review standards: when review or
+production exposes a new class of defect, add one line with the lesson.
+
 ---
 
 ## 5. Субагенти

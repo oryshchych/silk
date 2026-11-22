@@ -19,6 +19,7 @@ CI (`ai-sync`) падає, якщо згенероване розійшлося 
 | `/money-change` | зміни в `pricing`, `inventory`, `orders`, `payments`. Чек-лист перед завершенням |
 | `/new-webhook` | порядок операцій із ADR-4 покроково + обов'язкові тести |
 | `/phase-report` | звіт за формою з `AGENTS.md` §1. Не переходить до наступної фази |
+| `/review-pr-silk` | **every PR**: gates, specialist reviewers, project best-practice checklist; fix and re-run until PASS |
 
 ## Субагенти
 
