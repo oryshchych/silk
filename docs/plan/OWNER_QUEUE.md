@@ -14,8 +14,6 @@ Newest entries go at the top of the open table. Move answered entries to
 | ID | Raised | Item | Class | Needed by | Options and recommendation |
 |---|---|---|---|---|---|
 | Q12 | 2026-11-22 | Checkout intent binds the cart version but not the price the buyer saw: a `base_price` change between "see total" and "pay" is charged silently. Fixing it needs a new column (`checkout_intents.quoted_total`), so it is a schema change | DEFER | phase 2 (checkout UI) | Recommended default: add `quoted_total integer` to `checkout_intents`, set it in `startCheckout` from `calculateCart`, compare in `createOrder` and throw a new `PriceChangedError` (409). Until then the total shown on the page can differ from the charge only after an admin edit; the order always stores the real total. Also: `promo_uses_lte_max` CHECK already exists in the schema, nothing to add for promo overshoot |
-| Q11 | 2026-11-22 | The merge gate (PR #19) still fails its third security audit: a command-text classifier cannot be made complete (dynamic program names, `gh api` writes, flag clusters, heredoc quoting, git config redirection, editable gate files). The allow rule for the merge command is already live in that branch's settings | BLOCKER for unattended merging | when you are back | Option A (recommended): enable branch protection on `main` (Q9), then merge #19 as a guard rail and merge PRs yourself or let sessions do it. Option B: drop the allow rule and keep merging manual. Option C: another fix round of the classifier plus a deny on editing the gate files, accepting it stays advisory |
-| Q10 | 2026-11-22 | PRs that change the guard rails (`.claude/**`, gate scripts, workflows, `docs/AUTONOMOUS_MODE.md`) are never merged by a session; the first one is the merge-gate PR itself (#19) | BLOCKER for that PR only | when you are back | Review and merge them yourself; sessions keep working on everything else |
 | Q1 | 2026-11-22 | Shop name (`LACE & SILK` is a placeholder), brand palette and fonts | DEFER | before launch | Keep the placeholder and neutral tokens; branding is a token change, not a rewrite |
 | Q2 | 2026-11-22 | Nova Poshta API 2.0 access (key) | DEFER | phase 2 live shipping | Build against a recorded fake; plug the real key in at the end of phase 2 |
 | Q3 | 2026-11-22 | Checkbox account (test cash register) | DEFER | phase 3 fiscal sandbox | Build `FiscalProvider` against the documented API with a fake; verify against the sandbox when the account exists |
@@ -30,4 +28,5 @@ Newest entries go at the top of the open table. Move answered entries to
 
 | ID | Answered | Decision |
 |---|---|---|
-| | | |
+| Q10 | 2026-11-22 | Merged by the owner: PR #19 (merge gate) |
+| Q11 | 2026-11-22 | Option A: branch protection on `main` (tracked in Q9, still to be enabled by the owner), the gate stays a guard rail, not a wall |
