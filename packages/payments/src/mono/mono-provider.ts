@@ -53,7 +53,8 @@ const KEY_ROTATION_COOLDOWN_MS = 5 * 60 * 1000;
  */
 const DEFINITE_REFUSAL = new Set([400, 401, 403, 404, 422]);
 
-const isLoopback = (host: string): boolean => host === '127.0.0.1' || host === 'localhost';
+const isLoopback = (host: string): boolean =>
+  host === '127.0.0.1' || host === 'localhost' || host === '[::1]';
 
 function assertPositiveMoney(amount: number): void {
   if (!Number.isSafeInteger(amount) || amount <= 0) {
@@ -130,6 +131,17 @@ export class MonoProvider implements PaymentProvider {
   }
 
   async getPaymentStatus(externalId: string): Promise<PaymentStatusResult> {
+    try {
+      return await this.readStatus(externalId);
+    } catch (error) {
+      if (error instanceof PaymentProviderError) throw error;
+      // Network failures and unparsable answers are provider errors for the caller
+      // (a failed lookup is not a verdict on the payment).
+      throw new PaymentProviderError('Mono status lookup failed', 0);
+    }
+  }
+
+  private async readStatus(externalId: string): Promise<PaymentStatusResult> {
     const response = await this.call(
       `/api/merchant/invoice/status?invoiceId=${encodeURIComponent(externalId)}`,
       { method: 'GET' },
@@ -143,8 +155,9 @@ export class MonoProvider implements PaymentProvider {
     }
     const status = mapMonoStatus(invoice.status);
     const captured = capturedAmountOf(invoice, status);
-    if (captured === null)
+    if (captured === null) {
       throw new PaymentProviderError('Mono reported an inconsistent capture', 502);
+    }
     return {
       externalId: invoice.invoiceId,
       localReference: invoice.reference ?? null,

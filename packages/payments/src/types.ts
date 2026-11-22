@@ -90,8 +90,16 @@ export interface PaymentProvider {
   /**
    * Verifies the signature over the ORIGINAL BYTES of the body (read with
    * `arrayBuffer()`, not `text()`: decoding can change bytes) before any
-   * parsing or normalisation. Returns null for anything that does not verify (the caller
-   * quarantines it). Fails closed: a missing key or header is `null`.
+   * parsing or normalisation. Returns null for anything that does not verify. Fails
+   * closed: a missing key or header is `null`.
+   *
+   * `null` also covers a merchant key that could not be fetched: a genuine webhook can be
+   * refused for up to 30 s after a failed key fetch and for the rotation window after a key
+   * change. The caller therefore quarantines it AND answers a NON-2xx status, so the
+   * provider redelivers instead of treating the message as delivered.
+   *
+   * Core notes: `reversed` maps to `refunded` with `capturedAmount` 0 (a zero capture on a
+   * refunded payment is not "never paid"); a non-UAH `currency` must be rejected in core.
    */
   verifyWebhook(rawBody: Uint8Array, headers: Headers): Promise<WebhookResult | null>;
 

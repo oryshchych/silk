@@ -104,7 +104,8 @@ describe('verifyWebhook: signature over the raw body, fail closed', () => {
     const keyB = (await mono.verifyWebhook(bytes(b), headersFor(fake.sign(b))))?.messageKey;
     expect(keyA).toBe(keyA2);
     expect(keyA).not.toBe(keyB);
-    for (const other of [sameStatusLater, otherCapture]) {
+    const otherStatusSameDate = webhook({ status: 'hold' });
+    for (const other of [sameStatusLater, otherCapture, otherStatusSameDate]) {
       const key = (await mono.verifyWebhook(bytes(other), headersFor(fake.sign(other))))
         ?.messageKey;
       expect(key).not.toBe(keyA);
@@ -269,6 +270,23 @@ describe('getPaymentStatus and refund', () => {
       localReference: 'ref-9',
     });
     await expect(mono.getPaymentStatus('missing')).rejects.toBeInstanceOf(PaymentProviderError);
+  });
+
+  it('refuses an answer for a different invoice than the one asked about', async () => {
+    fake.invoices.set('inv-asked', {
+      invoiceId: 'inv-other',
+      status: 'success',
+      finalAmount: 129900,
+      reference: 'r',
+    });
+    await expect(mono.getPaymentStatus('inv-asked')).rejects.toBeInstanceOf(PaymentProviderError);
+  });
+
+  it('wraps network failures and unparsable answers as provider errors', async () => {
+    const offline = new MonoProvider({ baseUrl: 'http://127.0.0.1:1', token: 'x', timeoutMs: 200 });
+    await expect(offline.getPaymentStatus('inv-9')).rejects.toBeInstanceOf(PaymentProviderError);
+    fake.invoices.set('inv-bad', { invoiceId: 'inv-bad', status: 'success', amount: -1 });
+    await expect(mono.getPaymentStatus('inv-bad')).rejects.toBeInstanceOf(PaymentProviderError);
   });
 
   it('refund 408/409 stay unknown, a lost answer is asked once and never retried', async () => {
