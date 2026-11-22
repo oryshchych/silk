@@ -1,56 +1,58 @@
-# CURRENT.md — стан роботи
+# CURRENT.md: working state
 
-> Пам'ять між сесіями. Стан живе тут і в git, а не в контексті.
-> **Агент оновлює цей файл останньою дією кожної сесії.**
+> Memory between sessions. State lives here and in git, not in context.
+> **The agent updates this file as the last action of every session.**
 
-## Поточна фаза
+## Current phase
 
-`phase-00-foundation.md` — звіт віддано 2026-11-22: **23 з 24 критеріїв**
-виконано. Відкритий лише №20 («`pg_dump` у R2 по cron»): перший нічний
-запуск о 03:00 (Київ) 2026-11-23. Фазу 0.5 **не починати** без явного
-«переходь до фази 0.5». Staging: `https://staging.damazla.com` (basic auth);
-Hetzner CAX11 (ARM, 4 ГБ, 49.12.64.197), Dokploy `https://dokploy.damazla.com`.
+**Phase 0.5, "money skeleton"** (`phase-005-money-skeleton.md`). The owner gave
+the explicit go-ahead on 2026-11-22. The work starts in a NEW session; the
+session that finished phase 0 does not continue into it.
 
-## Зроблено
+Phase 0 closed with **23 of 24** acceptance criteria verified by execution.
+Open: no. 20, "`pg_dump` to R2 by schedule". The first nightly run is at
+03:00 Kyiv on 2026-11-23; see next step.
 
-- `6728094`…`3d48a11` монорепо, тулінг, env, compose, образ PG 18, CI
-- PR #1–#2 міграції + Testcontainers, відповіді бухгалтера (ПРРО, шви)
-- PR #3 `createDb()`/`Tx`, seed; #4–#6 `Money`, DTO, `apps/web`, `ai/`, скіли
-- PR #8–#9 образ web, `migrate`, закритий staging; #10–#11 `pg_dump` у R2
-- PR #12 хуки `.claude/` (`a6db51c`)
+Standing rules (also in `AGENTS.md` section 0):
+- all technical text is English; Ukrainian only for site content
+- one phase per session: report, update this file, stop
 
-## Наступний крок
+Infra: staging `https://staging.damazla.com` (basic auth), Hetzner CAX11 (ARM,
+4 GB, 49.12.64.197), Dokploy `https://dokploy.damazla.com`, daily dump to R2.
 
-Після 03:00 (Київ) 2026-11-23: у `staging/` бакета R2 має бути другий файл
-(`rclone lsl`, контейнер `dump`) — закриває критерій №20. Далі за командою
-фаза 0.5, але спершу рішення людини нижче.
+## Done
 
-## Критерії, перевірені виконанням (2026-11-22, чистий клон `a6db51c`)
+- `6728094`..`3d48a11` monorepo, tooling, env, compose, PG 18 image, CI
+- PR #1-#2 migrations + Testcontainers, accountant answers (fiscal, seams)
+- PR #3 `createDb()`/`Tx`, seed; #4-#6 `Money`, DTO, `apps/web`, `ai/`, skills
+- PR #8-#9 web image, `migrate` service, closed staging; #10-#11 dump to R2
+- PR #12 Claude Code hooks; #13 phase 0 report
 
-- `pnpm verify` 124 тести; `pnpm dev` → `/` uk, `/en` en; `db:migrate` +
-  `db:seed` на порожній БД нашого образу: 6 міграцій, 40 товарів, 15 замовлень
-- `pnpm test:int` 30/30 (`search_vector`, ICU `г ґ е є и і ї`, нумерація, FK)
-- лінт ловить `any`, `ts-ignore`, короткий `ts-expect-error`, `next/*` у
-  `core`, `process.env`, hex у `.tsx` (пробні файли); gitleaks блокує коміт
-- один образ `c18a1bb315cf`: local → robots Disallow, staging → 401 без
-  пароля, production → Allow; без `EMAIL_TO_OVERRIDE` exit 1
-- staging: 401 + `noindex`, HTTPS, автодеплой через 2 с після кожного з
-  3 мерджів; бекап → відновлення, лічильники збігаються; розклад
-  симульовано (запуск рівно о `BACKUP_AT`); `ai:check`, CI main — 13 джобів
+## Next step
 
-## Відкриті рішення, що чекають людину
+1. Phase 0.5: read `phase-005-money-skeleton.md`, build the thinnest end-to-end
+   money path with real concurrency tests on Postgres. Not before.
+2. After 03:00 Kyiv on 2026-11-23: a second file must exist under `staging/`
+   in the R2 bucket (container `dump`, `rclone lsl`); this closes criterion 20.
 
-- Назва магазину (`LACE & SILK` — заглушка), брендова палітра й шрифти
-- API НП 2.0; акаунт Checkbox; COD: друк чека в коробку; чек повернення
-  лише на `sale` (NOTES.md)
-- З обсягу фази 0, не зроблено: CI `test:integration`, `migrate:upgrade`,
+## Open decisions for the owner
+
+- Shop name (`LACE & SILK` is a placeholder), brand palette and fonts
+- Nova Poshta API 2.0 access; Checkbox account
+- COD: printing the paper receipt into the parcel; a return receipt may point
+  only to a `sale` receipt, which a FK cannot express (see `NOTES.md`)
+- Phase 0 scope not done: CI jobs `test:integration`, `migrate:upgrade`,
   `migrate:safety`, `size-limit`; Playwright, shadcn/ui, jsx-a11y (ESLint 10)
+- Merged branches still on GitHub: `docs/accountant-answers`,
+  `feat/db-migrations`, `feat/db-client-seed`, `feat/money-dto`
 
-## Відхилення від плану
+## Deviations from the plan
 
-- TS 6.0.3; Postgres на Debian; Next 16.4.3 (у ≤ 16.4.0 критичні RCE)
-- Tailwind v4: токени в CSS `@theme`, не в `tailwind.config.ts`
-- basic auth staging — у застосунку (`proxy.ts`); `worker` прибрано з compose
-  до 0.5; rclone 1.76.0 (Debian-1.60 несумісний з R2); хуки — Node, без `allow`
-- на GitHub лишились влиті гілки `docs/accountant-answers`, `feat/db-migrations`,
-  `feat/db-client-seed`, `feat/money-dto` — видалити в UI
+- TS 6.0.3; Postgres on Debian; Next 16.4.3 (critical RCE in <= 16.4.0)
+- Tailwind v4: tokens in CSS `@theme`, not `tailwind.config.ts`
+- staging basic auth lives in the app (`proxy.ts`), not in Caddy/Dokploy
+- `worker` removed from compose until phase 0.5 brings `apps/worker`
+- rclone 1.76.0: the Debian 1.60 build is incompatible with R2 (501)
+- hooks are Node scripts, with no `allow` list in `settings.json`
+- most existing docs and comments are still Ukrainian; they are rewritten in
+  English when touched, and one dedicated translation pass is planned
