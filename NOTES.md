@@ -130,6 +130,26 @@
 - **Provider routing for refunds** (by the attempt's provider, GIFT_CARDS.md section 0) is enforced
   in core, with a test, in the refund slice.
 
+## Phase 0.5, slice 6: webhook handling (2026-11-22)
+
+- **Provider-side cancel of a superseded invoice is not implemented.** Until it exists, a new
+  attempt is refused while the previous invoice is live (`PAYMENT_ATTEMPT_STILL_OPEN`); it can be
+  replaced once it expired (the buyer who abandoned the page waits for the 30 min validity).
+- **Adjusted captures are not applied from a webhook** (a second `success` with a different
+  `finalAmount` is recorded as "no change"); reconcile with `getPaymentStatus` in the worker.
+- **A stale rule for providers without `modifiedDate`:** the contract requires a state version;
+  WayForPay must supply one or core needs another ordering signal.
+- **No merchant check** (ADR-4): Mono has no merchant field; WayForPay needs one.
+- **Quarantine abuse:** unverified bodies are stored as hash plus a 2 KB prefix, but the route
+  still needs per-IP rate limiting (edge, slice 8) and `quarantine:cleanup` retention (worker).
+- **Alerts** (`alert.payment-mismatch`, `alert.late-payment`, `alert.double-payment`) are outbox
+  topics; the relay and the Telegram consumer arrive with the worker.
+- **`recordAttemptResult` maps every failure to read the provider answer to `unknown`**, which blocks a
+  new attempt (`PAYMENT_ATTEMPT_UNRESOLVED`) until reconciliation. A "definitely not created"
+  outcome (a 4xx refusal) is not distinguished yet; `payments:reconcile-open` must close such attempts.
+- **Double click:** an attempt with no invoice younger than 60 s cannot be superseded
+  (`PAYMENT_ATTEMPT_STILL_OPEN`); the web layer should return the existing attempt's redirect.
+
 ## Retro review of PRs #1-#14 (2026-11-22): open nits
 
 Fixed in PRs: dump failure detection, nested `.env` in `.dockerignore`, seed target guard,

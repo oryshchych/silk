@@ -200,6 +200,9 @@ importers:
       '@store/db':
         specifier: workspace:*
         version: link:../db
+      '@store/payments':
+        specifier: workspace:*
+        version: link:../payments
       '@store/shared':
         specifier: workspace:*
         version: link:../shared

@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     "./types": "./src/types.ts",
-    "./mono": "./src/mono/mono-provider.ts"
+    "./mono": "./src/mono/mono-provider.ts",
+    "./test/fake-mono": "./test/fake-mono.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"
