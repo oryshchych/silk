@@ -34,10 +34,20 @@ Redirect із браузера справді ніколи нічого не з�
 назавжди залишиться неоплаченим, хоча гроші списані. Постановка листа в
 чергу після коміту мала власне друге вікно втрати.
 
-Тому **одна транзакція** охоплює: перевірену подію, зміну фінансового стану,
-складські зміни, історію і запис в `outbox`. Воркер доставляє outbox-записи
-в pg-boss із ретраями. Дублі відкидаються лише після **підтвердженого
-застосування** (`payment_events.applied_at IS NOT NULL`).
+So **one transaction** covers: the verified event, the financial state change,
+stock changes, history and the `outbox` row. The worker then delivers outbox
+rows to pg-boss with retries. A duplicate is dropped only after the
+**confirmed application** of the message (`payment_events.applied_at IS NOT
+NULL`).
+
+**Actual delivery guarantee (implemented in `apps/worker`).** The relay is
+at-least-once, not "one transaction with the queue": the app role cannot write
+to the `pgboss` schema, so the send runs on its own connection (OWNER_QUEUE
+Q14). A re-send after a crash collapses into the existing job through the
+pg-boss singleton key; once that job has finished, the consumer's side effect is
+kept to one by the provider idempotency key (the outbox dedup key). Jobs that
+exhaust their retries go to a dead-letter queue, and rows the relay gives up on
+are reported as `stuck`.
 
 #### Неперевірені повідомлення — в карантин, не в `payment_events`
 

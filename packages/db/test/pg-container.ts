@@ -66,6 +66,7 @@ export default async function setup(project: TestProject): Promise<() => Promise
   project.provide('pgRootUrl', urlFor(container, 'store_root'));
   project.provide('pgMigrateUrl', migrateUrl);
   project.provide('pgAppUrl', urlFor(container, 'store_app'));
+  project.provide('pgBossUrl', urlFor(container, 'store_boss'));
   project.provide('pgTemplateDb', TEMPLATE_DB);
 
   return async () => {

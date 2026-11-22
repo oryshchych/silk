@@ -180,3 +180,32 @@ Left as notes:
 - **A Next.js tool rewrites `apps/web/AGENTS.md`** (heading level) during `pnpm verify`; the
   generated mirror then differs from `ai/` in the working tree.
 - Missing `not-found` page, no `Sitemap:` line, no security headers: phase 1 / 6 (see RR6).
+
+## Phase 0.5, slice 7: outbox relay (2026-11-22)
+
+- **Worker deployment is not wired**: no `apps/worker` Dockerfile, no compose service, no `main.ts`
+  (no loop that calls `relayOutbox` on a timer), no env variable for the `store_boss` URL. This
+  slice delivers the relay, queue setup (`startBoss`, `createSchema: false` because `store_boss`
+  cannot CREATE in the database), `registerWorkers` and tests. The deploy wiring belongs with the
+  first worker task that has to run on staging.
+- **No real email sender yet**: `deliverJob` takes a `MessageSender`; the Resend adapter arrives
+  with `packages/email`. The "once" guarantee rests on the provider idempotency key, which a
+  provider keeps for a limited time (about 24 h for Resend). A retry after a longer outage can
+  send twice; a consumer-side "sent" record keyed by the dedup key would close that gap.
+- **Stuck rows are reported, not yet alerted**: `relayOutbox` returns `stuck` (rows at the attempt
+  limit). The loop that calls it must raise an alert (Telegram) when `stuck > 0`; money alerts are
+  themselves outbox topics, so this alert must not go through the same outbox.
+- **Job payloads live in `pgboss.job`** until pg-boss retention ends (14 days by default): keep personal
+  data out of outbox payloads (today only an order id) and let the consumer load it when it sends.
+- **Retry tuning**: mail and alert queues retry 20 times with backoff capped at 1 h (about half a
+  day of provider outage); the dead-letter queue keeps jobs 30 days. Tracked as Q15 (watcher).
+- **Dead-letter queue** `outbox.dead` collects jobs whose consumer retries ran out; it needs the
+  same kind of watcher.
+- **`exclusive` queues** collapse a re-send only while the first job is queued or active; they are
+  a duplicate guard, not a delivery guarantee. Delivery relies on retries, the dead-letter queue and
+  the idempotency key.
+- **A hung send** triggers a second probe: if the backend still answers, the hang is the row's problem
+  (burns an attempt, the batch carries on); after two hung sends in one batch it ends. A backend that
+  answers the probe but hangs every send is therefore bounded to two timeouts per tick.
+- **Batch hold time**: the batch locks are held while sending (default 20 rows, 10 s per send
+  timeout, a streak of 3 failures with nothing sent ends the batch).
