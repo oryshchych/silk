@@ -16,6 +16,6 @@
 
 ## Review
 
-<!-- Filled by the session after running the review-pr-silk skill until PASS: iteration count, verdict, open NITs. -->
+<!-- One line, filled after review-pr-silk reaches PASS: verdict, iteration count, link to the full report comment. -->
 
 <!-- Technical text in English only. No AI attribution lines. Target branch: main. -->

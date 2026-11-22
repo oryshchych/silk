@@ -35,16 +35,34 @@ CI checks are findings too.
 Run every gate that matches what changed. Quote the failing output; do not
 paraphrase it.
 
-| Changed                                                | Gate                                                                                                                                                                                                                |
-| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| anything                                               | `pnpm verify` (format, lint, typecheck, unit), `pnpm knip`, `pnpm boundaries`, `pnpm ai:check`                                                                                                                      |
-| `package.json`, lockfile                               | `pnpm audit --audit-level high`                                                                                                                                                                                     |
-| `packages/db/src/schema.ts`, `packages/db/migrations/` | `pnpm db:check`, `pnpm migrate:fresh`                                                                                                                                                                               |
-| anything touching Postgres (db, core, payments, seed)  | `pnpm test:int`                                                                                                                                                                                                     |
-| `apps/web`, `packages/shared`                          | `NEXT_TELEMETRY_DISABLED=1 pnpm --filter web build`                                                                                                                                                                 |
-| Dockerfiles, compose, `infra/`                         | build each touched image (`docker build -f apps/web/Dockerfile .`, `packages/db/Dockerfile`, `infra/dump`) and `docker compose -f docker-compose.yml -f docker-compose.<env>.yml config` for staging and production |
-| tooling, lint config, CI, hooks, `ai/`                 | repeat `pnpm verify` **from a clean clone** (`git clone` into a scratch dir, `pnpm install --frozen-lockfile`): locally generated files mask missing steps                                                          |
-| after every push                                       | `gh pr checks`: all CI jobs green before PASS                                                                                                                                                                       |
+| Changed                                                | Gate                                                                                                     |
+| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| anything                                               | `pnpm verify` (format, lint, typecheck, unit), `pnpm knip`, `pnpm boundaries`, `pnpm ai:check`           |
+| `package.json`, lockfile                               | `pnpm audit --audit-level high`                                                                          |
+| `packages/db/src/schema.ts`, `packages/db/migrations/` | `pnpm db:check`, `pnpm migrate:fresh`                                                                    |
+| anything touching Postgres (db, core, payments, seed)  | `pnpm test:int`                                                                                          |
+| `apps/web`, `packages/shared`                          | `NEXT_TELEMETRY_DISABLED=1 pnpm --filter web build`                                                      |
+| Dockerfiles, compose, `infra/`                         | build each touched image and validate the compose overlays (commands below)                              |
+| tooling, lint config, CI, hooks, `ai/`                 | repeat `pnpm verify` **from a clean clone** (commands below): locally generated files mask missing steps |
+| after every push                                       | `gh pr checks`: all CI jobs green before PASS                                                            |
+
+Gate details:
+
+```bash
+# Images (build only what the diff touches)
+docker build -f apps/web/Dockerfile -t store-web:review --build-arg NEXT_PUBLIC_SITE_URL=https://staging.example.com .
+docker build -f packages/db/Dockerfile -t store-db-tools:review .
+docker build -t store-dump:review infra/dump
+# Compose overlays (set the variables the files require, or accept the blank warnings)
+docker compose -f docker-compose.yml -f docker-compose.staging.yml config --quiet
+docker compose -f docker-compose.yml -f docker-compose.production.yml config --quiet
+
+# Clean clone of the PR branch (never your working tree)
+SCRATCH=$(mktemp -d)
+git clone --branch "$(git branch --show-current)" "$(git rev-parse --show-toplevel)" "$SCRATCH/clean"
+cd "$SCRATCH/clean" && cp .env.example .env
+pnpm install --frozen-lockfile && pnpm verify
+```
 
 ## 3. Specialist reviewers
 
@@ -76,8 +94,8 @@ skipped, not ticked.
 
 ### B. Language
 
-- [ ] All technical text is English: code, comments, docs, test names, logs and errors, commit and PR text. Cyrillic is allowed only in site content (`apps/web/messages/uk.json`, product and seed content, legal text):
-      `git diff origin/main...HEAD -U0 | grep -nE '^\+.*[А-Яа-яІіЇїЄєҐґ]'`
+- [ ] All technical text is English: code, comments, docs, test names, logs and errors, commit and PR text. Cyrillic is allowed only in site content (`apps/web/messages/uk.json`; product, seed and legal text). Any hit outside `uk.json` is reviewed by hand. The command needs `grep -P` (GNU grep or ugrep):
+      `git diff origin/main...HEAD -U0 -- . ':!apps/web/messages/uk.json' | grep -nP '^\+.*\p{Cyrillic}'`
 - [ ] Ukrainian technical files that the diff touches are rewritten in English where touched. Untouched files are not mass-translated.
 
 ### C. Architecture and TypeScript
@@ -179,4 +197,4 @@ Verdict: PASS | FAIL (b blockers, s should-fix)
 
 ## 7. Record the result
 
-Post the final report as a PR comment in English (`gh pr comment <number> --body-file <file>`): verdict, iteration count, commit sha, gates, how each earlier comment was handled, and open NITs. If posting is denied, give the same text to the owner in chat. Then tell the owner the PR is ready to merge.
+Post the full report as a PR comment in English (`gh pr comment <number> --body-file <file>`): verdict, iteration count, commit sha, gates, how each earlier comment was handled, and open NITs. Put one line in the `Review` section of the PR description (`gh pr edit <number> --body-file <file>`): the verdict, the iteration count and a link to that comment. If posting is denied, give the same text to the owner in chat. Then tell the owner the PR is ready to merge.
