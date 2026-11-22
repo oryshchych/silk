@@ -7,7 +7,9 @@
     "./schema": "./src/schema.ts",
     "./client": "./src/client.ts",
     "./types": "./src/types.ts",
-    "./migrate": "./src/migrate.ts"
+    "./migrate": "./src/migrate.ts",
+    "./seed/money-skeleton": "./seed/money-skeleton.ts",
+    "./test/db": "./test/db.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",

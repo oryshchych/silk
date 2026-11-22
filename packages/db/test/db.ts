@@ -8,6 +8,19 @@ import { randomUUID } from 'node:crypto';
 import pg from 'pg';
 import { inject } from 'vitest';
 
+declare module 'vitest' {
+  export interface ProvidedContext {
+    /** Суперкористувач: лише для службових перевірок у тестах. */
+    pgRootUrl: string;
+    /** store_migrate — DDL. */
+    pgMigrateUrl: string;
+    /** store_app — DML, як web і worker. */
+    pgAppUrl: string;
+    /** Шаблон для `CREATE DATABASE ... TEMPLATE`. */
+    pgTemplateDb: string;
+  }
+}
+
 export interface TestDatabase {
   /** store_app — як web і worker. */
   appUrl: string;

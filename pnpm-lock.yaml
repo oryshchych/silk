@@ -195,6 +195,28 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
 
+  packages/core:
+    dependencies:
+      '@store/db':
+        specifier: workspace:*
+        version: link:../db
+      drizzle-orm:
+        specifier: 0.45.2
+        version: 0.45.2(@types/pg@8.23.1)(pg@8.23.1)
+    devDependencies:
+      '@types/node':
+        specifier: ^24.13.3
+        version: 24.19.2
+      '@types/pg':
+        specifier: ^8.23.1
+        version: 8.23.1
+      pg:
+        specifier: ^8.23.1
+        version: 8.23.1
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+
   packages/db:
     dependencies:
       '@store/shared':
@@ -5021,7 +5043,7 @@ snapshots:
 
   '@types/pg@8.23.1':
     dependencies:
-      '@types/node': 24.13.3
+      '@types/node': 24.19.2
       pg-protocol: 1.16.1
       pg-types: 2.2.0
 
