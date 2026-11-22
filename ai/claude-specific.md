@@ -40,14 +40,21 @@ CI (`ai-sync`) падає, якщо згенероване розійшлося 
   словами не блокуються. Обгортки на кшталт `ssh host '…'` не розбираються
 - `PostToolUse` на `Edit|Write|MultiEdit` → `post-edit-verify`: prettier +
   eslint --fix одразу; помилки, які `--fix` не виправив, повертаються агенту
-- `PreToolUse` on `Bash` → `guard-merge`: `gh pr merge` goes through it. It
-  refuses unless the PR is open, targets `main`, is not a draft, is mergeable,
-  every CI job from `ci.yml` succeeded, and the latest `review-pr-silk` report
-  (by the authenticated user, header on the first line, 12+ hex sha) is a PASS
-  for the current head commit; the command must pin it with
-  `--match-head-commit <full sha>`. It also refuses `--admin`, `--auto`, merges
-  through `gh api`, `bash -c` and the like, and any `git push` to `main`. It
-  fails closed (`scripts/merge-gate.ts`)
+- `PreToolUse` on `Bash` → `guard-merge`: every Bash command is classified (no
+  text prefilter) and `gh pr merge` goes through the gate. It refuses unless the
+  PR is open, targets `main`, is not a draft, is mergeable, every CI job from
+  `ci.yml` **on `main`** has a successful check run, the latest `review-pr-silk`
+  report (by the authenticated user, header on the first line, 12+ hex sha) is a
+  PASS for the current head commit, the command pins it with
+  `--match-head-commit <full sha>`, the PR does **not** touch the guard rails
+  (`.claude/**`, gate scripts, workflows, `docs/AUTONOMOUS_MODE.md`: the owner
+  merges those) and the gate files in the checkout equal `origin/main`. It also
+  refuses `--admin`, `--auto`, merges through `gh api`, shell wrappers that hide
+  a merge, unknown `gh` subcommands (aliases), and any push to `main`; `gh`/`git`
+  are found at any position, and words built by the shell are refused. It fails
+  closed (`scripts/merge-gate.ts`, `scripts/guard-merge.ts`). Because heredoc
+  bodies are read as commands too, write prose that quotes these commands with
+  the Write/Edit tools, not a Bash heredoc
 - `Stop` → `stop-typecheck`: `pnpm typecheck`, якщо є незакомічені зміни.
   **Через exit code 2** — звичайний exit 1 хід не блокує. Повторний Stop
   (`stop_hook_active`) пропускається, щоб не зациклитись

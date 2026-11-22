@@ -23,37 +23,57 @@ limits below. Everything that needs the owner goes into
 ## The merge gate (mechanical)
 
 `gh pr merge` is allowed in `.claude/settings.json` only through the
-`guard-merge` hook (`scripts/merge-gate.ts`, 116 tests). It refuses unless:
+`guard-merge` hook (`scripts/merge-gate.ts` holds the rules,
+`scripts/guard-merge.ts` the orchestration, both unit-tested). It refuses unless:
 
 - the PR is open, targets `main`, is not a draft, and GitHub reports it as
   mergeable (no conflicts, not still computing);
-- **every CI job defined in `ci.yml` at the PR head succeeded**: a job that
-  never reported, was skipped, or is still running blocks the merge;
+- **every CI job defined in `ci.yml` on `main`** has a check run, and every run
+  of that name succeeded. The list comes from `main`, so a PR cannot shrink its
+  own checks; a job that never reported, was skipped, or is still running blocks
+  the merge. Matrix jobs and `${{ }}` names are not understood and also block
+  (the safe direction);
 - the latest `review-pr-silk` report, written by the authenticated GitHub user,
   is a **PASS for the PR's current head commit**. The header must be the first
-  line of the comment and name the commit with at least 12 hex characters, so
-  a quote, a code block or someone else's comment cannot stand in for it, and
+  line of the comment and name the commit with at least 12 hex characters, and
   any push after the review invalidates it;
 - the command pins the commit with `--match-head-commit <full sha>`, so GitHub
-  itself refuses the merge if the PR changed after the check.
+  itself refuses the merge if the PR changed after the check;
+- the PR **does not change the guard rails**: `.claude/settings.json`,
+  `.claude/hooks/**`, the `review-pr-silk` skill, the gate scripts, workflows and
+  this file. The owner merges those, so a session cannot weaken the gate and use
+  it to merge itself. The gate files in the checkout must also equal
+  `origin/main`.
 
-Refused outright: `--admin`, `--auto` (it merges later without re-checking),
-`gh api` merge endpoints and GraphQL merge mutations, a merge hidden in
-`bash -c`, `eval`, `xargs` or a command substitution, more than one merge in one
-command, and `git push` to `main` (explicit, `--all`, `--mirror`, or a bare push
-while `main` is checked out). Wrappers such as `time`, `timeout`, `nohup`,
-`sudo`, `env` and a full path to `gh` are looked through. The body of a quoted
-heredoc (`<<'EOF'`) is data and is skipped, unless a shell receives it. Once a
-command could merge or push, any problem (GitHub unreachable, an unexpected
-answer, an internal error) refuses it.
+Refused outright: `--admin`, `--auto`, `gh api` merge endpoints and GraphQL merge
+mutations, unknown `gh` subcommands (an alias can hide a merge), `gh alias` and
+`gh extension`, git aliases, a merge hidden in `bash -c`, `eval`, `xargs` or a
+command substitution, any `$`-built or glob argument of a merge or push, more
+than one merge in one command, and any push to `main` (explicit, `--all`,
+`--mirror`, glob refspecs, `-C`/`--git-dir`, or a bare push while `main` is
+checked out, judged in the directory the command runs in). `gh` and `git` are
+found at any position of a command, so wrappers need no list. Heredoc bodies are
+read as commands too (no skipping), so prose that quotes these commands is
+written with the Write/Edit tools, not a Bash heredoc. Once a command could merge
+or push, any problem (GitHub unreachable, an unexpected answer, an internal
+error) refuses it.
 
-What it is not: a sandbox. A script run by an interpreter (`python`, `node`) can
-still call GitHub. The real backstop is branch protection on `main` (required
-PR, required checks, no direct push), which the owner has to enable: see Q9 in
-the owner queue. The gate also cannot judge whether a PR is wise; that is the
-skill's job, so a merge never replaces the review. Only merge PRs that were
-reviewed with the skill; leave anything else (for example a dependency bot's PR)
-in the queue.
+Limits, stated honestly:
+
+- It is not a sandbox. A script run by an interpreter (`python`, `node`) can
+  still call GitHub, and a hook cannot see inside it.
+- The agent and the owner are the same GitHub user, so the `review-pr-silk`
+  comment proves a report was posted, not that the review was honest. CI and the
+  pinned commit are what the gate truly enforces; the review itself is the
+  skill's job.
+- The real backstop is branch protection on `main` (required PR, required
+  checks, no direct push), which only the owner can enable: Q9 in the owner
+  queue. Until then this gate is a strong guard rail, not a wall.
+- Auto permission mode runs a classifier before the allow rule; a merge it
+  blocks stays in the queue for the owner.
+
+Only merge PRs that were reviewed with the skill; leave anything else (for
+example a dependency bot's PR) in the queue.
 
 ## Hard stops: never, in any mode
 

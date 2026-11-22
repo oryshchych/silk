@@ -229,7 +229,9 @@ gh pr view <number> --json headRefOid -q .headRefOid          # the full sha
 gh pr merge <number> --merge --match-head-commit <that sha>
 ```
 
-The `guard-merge` hook re-checks everything and refuses otherwise; do not work
+A PR that changes the guard rails (`.claude/**`, the gate scripts, workflows,
+`docs/AUTONOMOUS_MODE.md`) is never merged by a session: tell the owner. The
+`guard-merge` hook re-checks everything and refuses otherwise; do not work
 around a refusal, fix its reason. After the merge, check that staging is healthy
 (`curl -s https://staging.damazla.com/api/health`). Outside autonomous mode, or
 when the PR carries an open BLOCKER decision for the owner, do not merge: tell

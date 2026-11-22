@@ -13,6 +13,7 @@ Newest entries go at the top of the open table. Move answered entries to
 
 | ID | Raised | Item | Class | Needed by | Options and recommendation |
 |---|---|---|---|---|---|
+| Q10 | 2026-11-22 | PRs that change the guard rails (`.claude/**`, gate scripts, workflows, `docs/AUTONOMOUS_MODE.md`) are never merged by a session; the first one is the merge-gate PR itself (#19) | BLOCKER for that PR only | when you are back | Review and merge them yourself; sessions keep working on everything else |
 | Q1 | 2026-11-22 | Shop name (`LACE & SILK` is a placeholder), brand palette and fonts | DEFER | before launch | Keep the placeholder and neutral tokens; branding is a token change, not a rewrite |
 | Q2 | 2026-11-22 | Nova Poshta API 2.0 access (key) | DEFER | phase 2 live shipping | Build against a recorded fake; plug the real key in at the end of phase 2 |
 | Q3 | 2026-11-22 | Checkbox account (test cash register) | DEFER | phase 3 fiscal sandbox | Build `FiscalProvider` against the documented API with a fake; verify against the sandbox when the account exists |
