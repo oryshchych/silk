@@ -134,3 +134,11 @@ describe('assertFitsPgInteger', () => {
     expect(() => assertFitsPgInteger(money(2_147_483_648))).toThrow(RangeError);
   });
 });
+
+describe('negative zero', () => {
+  it('money() never returns -0', () => {
+    expect(Object.is(money(-0), 0)).toBe(true);
+    expect(Object.is(multiply(money(0), -1), 0)).toBe(true);
+    expect(Object.is(parseHryvnias('-0'), 0)).toBe(true);
+  });
+});
