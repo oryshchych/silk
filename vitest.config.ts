@@ -1,26 +1,33 @@
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
+
+// Agent sessions work in git worktrees under `.claude/worktrees/`, inside this
+// repository. Without this exclude the main checkout would also run the
+// worktrees' tests (a doubled run, plus half-finished tests of another session).
+const exclude = [...configDefaults.exclude, '**/.claude/worktrees/**'];
 
 export default defineConfig({
   test: {
-    // projects, не один конфіг: рівні тестів мають різних виконавців.
+    // Projects, not one config: the test levels have different runners.
     projects: [
       {
         test: {
           name: 'unit',
           environment: 'node',
           include: ['**/*.unit.test.ts'],
+          exclude,
         },
       },
       {
         test: {
           name: 'integration',
           include: ['**/*.int.test.ts'],
-          // Транзакції й локи не паралеляться через один pool.
+          exclude,
+          // Transactions and locks do not run in parallel through one pool.
           testTimeout: 30_000,
-          // Testcontainers із НАШИМ образом Postgres (hunspell + ICU) і
-          // прогоном усіх міграцій на порожню БД — тобто migrate:fresh.
+          // Testcontainers with OUR Postgres image (hunspell + ICU) that runs
+          // every migration on an empty database, i.e. migrate:fresh.
           globalSetup: './packages/db/test/pg-container.ts',
-          // Збірка образу при першому прогоні + старт контейнера.
+          // Image build on the first run plus container start.
           hookTimeout: 600_000,
         },
       },
@@ -29,8 +36,8 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'lcov'],
       include: ['packages/*/src/**/*.ts', 'apps/*/src/**/*.ts'],
-      // Порогові покриття per-package, не загальне: загальний відсоток по
-      // монорепо нічого не означає.
+      // Per-package thresholds, not one global number: a total across the
+      // monorepo means nothing.
       thresholds: {
         'packages/core/src/pricing/**': { lines: 95, branches: 90 },
         'packages/core/src/inventory/**': { lines: 95, branches: 90 },

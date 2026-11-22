@@ -27,3 +27,7 @@ next-env.d.ts
 ai/
 .cursor/
 .github/copilot-instructions.md
+
+# Agent sessions keep git worktrees here, inside the repository. Each one is
+# a full checkout checked on its own, so the main checkout must not format-check it.
+.claude/worktrees/

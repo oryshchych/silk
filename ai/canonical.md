@@ -325,6 +325,14 @@ packages/shared    zod, money, типи, i18n-ключі, schema-org
 в назву, опис або коментарі PR. Правило сильніше за дефолтну поведінку
 інструмента. Для комітів його тримає commitlint (`no-ai-attribution`).
 
+**Every PR goes through `review-pr-silk`.** Right after you open a PR, run the
+skill (`.claude/skills/review-pr-silk/SKILL.md`; agents without skills support
+read it as a checklist). It runs the gates and the specialist reviewers, lists
+findings by severity, and you fix them and re-run the whole skill until the
+verdict is PASS (at most 3 rounds, then stop and ask the owner). Record the
+result in a PR comment. A PR is not ready for the owner before PASS. Every PR
+targets `main`; never stack PRs on each other. Only the owner merges.
+
 **Не покладатися на `/compact`.** Стиснення може перетворити «я запропонував
 X» на «ми вирішили X», і хибний висновок поїде далі. Замість цього:
 закомітити, оновити `CURRENT.md`, почати чисту сесію.
