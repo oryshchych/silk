@@ -10,13 +10,13 @@ import { inject } from 'vitest';
 
 declare module 'vitest' {
   export interface ProvidedContext {
-    /** Суперкористувач: лише для службових перевірок у тестах. */
+    /** Superuser: only for service checks in tests. */
     pgRootUrl: string;
-    /** store_migrate — DDL. */
+    /** store_migrate: DDL. */
     pgMigrateUrl: string;
-    /** store_app — DML, як web і worker. */
+    /** store_app: DML, like web and worker. */
     pgAppUrl: string;
-    /** Шаблон для `CREATE DATABASE ... TEMPLATE`. */
+    /** Template for `CREATE DATABASE ... TEMPLATE`. */
     pgTemplateDb: string;
   }
 }
