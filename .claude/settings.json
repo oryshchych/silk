@@ -17,6 +17,11 @@
           {
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-production.mjs\""
+          },
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-merge.mjs\"",
+            "timeout": 60
           }
         ]
       }
@@ -46,6 +51,7 @@
     ]
   },
   "permissions": {
+    "allow": ["Bash(gh pr merge *)"],
     "deny": [
       "Bash(git push --force*)",
       "Bash(git push -f*)",
