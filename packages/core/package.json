@@ -10,7 +10,8 @@
     "./orders": "./src/orders/create-order.ts",
     "./errors": "./src/errors.ts",
     "./payments": "./src/payments/handle-webhook.ts",
-    "./payment-attempts": "./src/payments/attempts.ts"
+    "./payment-attempts": "./src/payments/attempts.ts",
+    "./fulfilment": "./src/orders/fulfilment.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"

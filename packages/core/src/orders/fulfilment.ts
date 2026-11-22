@@ -1,0 +1,268 @@
+/**
+ * Fulfilment transitions that touch stock (ADR-18). Three DIFFERENT operations,
+ * deliberately not synonyms:
+ *
+ *   release reservation  -> cancelOrder: the reservation closes, stock_quantity is untouched
+ *   ship stock           -> shipOrder:   stock_quantity -= q AND reserved_quantity -= q, once
+ *   receive return       -> a later slice (physical receipt, stock_quantity += q)
+ *
+ * Lock order (ADR-22): orders (3), then promo_codes (6), then product_variants
+ * (8, ascending). cancelOrder takes the same promo-then-variants order as
+ * createOrder, so the two cannot deadlock.
+ *
+ * Both are idempotent under the order lock: a repeat sees the new status and
+ * changes nothing, and every reservation is closed by a CONDITIONAL update
+ * (`released_at IS NULL`), with the denormalised counters moved only for the
+ * rows that really changed.
+ */
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
+
+import {
+  auditLog,
+  orderItems,
+  orderStatusHistory,
+  orders,
+  outbox,
+  paymentAttempts,
+  promoCodeRedemptions,
+  stockReservations,
+} from '@store/db/schema';
+import type { Tx } from '@store/db/types';
+
+import { OrderNotCancellableError, OrderNotShippableError, StockDriftError } from '../errors.ts';
+import { acquireLocks } from '../locks/acquire-locks.ts';
+import { canTransition } from './transitions.ts';
+
+export interface FulfilmentResult {
+  orderId: string;
+  /** False when an earlier call already did it: nothing changed. */
+  changed: boolean;
+}
+
+type Order = typeof orders.$inferSelect;
+
+async function lockedOrder(tx: Tx, orderId: string): Promise<Order | undefined> {
+  await acquireLocks(tx, { orders: [orderId] });
+  const [order] = await tx.select().from(orders).where(eq(orders.id, orderId));
+  return order;
+}
+
+async function liveReservations(tx: Tx, orderId: string) {
+  return await tx
+    .select({
+      id: stockReservations.id,
+      variantId: stockReservations.variantId,
+      quantity: stockReservations.quantity,
+    })
+    .from(stockReservations)
+    .where(and(eq(stockReservations.orderId, orderId), isNull(stockReservations.releasedAt)))
+    .orderBy(asc(stockReservations.variantId));
+}
+
+/** Closes one reservation exactly once; returns the quantity only if THIS call closed it. */
+async function closeReservation(tx: Tx, id: string, reason: 'shipped' | 'cancelled') {
+  const closed = await tx.execute<{ quantity: number }>(
+    sql`UPDATE stock_reservations SET released_at = now(), release_reason = ${reason}
+         WHERE id = ${id} AND released_at IS NULL
+        RETURNING quantity`,
+  );
+  return closed.rows[0]?.quantity ?? null;
+}
+
+async function recordTransition(
+  tx: Tx,
+  order: Order,
+  to: 'shipped' | 'cancelled',
+  source: string,
+  comment: string | null,
+): Promise<void> {
+  await tx.insert(orderStatusHistory).values({
+    orderId: order.id,
+    fromStatus: order.status,
+    toStatus: to,
+    field: 'status',
+    source,
+    comment,
+  });
+  await tx.insert(auditLog).values({
+    action: 'transition',
+    entity: 'order',
+    entityId: order.id,
+    diff: { source, field: 'status', from: order.status, to },
+  });
+}
+
+/**
+ * Ship: the one place where stock_quantity goes down. In the skeleton the
+ * intermediate statuses (confirmed, processing) are skipped and the history
+ * records the jump; the admin flow of phase 5 walks them one by one.
+ */
+export async function shipOrder(
+  tx: Tx,
+  input: { orderId: string; source: string },
+): Promise<FulfilmentResult> {
+  const order = await lockedOrder(tx, input.orderId);
+  if (order === undefined) throw new OrderNotShippableError('no such order');
+  if (order.status === 'shipped' || order.status === 'delivered') {
+    return { orderId: order.id, changed: false };
+  }
+  if (!canTransition(order.status, 'shipped')) {
+    throw new OrderNotShippableError(`the order is ${order.status}`);
+  }
+  // Card payments only in the skeleton. COD and bank transfer shipping rules (what confirms
+  // them) are an owner decision, OWNER_QUEUE Q16; until then only a settled payment ships.
+  if (order.paymentStatus !== 'paid') {
+    throw new OrderNotShippableError('the order is not paid');
+  }
+  if (order.capturedTotal < order.total) {
+    throw new OrderNotShippableError('the captured amount does not cover the order total');
+  }
+
+  const reservations = await liveReservations(tx, order.id);
+  // A paid order without a live reservation is the exceptional "late payment" state:
+  // a human decides, nothing ships automatically.
+  if (reservations.length === 0) throw new OrderNotShippableError('no live reservation');
+  // The live reservations must cover exactly what was ordered: no partial shipments here.
+  const [items] = await tx
+    .select({ n: sql<number>`coalesce(sum(${orderItems.quantity}), 0)::int` })
+    .from(orderItems)
+    .where(eq(orderItems.orderId, order.id));
+  const reserved = reservations.reduce((total, r) => total + r.quantity, 0);
+  if ((items?.n ?? 0) !== reserved) {
+    throw new OrderNotShippableError('the live reservations do not match the order items');
+  }
+  await acquireLocks(tx, { product_variants: reservations.map((r) => r.variantId) });
+
+  for (const reservation of reservations) {
+    const quantity = await closeReservation(tx, reservation.id, 'shipped');
+    // Under the order lock nobody else can close it: a null here is a broken invariant, and
+    // continuing would mark the order shipped without taking the goods off the shelf.
+    if (quantity === null) throw new StockDriftError(`reservation ${reservation.id} vanished`);
+    const moved = await tx.execute(
+      sql`UPDATE product_variants
+             SET stock_quantity = stock_quantity - ${quantity},
+                 reserved_quantity = reserved_quantity - ${quantity}
+           WHERE id = ${reservation.variantId}
+             AND stock_quantity >= ${quantity} AND reserved_quantity >= ${quantity}
+          RETURNING id`,
+    );
+    // Counters that do not cover a live reservation mean drift: stock:reconcile territory.
+    if (moved.rows.length === 0) {
+      throw new StockDriftError(`stock counters do not cover reservation ${reservation.id}`);
+    }
+  }
+
+  await tx
+    .update(orders)
+    .set({ status: 'shipped', shippedAt: sql`now()` })
+    .where(eq(orders.id, order.id));
+  await recordTransition(tx, order, 'shipped', input.source, null);
+  return { orderId: order.id, changed: true };
+}
+
+/**
+ * Cancel: releases the reservation and the promo use. stock_quantity does NOT
+ * change (the goods never left the shelf), and a refund of captured money is a
+ * separate operation that this only announces.
+ */
+export async function cancelOrder(
+  tx: Tx,
+  input: { orderId: string; source: string; reason: string | null },
+): Promise<FulfilmentResult> {
+  const order = await lockedOrder(tx, input.orderId);
+  if (order === undefined) throw new OrderNotCancellableError('no such order');
+  if (order.status === 'cancelled') return { orderId: order.id, changed: false };
+  if (!canTransition(order.status, 'cancelled')) {
+    throw new OrderNotCancellableError(`the order is ${order.status}`);
+  }
+
+  const reservations = await liveReservations(tx, order.id);
+  const [redemption] = await tx
+    .select({ promoCodeId: promoCodeRedemptions.promoCodeId })
+    .from(promoCodeRedemptions)
+    .where(
+      and(eq(promoCodeRedemptions.orderId, order.id), eq(promoCodeRedemptions.state, 'consumed')),
+    );
+  const openAttempts = await tx
+    .select({ id: paymentAttempts.id, status: paymentAttempts.status })
+    .from(paymentAttempts)
+    .where(
+      and(
+        eq(paymentAttempts.orderId, order.id),
+        inArray(paymentAttempts.state, ['pending', 'in_flight']),
+        inArray(paymentAttempts.status, ['pending', 'authorized']),
+      ),
+    );
+  // One call, ADR-22 order: payment_attempts (5), promo_codes (6), product_variants (8).
+  await acquireLocks(tx, {
+    payment_attempts: openAttempts.map((a) => a.id),
+    ...(redemption === undefined ? {} : { promo_codes: [redemption.promoCodeId] }),
+    product_variants: reservations.map((r) => r.variantId),
+  });
+
+  for (const reservation of reservations) {
+    const quantity = await closeReservation(tx, reservation.id, 'cancelled');
+    if (quantity === null) continue;
+    const released = await tx.execute(
+      sql`UPDATE product_variants SET reserved_quantity = reserved_quantity - ${quantity}
+           WHERE id = ${reservation.variantId} AND reserved_quantity >= ${quantity}
+          RETURNING id`,
+    );
+    if (released.rows.length === 0) {
+      throw new StockDriftError(`reserved counter does not cover reservation ${reservation.id}`);
+    }
+  }
+
+  if (redemption !== undefined) {
+    const freed = await tx.execute(
+      sql`UPDATE promo_code_redemptions SET state = 'released', released_at = now()
+           WHERE order_id = ${order.id} AND state = 'consumed'
+          RETURNING id`,
+    );
+    if (freed.rows.length > 0) {
+      const given = await tx.execute(
+        sql`UPDATE promo_codes SET uses_count = uses_count - 1
+             WHERE id = ${redemption.promoCodeId} AND uses_count > 0
+            RETURNING id`,
+      );
+      if (given.rows.length === 0) throw new StockDriftError('promo uses_count is already zero');
+    }
+  }
+
+  // Open invoices are closed locally. A late payment on one is still credited and raises the
+  // late-payment alert (the order is cancelled); cancelling at the provider is a follow-up.
+  if (openAttempts.length > 0) {
+    await tx
+      .update(paymentAttempts)
+      .set({ state: 'failed', status: 'failed', failureReason: 'order cancelled' })
+      .where(
+        inArray(
+          paymentAttempts.id,
+          openAttempts.map((a) => a.id),
+        ),
+      );
+  }
+
+  await tx
+    .update(orders)
+    .set({ status: 'cancelled', cancelledAt: sql`now()` })
+    .where(eq(orders.id, order.id));
+  await recordTransition(tx, order, 'cancelled', input.source, input.reason);
+
+  // Money to give back: what was captured minus what was already refunded.
+  const refundable = order.capturedTotal - order.refundedTotal;
+  const heldAuthorization = openAttempts.some((a) => a.status === 'authorized');
+  if (refundable > 0 || heldAuthorization) {
+    // The refund (or the release of a card hold at the provider) is its own operation and a
+    // human or the refund flow must start it. Announced through the outbox, once.
+    await tx
+      .insert(outbox)
+      .values({
+        topic: 'alert.refund-due',
+        payload: { orderId: order.id, refundable, heldAuthorization },
+        dedupKey: `refund-due:${order.id}`,
+      })
+      .onConflictDoNothing();
+  }
+  return { orderId: order.id, changed: true };
+}
