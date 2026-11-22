@@ -47,6 +47,11 @@ CI (`ai-sync`) падає, якщо згенероване розійшлося 
   словами не блокуються. Обгортки на кшталт `ssh host '…'` не розбираються
 - `PostToolUse` на `Edit|Write|MultiEdit` → `post-edit-verify`: prettier +
   eslint --fix одразу; помилки, які `--fix` не виправив, повертаються агенту
+- `PreToolUse` on `Bash` → `guard-merge`: `gh pr merge` goes through it. It
+  refuses unless the PR is open, targets `main`, is not a draft, has no
+  conflicts, all CI checks are green and the latest `review-pr-silk` comment is
+  a PASS for the current head commit; `--admin` is always refused, and so is any
+  merge when GitHub cannot be queried (`scripts/merge-gate.ts`)
 - `Stop` → `stop-typecheck`: `pnpm typecheck`, якщо є незакомічені зміни.
   **Через exit code 2** — звичайний exit 1 хід не блокує. Повторний Stop
   (`stop_hook_active`) пропускається, щоб не зациклитись
@@ -57,8 +62,10 @@ CI (`ai-sync`) падає, якщо згенероване розійшлося 
 
 `deny` у `.claude/settings.json`: примусовий `git push`, `psql *production*`,
 `drizzle-kit push`, `Read` для `.env`, `.env.local`, `.env.staging`,
-`.env.production` (`.env.example` читається). Список `allow` **не додано**:
-`Bash(pnpm *)` дозволив би запуск довільного коду проєкту без запиту.
+`.env.production` (`.env.example` читається). `allow` has exactly one entry,
+`Bash(gh pr merge *)`, and it is only usable together with the `guard-merge`
+hook (autonomous mode, `docs/AUTONOMOUS_MODE.md`). `Bash(pnpm *)` stays off the
+list: it would allow running arbitrary project code without a prompt.
 
 `drizzle-kit push` заборонений свідомо: він змінює схему без файлу міграції,
 тобто локально «працює», а в продакшн нічого не доїжджає.

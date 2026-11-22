@@ -205,4 +205,24 @@ Verdict: PASS | FAIL (b blockers, s should-fix)
 
 ## 7. Record the result
 
+The first line of the comment must follow this format exactly (`FAIL` instead
+of `PASS` for a failed run; the sha is the PR head, 7 or more characters):
+
+```
+## review-pr-silk: PASS (iteration N of 3), `branch-name` @ `abc1234`
+```
+
+The `guard-merge` hook parses that line and compares the sha with the PR head,
+so a push after the review invalidates it.
+
 Post the full report as a PR comment in English (`gh pr comment <number> --body-file <file>`): verdict, iteration count, commit sha, gates, how each earlier comment was handled, and open NITs. Put one line in the `Review` section of the PR description (`gh pr edit <number> --body-file <file>`): the verdict, the iteration count and a link to that comment. If posting is denied, give the same text to the owner in chat. Then tell the owner the PR is ready to merge.
+
+## 8. Merge (autonomous mode only)
+
+While autonomous mode is in force (`docs/AUTONOMOUS_MODE.md`) and the verdict is
+PASS with CI green on the same commit, merge with `gh pr merge <number> --merge`.
+The `guard-merge` hook re-checks everything and refuses otherwise; do not work
+around a refusal, fix its reason. After the merge, check that staging is healthy
+(`curl -s https://staging.damazla.com/api/health`). Outside autonomous mode, or
+when the PR carries an open BLOCKER decision for the owner, do not merge: tell
+the owner.
