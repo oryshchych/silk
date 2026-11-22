@@ -21,19 +21,30 @@
  * that the app role cannot write to. Sharing one transaction would need that
  * grant, which is an infrastructure decision (OWNER_QUEUE Q14).
  *
- * A failed send only counts against a row's attempt limit when OTHER rows of the
- * same batch went through: then the row itself is the problem (a poison
- * message). When nothing in the batch could be sent the queue is down, no
- * attempt is burned, and the batch stops after a short streak of failures
- * instead of waiting out one timeout per row.
+ * Failure accounting is deterministic, not inferred from the rest of the batch:
+ *
+ * - Before any lock is taken a probe asks the queue backend whether it answers; if
+ *   not, the whole tick is skipped (no locks, no attempts burned).
+ * - A failure that looks like infrastructure (timeout, refused or reset connection)
+ *   stops the batch at once and burns no attempt: the queue dropped mid-batch, the
+ *   remaining rows would only wait out a timeout each while holding the locks.
+ * - Any other failure (a payload pg-boss rejects, a topic without a queue, a send
+ *   that collapses into no job at all) is the ROW's problem: it burns an attempt, the
+ *   batch carries on, and at the limit the row is reported as `stuck`. Healthy rows
+ *   behind poison rows are therefore always reached.
  */
-import { sql } from 'drizzle-orm';
+import { and, asc, isNull, lt, sql } from 'drizzle-orm';
 
+import { outbox } from '@store/db/schema';
 import type { Tx } from '@store/db/types';
 
 export interface QueuePublisher {
   /** Returns the job id, or null when pg-boss collapsed it into an existing job. */
   send(queue: string, data: object, options: { singletonKey: string }): Promise<string | null>;
+  /** Cheap check that the queue backend answers. Called before any row lock is taken. */
+  isUp(): Promise<boolean>;
+  /** Whether a job with this singleton key exists, to tell a real collapse from a lost job. */
+  hasJob(queue: string, singletonKey: string): Promise<boolean>;
 }
 
 export interface TransactionRunner {
@@ -44,7 +55,7 @@ export interface RelayOptions {
   batchSize?: number;
   /** A poison row stops being retried after this many failures and is reported as `stuck`. */
   maxAttempts?: number;
-  /** One hung send must not hold the batch locks and a pool connection for long. */
+  /** One hung call must not hold the batch locks and a pool connection for long. */
   sendTimeoutMs?: number;
 }
 
@@ -53,20 +64,58 @@ export interface RelayResult {
   failed: number;
   /** Rows left unpublished that the relay no longer retries: a human must look at them. */
   stuck: number;
+  /** The queue backend did not answer the probe: nothing was locked or sent. */
+  skipped: boolean;
 }
-
-interface OutboxRow extends Record<string, unknown> {
-  id: string;
-  topic: string;
-  payload: unknown;
-  dedup_key: string | null;
-}
-
-/** This many failures in a row, with nothing sent yet, is taken for an outage. */
-const OUTAGE_STREAK = 3;
 
 /** pg-boss queue names are the outbox topics. */
 export const queueFor = (topic: string): string => topic;
+
+export class SendTimeoutError extends Error {
+  constructor() {
+    super('send timed out');
+    this.name = 'SendTimeoutError';
+  }
+}
+
+/** pg-boss answered null but no job with that key exists: the message would be lost. */
+export class LostJobError extends Error {
+  constructor() {
+    super('send returned no job and none exists for the key');
+    this.name = 'LostJobError';
+  }
+}
+
+const INFRASTRUCTURE_CODES = new Set([
+  'ECONNREFUSED',
+  'ECONNRESET',
+  'ETIMEDOUT',
+  'EPIPE',
+  'ENOTFOUND',
+  'EAI_AGAIN',
+  '57P01',
+  '57P03',
+  '08000',
+  '08003',
+  '08006',
+]);
+
+function codeOf(error: unknown): string | undefined {
+  return error instanceof Error && 'code' in error && typeof error.code === 'string'
+    ? error.code
+    : undefined;
+}
+
+/** Walks the cause chain: drivers and pg-boss wrap the network error. */
+export function isInfrastructureError(error: unknown): boolean {
+  for (let current: unknown = error, depth = 0; depth < 5; depth += 1) {
+    if (current instanceof SendTimeoutError) return true;
+    const code = codeOf(current);
+    if (code !== undefined && INFRASTRUCTURE_CODES.has(code)) return true;
+    current = current instanceof Error ? current.cause : undefined;
+  }
+  return false;
+}
 
 /**
  * Only the error class and driver code are stored: messages from the driver or
@@ -75,15 +124,15 @@ export const queueFor = (topic: string): string => topic;
  */
 function describeError(error: unknown): string {
   if (!(error instanceof Error)) return 'UnknownError';
-  const code = 'code' in error && typeof error.code === 'string' ? `:${error.code}` : '';
-  return `${error.name}${code}`.slice(0, 120);
+  const code = codeOf(error);
+  return `${error.name}${code === undefined ? '' : `:${code}`}`.slice(0, 120);
 }
 
 async function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
-      reject(new Error('SendTimeout'));
+      reject(new SendTimeoutError());
     }, ms);
   });
   try {
@@ -91,6 +140,14 @@ async function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function countStuck(tx: Tx, maxAttempts: number): Promise<number> {
+  const stuck = await tx
+    .select({ n: sql<number>`count(*)::int` })
+    .from(outbox)
+    .where(and(isNull(outbox.publishedAt), sql`${outbox.attempts} >= ${maxAttempts}`));
+  return stuck[0]?.n ?? 0;
 }
 
 export async function relayOutbox(
@@ -102,62 +159,82 @@ export async function relayOutbox(
   const maxAttempts = options.maxAttempts ?? 10;
   const sendTimeoutMs = options.sendTimeoutMs ?? 10_000;
 
-  return await db.transaction(async (tx) => {
-    const rows = await tx.execute<OutboxRow>(
-      sql`SELECT id, topic, payload, dedup_key FROM outbox
-           WHERE published_at IS NULL AND attempts < ${maxAttempts}
-           ORDER BY created_at, id
-           LIMIT ${batchSize}
-           FOR UPDATE SKIP LOCKED`,
-    );
+  const up = await withTimeout(publisher.isUp(), sendTimeoutMs).catch(() => false);
+  if (!up) {
+    const stuck = await db.transaction(async (tx) => await countStuck(tx, maxAttempts));
+    return { published: 0, failed: 0, stuck, skipped: true };
+  }
 
-    const failures: { id: string; error: string }[] = [];
+  return await db.transaction(async (tx) => {
+    const rows = await tx
+      .select({
+        id: outbox.id,
+        topic: outbox.topic,
+        payload: outbox.payload,
+        dedupKey: outbox.dedupKey,
+      })
+      .from(outbox)
+      .where(and(isNull(outbox.publishedAt), lt(outbox.attempts, maxAttempts)))
+      .orderBy(asc(outbox.createdAt), asc(outbox.id))
+      .limit(batchSize)
+      .for('update', { skipLocked: true });
+
+    const failures: { id: string; error: string; countsAsAttempt: boolean }[] = [];
     let published = 0;
-    let failureStreak = 0;
-    for (const row of rows.rows) {
-      const key = row.dedup_key ?? row.id;
+    for (const row of rows) {
+      // Never an empty key: on an exclusive queue an empty one would silently collapse rows.
+      const key = row.dedupKey !== null && row.dedupKey !== '' ? row.dedupKey : row.id;
+      const queue = queueFor(row.topic);
       let sent = false;
       try {
-        await withTimeout(
+        const jobId = await withTimeout(
           publisher.send(
-            queueFor(row.topic),
+            queue,
             { outboxId: row.id, topic: row.topic, payload: row.payload, dedupKey: key },
             { singletonKey: key },
           ),
           sendTimeoutMs,
         );
+        // null = collapsed into an existing job. Believe it only if that job exists.
+        if (jobId === null && !(await withTimeout(publisher.hasJob(queue, key), sendTimeoutMs))) {
+          throw new LostJobError();
+        }
         sent = true;
       } catch (error) {
-        failures.push({ id: row.id, error: describeError(error) });
-        // Several failures in a row and nothing sent: the queue is probably down. Stop waiting
-        // out one timeout per row. A single bad row at the head must not block the rest, so
-        // the batch carries on until the streak reaches the threshold.
-        failureStreak = published === 0 ? failureStreak + 1 : 0;
-        if (failureStreak >= OUTAGE_STREAK) break;
+        const infrastructure = isInfrastructureError(error);
+        failures.push({
+          id: row.id,
+          error: describeError(error),
+          countsAsAttempt: !infrastructure,
+        });
+        if (infrastructure) break; // the queue dropped: do not wait out a timeout per row
       }
       // Outside the try: a failure of the mark must abort the transaction (the whole
       // batch is then re-sent, which is still at-least-once), not be taken for a send failure.
       if (sent) {
-        await tx.execute(
-          sql`UPDATE outbox SET published_at = now(), attempts = attempts + 1, last_error = NULL
-               WHERE id = ${row.id}`,
-        );
+        await tx
+          .update(outbox)
+          .set({ publishedAt: sql`now()`, attempts: sql`${outbox.attempts} + 1`, lastError: null })
+          .where(sql`${outbox.id} = ${row.id}`);
         published += 1;
       }
     }
 
-    const queueIsUp = published > 0;
     for (const failure of failures) {
-      await tx.execute(
-        sql`UPDATE outbox
-               SET attempts = attempts + ${queueIsUp ? 1 : 0}, last_error = ${failure.error}
-             WHERE id = ${failure.id}`,
-      );
+      await tx
+        .update(outbox)
+        .set({
+          attempts: failure.countsAsAttempt ? sql`${outbox.attempts} + 1` : outbox.attempts,
+          lastError: failure.error,
+        })
+        .where(sql`${outbox.id} = ${failure.id}`);
     }
 
-    const stuck = await tx.execute<{ n: number }>(
-      sql`SELECT count(*)::int AS n FROM outbox WHERE published_at IS NULL AND attempts >= ${maxAttempts}`,
-    );
-    return { published, failed: failures.length, stuck: stuck.rows[0]?.n ?? 0 };
+    return {
+      published,
+      failed: failures.length,
+      stuck: await countStuck(tx, maxAttempts),
+      skipped: false,
+    };
   });
 }

@@ -24,10 +24,35 @@ export interface QueueJob {
   data: { dedupKey: string; topic: string; payload: unknown };
 }
 
-export async function deliverJob(job: QueueJob, sender: MessageSender): Promise<void> {
-  await sender.send({
-    idempotencyKey: job.data.dedupKey,
-    topic: job.data.topic,
-    payload: job.data.payload,
+/** A provider call has no timeout of its own: without one a hung call stalls the consumer. */
+const DEFAULT_SEND_TIMEOUT_MS = 30_000;
+
+/**
+ * The job payload is the outbox payload (today only an order id) and stays in
+ * `pgboss.job` until its retention ends: keep personal data OUT of outbox payloads
+ * and let the consumer load it from the database when it sends.
+ */
+export async function deliverJob(
+  job: QueueJob,
+  sender: MessageSender,
+  timeoutMs = DEFAULT_SEND_TIMEOUT_MS,
+): Promise<void> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error('provider call timed out'));
+    }, timeoutMs);
   });
+  try {
+    await Promise.race([
+      sender.send({
+        idempotencyKey: job.data.dedupKey,
+        topic: job.data.topic,
+        payload: job.data.payload,
+      }),
+      timeout,
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
 }

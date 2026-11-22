@@ -195,6 +195,10 @@ Left as notes:
 - **Stuck rows are reported, not yet alerted**: `relayOutbox` returns `stuck` (rows at the attempt
   limit). The loop that calls it must raise an alert (Telegram) when `stuck > 0`; money alerts are
   themselves outbox topics, so this alert must not go through the same outbox.
+- **Job payloads live in `pgboss.job`** until pg-boss retention ends (14 days by default): keep personal
+  data out of outbox payloads (today only an order id) and let the consumer load it when it sends.
+- **Retry tuning**: mail and alert queues retry 20 times with backoff capped at 1 h (about half a
+  day of provider outage); the dead-letter queue keeps jobs 30 days. Tracked as Q15 (watcher).
 - **Dead-letter queue** `outbox.dead` collects jobs whose consumer retries ran out; it needs the
   same kind of watcher.
 - **`exclusive` queues** collapse a re-send only while the first job is queued or active; they are
