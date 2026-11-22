@@ -324,3 +324,147 @@ describe('0005_touch_updated_at', () => {
     expect(fresh).toBe(true);
   });
 });
+
+describe('0006_cart_version_trigger', () => {
+  let cartId: string;
+  let variantId: string;
+
+  const version = async (): Promise<number> =>
+    (await one<{ version: number }>(app, 'SELECT version FROM carts WHERE id = $1', [cartId]))
+      .version;
+
+  beforeAll(async () => {
+    const { id: categoryId } = await one<{ id: string }>(
+      app,
+      `INSERT INTO categories (slug, name_uk, name_en) VALUES ('cv-cat', 'K', 'C') RETURNING id`,
+    );
+    const { id: productId } = await one<{ id: string }>(
+      app,
+      `INSERT INTO products (sku, slug, brand, category_id, name_uk, name_en, base_price)
+       VALUES ('CV-1', 'cv-1', 'B', $1, 'T', 'T', 1000) RETURNING id`,
+      [categoryId],
+    );
+    const { id: sizeId } = await one<{ id: string }>(
+      app,
+      `INSERT INTO sizes (system, label) VALUES ('apparel', 'CV') RETURNING id`,
+    );
+    const { id: colorId } = await one<{ id: string }>(
+      app,
+      `INSERT INTO colors (slug, name_uk, name_en, hex) VALUES ('cv', 'K', 'C', '#000000')
+       RETURNING id`,
+    );
+    ({ id: variantId } = await one<{ id: string }>(
+      app,
+      `INSERT INTO product_variants (product_id, size_id, color_id, sku)
+       VALUES ($1, $2, $3, 'CV-1-1') RETURNING id`,
+      [productId, sizeId, colorId],
+    ));
+    ({ id: cartId } = await one<{ id: string }>(
+      app,
+      `INSERT INTO carts (token) VALUES ('cv-cart') RETURNING id`,
+    ));
+  });
+
+  it('bumps carts.version on insert, update and delete of cart_items', async () => {
+    expect(await version()).toBe(1);
+    const { id } = await one<{ id: string }>(
+      app,
+      'INSERT INTO cart_items (cart_id, variant_id, quantity) VALUES ($1, $2, 1) RETURNING id',
+      [cartId, variantId],
+    );
+    expect(await version()).toBe(2);
+    await app.query('UPDATE cart_items SET quantity = 2 WHERE id = $1', [id]);
+    expect(await version()).toBe(3);
+    await app.query('DELETE FROM cart_items WHERE id = $1', [id]);
+    expect(await version()).toBe(4);
+  });
+
+  // FOR NO KEY UPDATE does not conflict with the FK check's KEY SHARE lock, so
+  // only the trigger's UPDATE of carts can block the writer here.
+  it('takes a lock on the parent cart (ADR-22: trigger locks are real locks)', async () => {
+    const holder = await connect(inject('pgAppUrl'));
+    const writer = await connect(inject('pgAppUrl'));
+    try {
+      await holder.query('BEGIN');
+      await holder.query('SELECT id FROM carts WHERE id = $1 FOR NO KEY UPDATE', [cartId]);
+      await writer.query('BEGIN');
+      await writer.query(`SET LOCAL lock_timeout = '300ms'`);
+      await expect(
+        writer.query('INSERT INTO cart_items (cart_id, variant_id, quantity) VALUES ($1, $2, 1)', [
+          cartId,
+          variantId,
+        ]),
+      ).rejects.toMatchObject({ code: '55P03' });
+    } finally {
+      await writer.query('ROLLBACK');
+      await holder.query('ROLLBACK');
+      await holder.end();
+      await writer.end();
+    }
+  });
+  it('moving an item between carts bumps both carts', async () => {
+    const { id: otherId } = await one<{ id: string }>(
+      app,
+      `INSERT INTO carts (token) VALUES ('cv-cart-2') RETURNING id`,
+    );
+    const { id } = await one<{ id: string }>(
+      app,
+      'INSERT INTO cart_items (cart_id, variant_id, quantity) VALUES ($1, $2, 1) RETURNING id',
+      [cartId, variantId],
+    );
+    const before = await version();
+    const otherBefore = (
+      await one<{ version: number }>(app, 'SELECT version FROM carts WHERE id = $1', [otherId])
+    ).version;
+    await app.query('UPDATE cart_items SET cart_id = $1 WHERE id = $2', [otherId, id]);
+    expect(await version()).toBe(before + 1);
+    const otherAfter = await one<{ version: number }>(
+      app,
+      'SELECT version FROM carts WHERE id = $1',
+      [otherId],
+    );
+    expect(otherAfter.version).toBe(otherBefore + 1);
+  });
+
+  it('deleting a cart cascades to its items without error', async () => {
+    const { id: doomed } = await one<{ id: string }>(
+      app,
+      `INSERT INTO carts (token) VALUES ('cv-doomed') RETURNING id`,
+    );
+    await app.query('INSERT INTO cart_items (cart_id, variant_id, quantity) VALUES ($1, $2, 1)', [
+      doomed,
+      variantId,
+    ]);
+    await app.query('DELETE FROM carts WHERE id = $1', [doomed]);
+    const { n } = await one<{ n: string }>(
+      app,
+      'SELECT count(*) AS n FROM cart_items WHERE cart_id = $1',
+      [doomed],
+    );
+    expect(Number(n)).toBe(0);
+  });
+
+  it('a cart change makes an intent bound to the old version stale', async () => {
+    const { id: staleCart } = await one<{ id: string }>(
+      app,
+      `INSERT INTO carts (token) VALUES ('cv-intent') RETURNING id`,
+    );
+    const { id: intentId } = await one<{ id: string }>(
+      app,
+      `INSERT INTO checkout_intents (cart_id, cart_version, owner_token, expires_at)
+       VALUES ($1, 1, 'cv-intent', now() + interval '1 hour') RETURNING id`,
+      [staleCart],
+    );
+    await app.query('INSERT INTO cart_items (cart_id, variant_id, quantity) VALUES ($1, $2, 1)', [
+      staleCart,
+      variantId,
+    ]);
+    const { stale } = await one<{ stale: boolean }>(
+      app,
+      `SELECT c.version <> i.cart_version AS stale
+         FROM checkout_intents i JOIN carts c ON c.id = i.cart_id WHERE i.id = $1`,
+      [intentId],
+    );
+    expect(stale).toBe(true);
+  });
+});
