@@ -78,3 +78,15 @@
 - **Dokploy запускає compose власною командою** (поле Command у Advanced):
   `-f docker-compose.yml -f docker-compose.staging.yml`, бо за замовчуванням
   бере один файл.
+
+## Бекапи (2026-10-27)
+
+- **Зараз — щоденний `pg_dump` у R2** (`infra/dump`, критерій фази 0).
+  **Перед запуском production** — безперервне архівування WAL через
+  pgBackRest (`infra/backup`, `infra/postgres/pgbackrest.conf`): він ще ніколи
+  не запускався, потребує `archive_mode`/`archive_command` у Postgres і
+  доступу backup-контейнера до сокета БД (`09-topology.md`, RPO).
+- **Ключ R2 може видаляти копії** (R2 не розділяє write і delete). Захист —
+  lifecycle-правило й, за бажанням, Bucket lock у Cloudflare.
+- `pg_dump` іде суперкористувачем (потрібен доступ до схеми `pgboss`).
+  Кандидат на окрему read-only роль разом із роллю для MCP.

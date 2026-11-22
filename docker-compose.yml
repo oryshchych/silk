@@ -97,6 +97,29 @@ services:
     environment:
       DATABASE_MIGRATE_URL: postgres://${POSTGRES_MIGRATE_USER}:${POSTGRES_MIGRATE_PASSWORD}@postgres:5432/${POSTGRES_DB}
 
+  # Щоденний pg_dump у Cloudflare R2 з перевіркою, що файл читається
+  # (infra/dump). Власні креденшели й ОКРЕМИЙ bucket: web їх не отримує.
+  # Без R2_* деплой не падає — бекап пише помилку в лог контейнера.
+  # Негайний бекап: docker exec <контейнер dump> backup-now
+  dump:
+    build:
+      context: ./infra/dump
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: postgres
+      PGDATABASE: ${POSTGRES_DB}
+      # Суперкористувач: pg_dump мусить читати всі схеми, включно з pgboss.
+      PGUSER: ${POSTGRES_SUPERUSER}
+      PGPASSWORD: ${POSTGRES_SUPERUSER_PASSWORD}
+      R2_S3_ENDPOINT: ${R2_S3_ENDPOINT:-}
+      R2_BUCKET_BACKUPS: ${R2_BUCKET_BACKUPS:-}
+      R2_BACKUP_ACCESS_KEY_ID: ${R2_BACKUP_ACCESS_KEY_ID:-}
+      R2_BACKUP_SECRET_ACCESS_KEY: ${R2_BACKUP_SECRET_ACCESS_KEY:-}
+
   # worker (pg-boss: cron і черги) — той самий репозиторій, інший entrypoint.
   # Тимчасово НЕ описаний: apps/worker ще немає, і compose з неіснуючим
   # Dockerfile не підніметься. Повертається разом із кодом воркера
