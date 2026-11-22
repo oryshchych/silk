@@ -120,15 +120,16 @@ ledger-запису, який на неї посилається.
 позиції по 200 ₴ дає 33,33 ₴ на позицію, сума ліній — 99,99 ₴, і одна
 копійка розбіжності ламає фіскальний чек та часткове повернення.
 
-Алгоритм — largest remainder: пропорційно з округленням вниз, залишок
-копійок до найдорожчої позиції. `packages/core/pricing/allocate-discount.ts`,
-unit-тести на нерівномірний поділ, одну позицію, знижку = сумі замовлення.
+Algorithm: largest remainder (ADR-15). Each share is the floor of the ideal
+one; the leftover kopiykas go one at a time to the biggest fractional parts,
+ties broken by line id. NOT "leftover to the priciest line". Implemented in
+`packages/core/src/pricing/allocate-discount.ts`.
 
 ---
 
 ## 4. Розрахунок ціни
 
-`packages/core/pricing/calculate-cart.ts`. Порядок операцій має значення:
+`packages/core/src/pricing/calculate-cart.ts`. The order of operations matters:
 
 ```
 1. lineSubtotal      = Σ (unit_price × quantity)
