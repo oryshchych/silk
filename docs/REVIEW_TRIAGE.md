@@ -230,3 +230,12 @@ reference; `message_key` для WayForPay-refund; повний життєвий 
 `Money`-хелпер без лінт-правила й тригер `cart_version`, якого немає в SQL.
 
 Це і є аргумент проти четвертого раунду рецензії документа.
+
+### Phase 0.5, slice 4 (createOrder): price the buyer saw
+
+Review finding: the intent binds `(cart, cart_version)` but not the displayed
+total, so an admin price edit between quote and payment is charged silently.
+Decision: deferred, queued as Q12 in `docs/plan/OWNER_QUEUE.md`. It needs a
+schema column (`checkout_intents.quoted_total`); the schema is not changed in
+a slice PR without the owner. The order itself always records the real total
+and its line snapshots.

@@ -101,3 +101,18 @@
 - У bucket діє lifecycle-правило видалення через 30 днів (бачимо в
   заголовку `X-Amz-Expiration`). Токен не має права `GetBucketVersioning`
   — rclone пише про це в лог лише при видаленні, це не помилка.
+
+## Phase 0.5, slice 4: createOrder (2026-11-22)
+
+- **Product-level fields are not serialized against checkout.** ADR-22 has no lock level for
+  `products`, so an admin edit of `base_price` / `kind` can be one commit newer than the order
+  snapshot. `is_active` is re-checked inside the reserving UPDATE. Decision for phase 4: admin
+  price and activation actions should lock the product's variants via `acquireLocks`.
+- **Shipping is always 0 in createOrder** (carrier tariffs arrive with Nova Poshta, phase 3+).
+- **No runtime validation of contact fields in core** (email, phone, name lengths). The edge
+  (server action, zod) must validate; the provider list must be checked against the enabled
+  providers in `settings.payment_providers`.
+- **Account-bound promos** (`per_customer_limit`, `first_order_only`) are refused for guests until
+  accounts exist; `promo_code_redemptions.customer_id` is not set yet.
+- **Converted carts are terminal.** After an order the cart token cannot take new items
+  (`CART_CONVERTED`); the web layer must mint a new token and cookie on that error.
