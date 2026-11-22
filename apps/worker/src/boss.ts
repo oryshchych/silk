@@ -75,7 +75,7 @@ export async function registerWorkers(
   for (const topic of OUTBOX_TOPICS) {
     await boss.work<QueueJob['data']>(
       topic,
-      { pollingIntervalSeconds },
+      { pollingIntervalSeconds, batchSize: 1 },
       async (jobs: Job<QueueJob['data']>[]) => {
         for (const job of jobs) await deliverJob(job, sender);
       },

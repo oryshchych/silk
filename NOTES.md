@@ -204,5 +204,8 @@ Left as notes:
 - **`exclusive` queues** collapse a re-send only while the first job is queued or active; they are
   a duplicate guard, not a delivery guarantee. Delivery relies on retries, the dead-letter queue and
   the idempotency key.
+- **A hung send** triggers a second probe: if the backend still answers, the hang is the row's problem
+  (burns an attempt, the batch carries on); after two hung sends in one batch it ends. A backend that
+  answers the probe but hangs every send is therefore bounded to two timeouts per tick.
 - **Batch hold time**: the batch locks are held while sending (default 20 rows, 10 s per send
   timeout, a streak of 3 failures with nothing sent ends the batch).

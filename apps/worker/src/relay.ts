@@ -26,8 +26,11 @@
  * - Before any lock is taken a probe asks the queue backend whether it answers; if
  *   not, the whole tick is skipped (no locks, no attempts burned).
  * - A failure that looks like infrastructure (timeout, refused or reset connection)
- *   stops the batch at once and burns no attempt: the queue dropped mid-batch, the
- *   remaining rows would only wait out a timeout each while holding the locks.
+ *   triggers a second probe. If the backend no longer answers, the batch stops at once
+ *   and burns no attempt: the queue dropped mid-batch, the remaining rows would only
+ *   wait out a timeout each while holding the locks. If it still answers, the failure
+ *   is the ROW's (e.g. a send that always hangs) and it is treated like any other row
+ *   failure, so such a row cannot sit first in the order forever with `stuck` at 0.
  * - Any other failure (a payload pg-boss rejects, a topic without a queue, a send
  *   that collapses into no job at all) is the ROW's problem: it burns an attempt, the
  *   batch carries on, and at the limit the row is reported as `stuck`. Healthy rows
@@ -67,6 +70,9 @@ export interface RelayResult {
   /** The queue backend did not answer the probe: nothing was locked or sent. */
   skipped: boolean;
 }
+
+/** Hung sends tolerated in one batch while the probe still answers. */
+const MAX_TIMEOUTS_PER_BATCH = 2;
 
 /** pg-boss queue names are the outbox topics. */
 export const queueFor = (topic: string): string => topic;
@@ -181,6 +187,7 @@ export async function relayOutbox(
 
     const failures: { id: string; error: string; countsAsAttempt: boolean }[] = [];
     let published = 0;
+    let timeouts = 0;
     for (const row of rows) {
       // Never an empty key: on an exclusive queue an empty one would silently collapse rows.
       const key = row.dedupKey !== null && row.dedupKey !== '' ? row.dedupKey : row.id;
@@ -201,13 +208,19 @@ export async function relayOutbox(
         }
         sent = true;
       } catch (error) {
-        const infrastructure = isInfrastructureError(error);
+        let queueDropped = false;
+        if (isInfrastructureError(error)) {
+          queueDropped = !(await withTimeout(publisher.isUp(), sendTimeoutMs).catch(() => false));
+          if (!queueDropped && error instanceof SendTimeoutError) timeouts += 1;
+        }
         failures.push({
           id: row.id,
           error: describeError(error),
-          countsAsAttempt: !infrastructure,
+          countsAsAttempt: !queueDropped,
         });
-        if (infrastructure) break; // the queue dropped: do not wait out a timeout per row
+        // The queue dropped: do not wait out a timeout per row. Likewise stop after a second
+        // hung send in one batch, so a few bad rows cannot hold the locks for minutes.
+        if (queueDropped || timeouts >= MAX_TIMEOUTS_PER_BATCH) break;
       }
       // Outside the try: a failure of the mark must abort the transaction (the whole
       // batch is then re-sent, which is still at-least-once), not be taken for a send failure.

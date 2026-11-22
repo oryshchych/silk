@@ -6,13 +6,19 @@
 import { sql } from 'drizzle-orm';
 import pg from 'pg';
 import type { PgBoss } from 'pg-boss';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createDb, type DbHandle } from '@store/db/client';
 import { createTestDatabase, type TestDatabase } from '@store/db/test/db';
 import { Barrier } from './barrier.ts';
 
-import { bossPublisher, DEAD_LETTER_QUEUE, registerWorkers, startBoss } from '../src/boss.ts';
+import {
+  bossPublisher,
+  DEAD_LETTER_QUEUE,
+  OUTBOX_TOPICS,
+  registerWorkers,
+  startBoss,
+} from '../src/boss.ts';
 import { deliverJob, type MessageSender, type OutboundMessage } from '../src/deliver.ts';
 import { relayOutbox, type QueuePublisher, type TransactionRunner } from '../src/relay.ts';
 
@@ -258,6 +264,8 @@ describe('relay mechanics', () => {
     for (let n = 0; n < 6; n += 1) await addOutbox(`order-created:flap-${String(n)}`);
     let calls = 0;
     const flapping = withOverrides(boss, {
+      // the backend really dropped: the second probe (after the first error) fails
+      isUp: () => Promise.resolve(calls <= 1),
       send: async (queue, data, options) => {
         calls += 1;
         if (calls > 1) throw connectionError();
@@ -372,13 +380,16 @@ describe('relay mechanics', () => {
     expect(keys).toEqual([id]);
   });
 
-  it('a hung send is cut off by the timeout, stops the batch and burns no attempt', async () => {
+  it('a hung send while the backend is DOWN stops the batch and burns no attempt', async () => {
     await addOutbox('order-created:hang');
     await addOutbox('order-created:hang-2');
     let calls = 0;
+    let down = false;
     const hang = withOverrides(boss, {
+      isUp: () => Promise.resolve(!down),
       send: () => {
         calls += 1;
+        down = true; // the hang is the first sign of the outage
         return new Promise(() => undefined);
       },
     });
@@ -387,6 +398,45 @@ describe('relay mechanics', () => {
     expect(calls).toBe(1);
     const row = await app.db.execute<{ attempts: number }>(sql`SELECT attempts FROM outbox`);
     expect(row.rows.every((r) => r.attempts === 0)).toBe(true);
+  });
+
+  it('a row whose send ALWAYS hangs while the backend answers cannot block the healthy rows', async () => {
+    const stuckRow = await addOutbox('order-created:always-hangs');
+    for (let n = 0; n < 3; n += 1) await addOutbox(`order-created:healthy-${String(n)}`);
+    const picky = withOverrides(boss, {
+      send: async (queue, data, options) => {
+        if (options.singletonKey.includes('always-hangs'))
+          return await new Promise<never>(() => undefined);
+        return await boss.send(queue, data, options);
+      },
+    });
+    // the probe answers, so the hang is the row's problem: it burns an attempt, the rest flow
+    expect(await relayOutbox(app.db, picky, { sendTimeoutMs: 100, maxAttempts: 2 })).toMatchObject({
+      published: 3,
+      failed: 1,
+      stuck: 0,
+    });
+    expect(await relayOutbox(app.db, picky, { sendTimeoutMs: 100, maxAttempts: 2 })).toMatchObject({
+      failed: 1,
+      stuck: 1,
+    });
+    const row = await app.db.execute<{ attempts: number; last_error: string }>(
+      sql`SELECT attempts, last_error FROM outbox WHERE id = ${stuckRow}`,
+    );
+    expect(row.rows[0]).toMatchObject({ attempts: 2, last_error: 'SendTimeoutError' });
+  });
+
+  it('several hung sends in one batch end it after the second, not after one timeout per row', async () => {
+    for (let n = 0; n < 6; n += 1) await addOutbox(`order-created:hung-${String(n)}`);
+    let calls = 0;
+    const hang = withOverrides(boss, {
+      send: () => {
+        calls += 1;
+        return new Promise(() => undefined);
+      },
+    });
+    await relayOutbox(app.db, hang, { sendTimeoutMs: 80 });
+    expect(calls).toBe(2);
   });
 
   it('a failing mark UPDATE aborts the batch (it is not mistaken for a send failure)', async () => {
@@ -462,5 +512,67 @@ describe('the consumer side: retries, dead letters and a real worker', () => {
     }
     expect(provider.delivered).toHaveLength(1);
     expect(provider.delivered[0]?.idempotencyKey).toBe('order-created:work');
+  });
+});
+
+describe('the defaults that production uses (every other test passes its own tuning)', () => {
+  it('startBoss with no tuning creates mail and alert queues that survive hours of provider outage', async () => {
+    const fresh = await createTestDatabase();
+    let defaults: PgBoss | undefined;
+    try {
+      defaults = await startBoss(fresh.bossUrl);
+      for (const topic of OUTBOX_TOPICS) {
+        const queue = await defaults.getQueue(topic);
+        expect(queue, topic).toMatchObject({
+          policy: 'exclusive',
+          retryLimit: 20,
+          retryBackoff: true,
+          retryDelayMax: 3600,
+          deadLetter: DEAD_LETTER_QUEUE,
+        });
+        expect(queue?.retryDelay, topic).toBeGreaterThanOrEqual(30);
+      }
+      const dead = await defaults.getQueue(DEAD_LETTER_QUEUE);
+      expect(dead?.retentionSeconds).toBe(30 * 24 * 60 * 60);
+    } finally {
+      await defaults?.stop({ graceful: false });
+      await fresh.drop();
+    }
+  });
+
+  it('registerWorkers takes one job at a time on every topic', async () => {
+    const batchSizes: (number | undefined)[] = [];
+    const spy = new Proxy(boss, {
+      get(target, property, receiver) {
+        if (property === 'work') {
+          return (name: string, options: { batchSize?: number }, handler: never) => {
+            batchSizes.push(options.batchSize);
+            return target.work(name, options, handler);
+          };
+        }
+        return Reflect.get(target, property, receiver) as unknown;
+      },
+    });
+    await registerWorkers(spy, new FakeProvider(), 0.5);
+    expect(batchSizes).toHaveLength(OUTBOX_TOPICS.length);
+    expect(batchSizes.every((size) => size === 1)).toBe(true);
+  });
+
+  it('deliverJob has a default provider timeout that is not huge', async () => {
+    vi.useFakeTimers();
+    try {
+      const hung: MessageSender = { send: () => new Promise(() => undefined) };
+      const outcome = deliverJob(
+        { data: { dedupKey: 'k', topic: 'email.order-created', payload: {} } },
+        hung,
+      ).then(
+        () => 'resolved',
+        (error: unknown) => (error instanceof Error ? error.message : 'rejected'),
+      );
+      await vi.advanceTimersByTimeAsync(60_000); // a default above one minute would not have fired
+      expect(await outcome).toBe('provider call timed out');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
