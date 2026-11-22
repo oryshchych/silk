@@ -190,6 +190,24 @@ export default tseslint.config(
           message:
             'Читай через @store/shared/env — він валідований zod і падає на старті (ADR-10).',
         },
+        {
+          object: 'Number',
+          property: 'parseFloat',
+          message:
+            'No float parsing for sums (AGENTS.md 2.1): use parseHryvnias from @store/shared/money.',
+        },
+        {
+          property: 'toFixed',
+          message: 'No toFixed for sums (AGENTS.md 2.1): use formatMoney from @store/shared/money.',
+        },
+      ],
+      'no-restricted-globals': [
+        'error',
+        {
+          name: 'parseFloat',
+          message:
+            'No float parsing for sums (AGENTS.md 2.1): use parseHryvnias from @store/shared/money.',
+        },
       ],
     },
   },
