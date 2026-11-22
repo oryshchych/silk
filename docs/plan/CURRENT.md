@@ -5,57 +5,55 @@
 
 ## Поточна фаза
 
-`phase-00-foundation.md`, крок 6 (деплой). Сервер Hetzner CAX11 (ARM, 4 ГБ,
-Ubuntu 24.04, 49.12.64.197): swap 4 ГБ, SSH лише ключем, Hetzner Firewall
-22/80/443, Dokploy v0.30.10 на `https://dokploy.damazla.com`. Docker-образ
-вітрини в `main`; міграції як compose-сервіс, basic auth у застосунку — PR
-`feat/staging-deploy`. Далі: проєкт staging у Dokploy, секрети, seed.
+`phase-00-foundation.md` — усі кроки зроблено; лишається звіт фази 0
+(`/phase-report`) і явне «переходь до фази 0.5». Staging:
+`https://staging.damazla.com` (basic auth). Сервер Hetzner CAX11 (ARM, 4 ГБ,
+Ubuntu 24.04, 49.12.64.197), Dokploy — `https://dokploy.damazla.com`.
 
 ## Зроблено
 
 - `6728094`…`3d48a11` монорепо, тулінг, env, compose, образ PG 18, CI
-- PR #1 міграції + Testcontainers; PR #2 відповіді бухгалтера (ПРРО, шви)
-- `260ca10` порожні значення `.env` = не задано (`cp .env.example .env` працює)
-- `baae4fe` `createDb()` + тип `Tx`; `80e6681` seed; `f66d6e1` БД з шаблону
-- `e27e7d6` `Money`; `dde151f` лінт `money/no-arithmetic`; `2c65559` DTO
-- `ac09b60` apps/web: next-intl, Tailwind v4; `52a5e0b` Next **16.4.3** (critical CVE)
-- `7f3b456` ai/ → AGENTS/CLAUDE/Copilot/Cursor + `ai:check`; `2c13e65` скіли, агенти
+- PR #1–#2 міграції + Testcontainers, відповіді бухгалтера (ПРРО, шви)
+- PR #3 `createDb()`/`Tx`, seed, БД з шаблону; PR #4–#6 `Money`, DTO,
+  `apps/web` (Next 16.4.3, next-intl, Tailwind v4), `ai/` + скіли й агенти
+- PR #8–#9 образ web, сервіс `migrate`, закритий staging; PR #10–#11
+  щоденний `pg_dump` у R2 (rclone 1.76.0)
+- хуки `.claude/` (`feat/claude-hooks`)
 
 ## Наступний крок
 
-Staging у Dokploy; хуки `.claude/` вмикає власник; `migrate:upgrade`.
+Звіт фази 0, потім за командою — фаза 0.5. Завтра перевірити, що о 03:00
+(Київ) у `staging/` бакета R2 з'явився другий бекап. Далі `migrate:upgrade`.
 
 ## Критерії, перевірені виконанням
 
-- `pnpm migrate:fresh`: порожня БД нашого образу + 6 міграцій роллю
-  store_migrate, 17/17 тестів (тригер search_vector, backfill, STORED,
-  нумерація на межах, складені FK, права store_app, сортування `г ґ е є и і ї`)
-- негативні контролі: без 0000 → `operator class "gin_trgm_ops" does not
-  exist`; без `STORED` → `indexes on virtual generated columns are not supported`;
-  без `GRANT CREATE` → `permission denied to create extension`
-- `0001_schema.sql` побайтово = `docs/reference-migration-dryrun.sql`
-- `pnpm db:check` чистий; CI PR #1 — усі 10 джобів зелені, `migrate-fresh` теж
-- `pnpm db:seed` на локальній БД: 40 товарів, 15 замовлень; звірки резервів
-  і сум — 0 розбіжностей; повтор і production відмовляють. `test:int` 30/30
-- `next start`: `/` uk, `/en` en, `/uk`→307 `/`, без cookie; без
-  EMAIL_TO_OVERRIDE — exit 1; grep blush|cream|pink — 0; `ai:check` зелений
-- раніше: verify на чистому клоні, lint-заборони, env, образ БД, gitleaks
+- `pnpm migrate:fresh` 17/17 на порожній БД нашого образу; негативні
+  контролі (без 0000, без `STORED`, без `GRANT CREATE`) падають; `db:check`
+- seed: 40 товарів, 15 замовлень, звірки резервів і сум — 0 розбіжностей;
+  повтор і production відмовляють; `test:int` 30/30
+- staging: 401 без пароля, 200 з паролем, `noindex` + `robots.txt`
+  Disallow, `/api/health` 200, HTTPS Let's Encrypt, 6 міграцій, ICU
+  `г ґ е є и і ї`; без паролів суперкористувача в контейнері web
+- автодеплой: лог деплою стартував через 2 с після мерджу в `main`
+- бекап: `backup-now` на staging — 225 951 Б, 53 таблиці; відновлення в
+  тимчасову БД — лічильники збігаються
+- хуки: 59 unit-тестів; наживо заблокували правку закоміченої міграції й
+  мою ж команду; eslint-помилки повернулись агенту; Stop-typecheck exit 2
+- `ai:check`, `verify`, knip, boundaries, audit (high 0) — зелені
 
 ## Відкриті рішення, що чекають людину
 
 - API НП 2.0; назва магазину (`LACE & SILK`); акаунт Checkbox
-- COD: друк паперового чека в коробку при комплектації (NOTES.md)
-- Чек повернення → лише на чек `sale`: FK цього не виражає (NOTES.md)
+- COD: друк паперового чека в коробку; чек повернення лише на `sale` (NOTES.md)
 
 ## Відхилення від плану
 
-- TS 6.0.3; Postgres на Debian; том на `/var/lib/postgresql`; init-скрипти
-  в образі; `typescript-eslint` 8.69.0 (див. git log сесії 1)
-- 0000 через `generate --custom` до схеми; міграції — `drizzle-orm` migrator
-- store_migrate отримав `CREATE ON DATABASE` (раніше лише CONNECT)
-- touch_updated_at і FK `orders.current_payment_attempt_id` — з блоку SQL schema.ts
-- Next 16.4.3, не 16.3: у ≤ 16.4.0 критичні RCE, патча для 16.3 немає
-- Tailwind v4: токени в CSS `@theme`, не в `tailwind.config.ts`
-- `allocate` (largest remainder) у `shared/money`, не в `core/pricing`: це
-  загальна функція; `core` додасть eligibility поверх неї (ADR-15)
-- `allowBuilds`: заборонені postinstall перелічені явно; audit high — 0
+- TS 6.0.3; Postgres на Debian; Next 16.4.3 (у ≤ 16.4.0 критичні RCE)
+- store_migrate має `CREATE ON DATABASE`; міграції — `drizzle-orm` migrator
+- Tailwind v4: токени в CSS `@theme`; `allocate` у `shared/money`
+- basic auth staging — у застосунку (`proxy.ts`), не в Caddy/Dokploy
+- web отримує явний перелік змінних, не `env_file`; `worker` прибрано з
+  compose до фази 0.5
+- rclone 1.76.0 з офіційного образу: Debian-1.60 несумісний з R2 (501)
+- хуки — Node (`.mjs`), `allow`-список у settings не додано
+- `allowBuilds`: заборонені postinstall перелічені явно

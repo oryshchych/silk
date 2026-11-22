@@ -81,9 +81,11 @@ Cursor радить те, що заборонено в Claude Code.
 │   ├── security-auditor.md
 │   └── seo-reviewer.md
 └── hooks/                 # детерміністичні запобіжники
-    ├── block-applied-migration.sh
-    ├── post-edit-verify.sh
-    └── guard-production.sh
+    ├── lib.mjs                       # читання stdin, block() → exit 2
+    ├── block-applied-migration.mjs
+    ├── post-edit-verify.mjs
+    ├── guard-production.mjs
+    └── stop-typecheck.mjs
 ```
 
 **Скіли, не команди.** З версії 2.1.101 кастомні slash-команди об'єднані зі
@@ -169,12 +171,12 @@ extensions після залежних індексів, `ALTER TABLE` із бл
         // Застосовану міграцію правити НЕЛЬЗЯ — тільки нова.
         // Інакше drizzle-kit і продакшн розходяться назавжди.
         "matcher": "Edit|Write",
-        "hooks": [{ "type": "command", "command": ".claude/hooks/block-applied-migration.sh" }]
+        "hooks": [{ "type": "command", "command": ".claude/hooks/block-applied-migration.mjs" }]
       },
       {
         // .env продакшену, реальний платіж, реальна ТТН, DDL на проді
         "matcher": "Bash",
-        "hooks": [{ "type": "command", "command": ".claude/hooks/guard-production.sh" }]
+        "hooks": [{ "type": "command", "command": ".claude/hooks/guard-production.mjs" }]
       }
     ],
     "PostToolUse": [
@@ -182,13 +184,13 @@ extensions після залежних індексів, `ALTER TABLE` із бл
         // Автоформат + лінт відразу після правки: агент не накопичує
         // 40 файлів, які потім усі разом не проходять CI
         "matcher": "Edit|Write",
-        "hooks": [{ "type": "command", "command": ".claude/hooks/post-edit-verify.sh" }]
+        "hooks": [{ "type": "command", "command": ".claude/hooks/post-edit-verify.mjs" }]
       }
     ],
     "Stop": [
       {
         // Не завершувати хід із червоним typecheck
-        "hooks": [{ "type": "command", "command": "pnpm turbo typecheck" }]
+        "hooks": [{ "type": "command", "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/stop-typecheck.mjs\"" }]
       }
     ]
   },
@@ -204,6 +206,24 @@ extensions після залежних індексів, `ALTER TABLE` із бл
   }
 }
 ```
+
+**Як це реалізовано в репозиторії (відхилення від наведеного вище):**
+
+- хуки — Node (`.mjs`), а не bash: розбір JSON зі stdin надійніший і
+  однаково працює на macOS, Linux і в CI; команди йдуть через
+  `$CLAUDE_PROJECT_DIR`, тож працюють з будь-якої підтеки;
+- «застосована міграція» = **закомічена в git**; нова, ще не закомічена,
+  редагується вільно;
+- `guard-production` дивиться на першу команду кожного простого виразу, а не
+  на будь-який збіг у рядку, і має тест на хибні спрацювання («select * from
+  products» не збігається з prod; коміт-меседж чи документація з текстом
+  про заборонені команди проходять) — `scripts/hooks.unit.test.ts`. Перша
+  версія з простими регулярками блокувала саму документацію про себе;
+- `Stop`-хук запускає typecheck лише за незакомічених змін і не повторюється
+  після блокування (`stop_hook_active`), інакше хід зациклився б;
+- `allow` не додано: `Bash(pnpm *)` дає запуск довільного коду проєкту без
+  запиту. `deny` — як описано, з явними `.env*` (щоб `.env.example`
+  лишався читаним).
 
 `drizzle-kit push` у deny свідомо: воно змінює схему без файлу міграції,
 тобто локально «працює», а в продакшн нічого не доїжджає.
