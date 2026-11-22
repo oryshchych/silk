@@ -353,6 +353,15 @@ describe('late payment after cancellation', () => {
 
 describe('payment attempts', () => {
   it('a superseded attempt can still be paid late; money is summed over attempts', async () => {
+    // a fresh attempt is still waiting for the provider call: it cannot be replaced
+    await expect(
+      admin.db.transaction(
+        async (tx) => await createPaymentAttempt(tx, { orderId, provider: 'mono' }),
+      ),
+    ).rejects.toBeInstanceOf(AttemptStillOpenError);
+    await admin.db.execute(
+      sql`UPDATE payment_attempts SET created_at = now() - interval '10 minutes'`,
+    );
     const second = await admin.db.transaction(
       async (tx) => await createPaymentAttempt(tx, { orderId, provider: 'mono' }),
     );
@@ -452,7 +461,7 @@ describe('review round: money-losing orderings and short captures', () => {
       });
     });
     await admin.db.execute(
-      sql`UPDATE payment_attempts SET expires_at = now() - interval '1 minute'`,
+      sql`UPDATE payment_attempts SET created_at = now() - interval '10 minutes', expires_at = now() - interval '1 minute'`,
     );
     const second = await admin.db.transaction(
       async (tx) => await createPaymentAttempt(tx, { orderId, provider: 'mono' }),
@@ -496,7 +505,7 @@ describe('review round: several attempts and live invoices', () => {
     ).rejects.toBeInstanceOf(AttemptStillOpenError);
 
     await admin.db.execute(
-      sql`UPDATE payment_attempts SET expires_at = now() - interval '1 minute'`,
+      sql`UPDATE payment_attempts SET created_at = now() - interval '10 minutes', expires_at = now() - interval '1 minute'`,
     );
     const second = await admin.db.transaction(
       async (tx) => await createPaymentAttempt(tx, { orderId, provider: 'mono' }),
@@ -521,7 +530,7 @@ describe('review round: several attempts and live invoices', () => {
   it('three attempts: the order status follows the best one', async () => {
     for (let n = 0; n < 2; n += 1) {
       await admin.db.execute(
-        sql`UPDATE payment_attempts SET expires_at = now() - interval '1 minute'`,
+        sql`UPDATE payment_attempts SET created_at = now() - interval '10 minutes', expires_at = now() - interval '1 minute'`,
       );
       await admin.db.transaction(
         async (tx) => await createPaymentAttempt(tx, { orderId, provider: 'mono' }),
@@ -642,5 +651,115 @@ describe('review round: a failure at any point rolls every table back', () => {
     }).toEqual(before);
     expect((await state()).order).toMatchObject({ payment: 'pending', captured: 0, paidAt: null });
     expect(await countOf('payment_events')).toBe(0);
+  });
+});
+
+describe('review round 2: double click, duplicates, foreign amounts', () => {
+  it('two parallel requests for the same order open exactly one attempt', async () => {
+    const token = 'tok-second-order-cart';
+    await admin.db.transaction(async (tx) => {
+      await setCartItem(tx, {
+        cartToken: token,
+        variantId: world.fixture.variantIds[1],
+        quantity: 1,
+      });
+    });
+    const view = await admin.db.transaction(
+      async (tx) => await startCheckout(tx, { cartToken: token }),
+    );
+    const placed = await admin.db.transaction(
+      async (tx) =>
+        await createOrder(tx, {
+          intentId: view.intentId,
+          ownerToken: token,
+          contact: { email: 'c@example.com', phone: '+380501112244', name: 'Second' },
+          delivery: { method: 'pickup' },
+          paymentProvider: 'mono',
+          promoCode: null,
+          locale: 'uk',
+        }),
+    );
+    const barrier = new Barrier(2);
+    const click = async () => {
+      const handle = world.connect();
+      await handle.db.execute(sql`SELECT 1`);
+      await barrier.wait();
+      return await handle.db.transaction(
+        async (tx) => await createPaymentAttempt(tx, { orderId: placed.orderId, provider: 'mono' }),
+      );
+    };
+    const results = await Promise.allSettled([click(), click()]);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    const failed = results.find((r) => r.status === 'rejected');
+    expect(failed?.status === 'rejected' && failed.reason).toBeInstanceOf(AttemptStillOpenError);
+    expect(await countOf('payment_attempts', sql`order_id = ${placed.orderId}`)).toBe(1);
+  });
+
+  it('a late provider answer for a superseded attempt does not take over the order invoice id', async () => {
+    await admin.db.execute(
+      sql`UPDATE payment_attempts SET created_at = now() - interval '10 minutes'`,
+    );
+    const second = await admin.db.transaction(
+      async (tx) => await createPaymentAttempt(tx, { orderId, provider: 'mono' }),
+    );
+    await admin.db.transaction(async (tx) => {
+      await recordAttemptResult(tx, {
+        attemptId: attempt.attemptId, // the OLD attempt, answered late
+        result: { ok: true, redirectUrl: 'https://pay.example/old', externalId: 'inv-OLD' },
+      });
+    });
+    const [row] = await admin.db
+      .select({ pid: orders.providerPaymentId, current: orders.currentPaymentAttemptId })
+      .from(orders)
+      .where(eq(orders.id, orderId));
+    expect(row).toEqual({ pid: null, current: second.attemptId });
+  });
+
+  it('an earlier REJECTED message is re-evaluated on redelivery, never returned as a duplicate', async () => {
+    const raw = body({ amount: 100, finalAmount: 100 });
+    expect((await deliver(raw)).outcome.kind).toBe('rejected');
+    expect((await deliver(raw)).outcome.kind).toBe('rejected');
+    expect(await countOf('payment_events', sql`applied_at IS NULL AND error IS NOT NULL`)).toBe(1);
+  });
+
+  it.each(['hold', 'failure', 'expired'])(
+    'a foreign amount on a %s message is rejected on its own, not only for paid',
+    async (status) => {
+      const result = await deliver(body({ status, amount: 100, finalAmount: undefined }));
+      expect(result.outcome).toMatchObject({
+        kind: 'rejected',
+        reason: expect.stringContaining('amount') as string,
+      });
+      expect((await state()).attempt?.status).toBe('pending');
+    },
+  );
+
+  it('a message for another provider than the attempt is rejected on its own', async () => {
+    const raw = body();
+    const verified = await mono.verifyWebhook(
+      bytes(raw),
+      new Headers({ 'X-Sign': fake.sign(raw) }),
+    );
+    if (verified === null) throw new Error('fixture must verify');
+    const outcome = await world
+      .connect()
+      .db.transaction(async (tx) => await applyPaymentWebhook(tx, 'wayforpay', verified));
+    expect(outcome).toMatchObject({
+      kind: 'rejected',
+      reason: expect.stringContaining('provider') as string,
+    });
+    expect((await state()).order?.payment).toBe('pending');
+  });
+
+  it('a reservation past its expiry but not yet released by the worker is rescued by the payment', async () => {
+    await admin.db.execute(
+      sql`UPDATE stock_reservations SET expires_at = now() - interval '5 minutes' WHERE released_at IS NULL`,
+    );
+    await deliver(body());
+    expect(
+      await countOf('stock_reservations', sql`expires_at IS NULL AND released_at IS NULL`),
+    ).toBe(1);
+    expect(await countOf('outbox', sql`topic = 'email.payment-received'`)).toBe(1);
+    expect(await countOf('outbox', sql`topic = 'alert.late-payment'`)).toBe(0);
   });
 });

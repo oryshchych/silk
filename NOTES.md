@@ -144,3 +144,8 @@
   still needs per-IP rate limiting (edge, slice 8) and `quarantine:cleanup` retention (worker).
 - **Alerts** (`alert.payment-mismatch`, `alert.late-payment`, `alert.double-payment`) are outbox
   topics; the relay and the Telegram consumer arrive with the worker.
+- **`recordAttemptResult` maps every failure to read the provider answer to `unknown`**, which blocks a
+  new attempt (`PAYMENT_ATTEMPT_UNRESOLVED`) until reconciliation. A "definitely not created"
+  outcome (a 4xx refusal) is not distinguished yet; `payments:reconcile-open` must close such attempts.
+- **Double click:** an attempt with no invoice younger than 60 s cannot be superseded
+  (`PAYMENT_ATTEMPT_STILL_OPEN`); the web layer should return the existing attempt's redirect.

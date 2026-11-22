@@ -16,6 +16,12 @@ import { AttemptStillOpenError, AttemptUnresolvedError, OrderNotPayableError } f
 import { acquireLocks } from '../locks/acquire-locks.ts';
 
 const ATTEMPT_VALIDITY_MINUTES = 30;
+/**
+ * An attempt that has no invoice yet may simply be waiting for the provider call
+ * (timeout 10 s plus margin). Inside this window a second request must not
+ * supersede it: a double click would open two live invoices.
+ */
+const PROVIDER_CALL_GRACE_SECONDS = 60;
 
 export interface NewAttempt {
   attemptId: string;
@@ -51,6 +57,7 @@ export async function createPaymentAttempt(
       state: paymentAttempts.state,
       status: paymentAttempts.status,
       hasInvoice: sql<boolean>`${paymentAttempts.externalId} IS NOT NULL`,
+      inCallWindow: sql<boolean>`${paymentAttempts.externalId} IS NULL AND ${paymentAttempts.createdAt} > now() - make_interval(secs => ${PROVIDER_CALL_GRACE_SECONDS})`,
       isExpired: sql<boolean>`${paymentAttempts.expiresAt} IS NOT NULL AND ${paymentAttempts.expiresAt} < now()`,
     })
     .from(paymentAttempts)
@@ -67,7 +74,10 @@ export async function createPaymentAttempt(
   // (NOTES.md), so until it exists the previous one must expire first.
   if (
     open.some(
-      (attempt) => attempt.status === 'authorized' || (attempt.hasInvoice && !attempt.isExpired),
+      (attempt) =>
+        attempt.status === 'authorized' ||
+        attempt.inCallWindow ||
+        (attempt.hasInvoice && !attempt.isExpired),
     )
   ) {
     throw new AttemptStillOpenError();
@@ -148,12 +158,17 @@ export async function recordAttemptResult(
         state: sql`case when ${paymentAttempts.state} = 'pending' then 'in_flight'::operation_state else ${paymentAttempts.state} end`,
       })
       .where(eq(paymentAttempts.id, input.attemptId));
+    // Only the CURRENT attempt owns orders.provider_payment_id.
     await tx
       .update(orders)
       .set({ providerPaymentId: sql`coalesce(${orders.providerPaymentId}, ${result.externalId})` })
-      .where(eq(orders.id, probe.orderId));
+      .where(
+        and(eq(orders.id, probe.orderId), eq(orders.currentPaymentAttemptId, input.attemptId)),
+      );
     return;
   }
+  // Every failure to read the provider answer is `unknown`, which blocks a new attempt until
+  // reconciliation (NOTES.md: "definitely not created" is not distinguished yet).
   await tx
     .update(paymentAttempts)
     .set({
