@@ -12,8 +12,8 @@
   },
   "dependencies": {
     "@store/db": "workspace:*",
-    "drizzle-orm": "0.45.2",
-    "@store/shared": "workspace:*"
+    "@store/shared": "workspace:*",
+    "drizzle-orm": "0.45.2"
   },
   "devDependencies": {
     "@types/node": "^24.13.3",

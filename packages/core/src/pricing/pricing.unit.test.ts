@@ -16,11 +16,10 @@ describe('allocateLineDiscounts', () => {
     const lines = [line('a', 1000), line('b', 999), line('c', 998)];
     const result = allocateLineDiscounts(lines, money(2996));
     expect(sum(result)).toBe(2996);
-    result.forEach((discount, i) => {
-      expect(discount).toBeLessThanOrEqual(lines[i]?.lineSubtotal ?? 0);
-    });
-    // "leftover to the priciest line" would have produced 1001 on the 1000 line
-    expect(result[0]).toBeLessThanOrEqual(1000);
+    // Exact largest-remainder result: remainders 1997 / 1998 / 1999 over 2997, so the two
+    // leftover kopiykas go to the 998 and 999 lines. "Leftover to the priciest line"
+    // would have produced 1001 on the 1000 line.
+    expect(result).toEqual([999, 999, 998]);
   });
 
   it('gives lines the discount equal to their subtotal when the discount covers everything', () => {
@@ -62,7 +61,7 @@ describe('allocateLineDiscounts', () => {
   it('property: exact sum, shares within subtotal, deterministic, for random carts', () => {
     let seed = 7;
     const next = (max: number): number => {
-      seed = (seed * 1103515245 + 12345) % 2147483648;
+      seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff;
       return seed % max;
     };
     for (let round = 0; round < 500; round += 1) {
@@ -74,8 +73,14 @@ describe('allocateLineDiscounts', () => {
       const first = allocateLineDiscounts(lines, discount);
       expect(sum(first)).toBe(discount);
       first.forEach((d, i) => {
+        const l = lines[i];
         expect(d).toBeGreaterThanOrEqual(0);
-        expect(d).toBeLessThanOrEqual(lines[i]?.lineSubtotal ?? 0);
+        expect(d).toBeLessThanOrEqual(l?.lineSubtotal ?? 0);
+        // within one kopiyka of the ideal proportional share: |d * sumW - discount * w| < sumW
+        if (l?.eligible === true) {
+          const gap = BigInt(d) * BigInt(eligible) - BigInt(discount) * BigInt(l.lineSubtotal);
+          expect(gap < 0n ? -gap : gap).toBeLessThan(BigInt(eligible));
+        }
       });
       expect(allocateLineDiscounts([...lines], discount)).toEqual(first);
     }
@@ -106,6 +111,38 @@ describe('assertAllocation', () => {
     expect(() => {
       assertAllocation(lines, [money(100), money(0)], money(101));
     }).toThrow(/add up/);
+  });
+});
+
+describe('promo rule validation and cap', () => {
+  it('caps a fixed discount with max_discount_amount too', () => {
+    const rule = { type: 'fixed', value: 5000, maxDiscountAmount: money(3000) } as const;
+    expect(calculateDiscount(rule, money(20000))).toBe(3000);
+  });
+
+  it('rejects a negative fixed value, a negative cap and an out-of-range percent', () => {
+    const subtotal = money(1000);
+    expect(() =>
+      calculateDiscount({ type: 'fixed', value: -1, maxDiscountAmount: null }, subtotal),
+    ).toThrow(/fixed/);
+    expect(() =>
+      calculateDiscount({ type: 'percent', value: 10, maxDiscountAmount: money(-1) }, subtotal),
+    ).toThrow(/max discount/);
+    expect(() =>
+      calculateDiscount({ type: 'percent', value: 0, maxDiscountAmount: null }, subtotal),
+    ).toThrow(/percent/);
+    expect(() =>
+      calculateDiscount({ type: 'percent', value: 101, maxDiscountAmount: null }, subtotal),
+    ).toThrow(/percent/);
+  });
+
+  it('an empty cart prices to zero', () => {
+    const result = calculateCart([], null);
+    expect(result.total).toBe(0);
+  });
+
+  it('shipping alone cannot overflow silently', () => {
+    expect(() => calculateCart([], null, money(2_147_483_647 + 1))).toThrow(/integer/);
   });
 });
 

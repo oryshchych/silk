@@ -129,7 +129,7 @@ ties broken by line id. NOT "leftover to the priciest line". Implemented in
 
 ## 4. Розрахунок ціни
 
-`packages/core/pricing/calculate-cart.ts`. Порядок операцій має значення:
+`packages/core/src/pricing/calculate-cart.ts`. Порядок операцій має значення:
 
 ```
 1. lineSubtotal      = Σ (unit_price × quantity)

@@ -54,19 +54,33 @@ export interface CartPricing {
 }
 
 export function calculateDiscount(rule: PromoRule, eligibleSubtotal: Money): Money {
+  assertValidRule(rule);
+  // docs/PROMO_CODES.md section 4: raw discount per type, then one cap applied to any type.
+  let raw: Money;
   switch (rule.type) {
-    case 'percent': {
-      const raw = percentOf(eligibleSubtotal, rule.value, 'floor');
-      return rule.maxDiscountAmount !== null && rule.maxDiscountAmount < raw
-        ? rule.maxDiscountAmount
-        : raw;
-    }
-    case 'fixed': {
-      const raw = money(rule.value);
-      return raw < eligibleSubtotal ? raw : eligibleSubtotal;
-    }
+    case 'percent':
+      raw = percentOf(eligibleSubtotal, rule.value, 'floor');
+      break;
+    case 'fixed':
+      raw = money(rule.value) < eligibleSubtotal ? money(rule.value) : eligibleSubtotal;
+      break;
     case 'free_shipping':
       return ZERO;
+  }
+  return rule.maxDiscountAmount !== null && rule.maxDiscountAmount < raw
+    ? rule.maxDiscountAmount
+    : raw;
+}
+
+function assertValidRule(rule: PromoRule): void {
+  if (rule.maxDiscountAmount !== null && rule.maxDiscountAmount < 0) {
+    throw new RangeError('max discount amount must not be negative');
+  }
+  if (rule.type === 'fixed' && rule.value < 0) {
+    throw new RangeError('fixed discount must not be negative');
+  }
+  if (rule.type === 'percent' && (rule.value < 1 || rule.value > 100)) {
+    throw new RangeError('percent discount must be 1..100');
   }
 }
 
