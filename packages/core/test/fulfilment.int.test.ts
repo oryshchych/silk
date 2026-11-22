@@ -11,6 +11,7 @@ import type { DbHandle } from '@store/db/client';
 
 import { setCartItem, startCheckout } from '../src/cart/cart.ts';
 import {
+  InsufficientStockError,
   OrderNotCancellableError,
   OrderNotShippableError,
   StockDriftError,
@@ -232,6 +233,14 @@ describe('criterion 11: cancelling after paid', () => {
 
     expect(await stock(v1)).toEqual({ stock: 1, reserved: 0 }); // the goods never left the shelf
     expect(await statusOf(orderId)).toBe('cancelled');
+    // cancelling does not rewrite the money: the payment stays paid and the capture stays put
+    const money = await admin.db.execute<{
+      payment_status: string;
+      captured_total: number;
+      total: number;
+    }>(sql`SELECT payment_status, captured_total, total FROM orders WHERE id = ${orderId}`);
+    expect(money.rows[0]).toMatchObject({ payment_status: 'paid' });
+    expect(money.rows[0]?.captured_total).toBe(money.rows[0]?.total);
     expect(await countOf('stock_reservations', sql`release_reason = 'cancelled'`)).toBe(1);
     expect(await countOf('outbox', sql`topic = 'alert.refund-due'`)).toBe(1);
     expect(await cancel(orderId)).toMatchObject({ changed: false });
@@ -551,4 +560,72 @@ describe('review round: proven overlap, guards and rollback', () => {
       expect(await snapshot()).toEqual(before);
     },
   );
+});
+
+describe('review round 2: transitions, ship drift, ship against a checkout', () => {
+  it.each([
+    ['delivered', 'cancel'],
+    ['returned', 'ship'],
+    ['returned', 'cancel'],
+  ] as const)('an order that is %s refuses %s (not a silent no-op)', async (status, operation) => {
+    const orderId = await place(v1);
+    await markPaid(orderId);
+    await admin.db.execute(
+      sql`UPDATE orders SET status = ${status}::order_status WHERE id = ${orderId}`,
+    );
+    const attempt = operation === 'ship' ? ship(orderId) : cancel(orderId);
+    await expect(attempt).rejects.toThrow(new RegExp(status));
+  });
+
+  it.each([
+    ['reserved_quantity = 0', sql`reserved_quantity = 0`],
+    ['stock_quantity = 0', sql`stock_quantity = 0`],
+  ])(
+    'ship with drifted counters (%s) is a StockDriftError and changes nothing',
+    async (_name, change) => {
+      const orderId = await place(v1);
+      await markPaid(orderId);
+      await admin.db.execute(sql`UPDATE product_variants SET ${change} WHERE id = ${v1}`);
+      const before = await snapshot();
+      const error = await ship(orderId).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(StockDriftError);
+      expect(await snapshot()).toEqual(before);
+    },
+  );
+
+  it('a checkout queued behind a held ship finds the unit gone: told "no stock", never oversold', async () => {
+    const paid = await place(v1);
+    await markPaid(paid);
+    seq += 1;
+    const token = `tok-behind-ship-${String(seq)}`.padEnd(24, 'x');
+    await admin.db.transaction(async (tx) => {
+      await setCartItem(tx, { cartToken: token, variantId: v1, quantity: 1 });
+    });
+    const view = await admin.db.transaction(
+      async (tx) => await startCheckout(tx, { cartToken: token }),
+    );
+
+    const shipping = await held((tx) => shipOrder(tx, { orderId: paid, source: 't' }));
+    const checkout = world
+      .connect()
+      .db.transaction(
+        async (tx) =>
+          await createOrder(tx, {
+            intentId: view.intentId,
+            ownerToken: token,
+            contact: { email: 'n@example.com', phone: '+380501112244', name: 'New' },
+            delivery: { method: 'pickup' },
+            paymentProvider: 'mono',
+            promoCode: null,
+            locale: 'uk',
+          }),
+      )
+      .catch((e: unknown) => e);
+    await waitUntilBlocked();
+    shipping.release();
+    await shipping.done;
+    expect(await checkout).toBeInstanceOf(InsufficientStockError);
+    expect(await stock(v1)).toEqual({ stock: 0, reserved: 0 });
+    await assertStockInvariant();
+  });
 });

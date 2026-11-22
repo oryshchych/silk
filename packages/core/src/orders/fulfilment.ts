@@ -31,6 +31,7 @@ import type { Tx } from '@store/db/types';
 
 import { OrderNotCancellableError, OrderNotShippableError, StockDriftError } from '../errors.ts';
 import { acquireLocks } from '../locks/acquire-locks.ts';
+import { canTransition } from './transitions.ts';
 
 export interface FulfilmentResult {
   orderId: string;
@@ -105,7 +106,7 @@ export async function shipOrder(
   if (order.status === 'shipped' || order.status === 'delivered') {
     return { orderId: order.id, changed: false };
   }
-  if (order.status === 'cancelled' || order.status === 'returned') {
+  if (!canTransition(order.status, 'shipped')) {
     throw new OrderNotShippableError(`the order is ${order.status}`);
   }
   // Card payments only in the skeleton. COD and bank transfer shipping rules (what confirms
@@ -171,7 +172,7 @@ export async function cancelOrder(
   const order = await lockedOrder(tx, input.orderId);
   if (order === undefined) throw new OrderNotCancellableError('no such order');
   if (order.status === 'cancelled') return { orderId: order.id, changed: false };
-  if (order.status === 'shipped' || order.status === 'delivered' || order.status === 'returned') {
+  if (!canTransition(order.status, 'cancelled')) {
     throw new OrderNotCancellableError(`the order is ${order.status}`);
   }
 
