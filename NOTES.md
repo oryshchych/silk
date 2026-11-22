@@ -209,3 +209,18 @@ Left as notes:
   answers the probe but hangs every send is therefore bounded to two timeouts per tick.
 - **Batch hold time**: the batch locks are held while sending (default 20 rows, 10 s per send
   timeout, a streak of 3 failures with nothing sent ends the batch).
+
+## Phase 0.5, slice 8a: ship and cancel (2026-11-23)
+
+- **`shipOrder` skips `confirmed` and `processing`**: it moves `pending`/`confirmed`/`processing` straight
+  to `shipped` and records the jump in the history. The one-step admin transitions of
+  `05-payment-flow.md` section 7 arrive with phase 5; this is a deviation to list in the phase report.
+- **Only settled card payments ship** (paid and captured >= total). COD and bank transfer are Q16.
+- **Cancelling does not touch the provider**: open invoices are closed locally and a card hold is
+  announced through `alert.refund-due` (`heldAuthorization`); releasing the hold or the invoice at the
+  provider is a follow-up. A late payment on a closed invoice is credited and raises `alert.late-payment`.
+- **`alert.refund-due` has no consumer yet** (the refund flow is the next slice; a manager screen is phase 5).
+- **Conditional reservation close** (`released_at IS NULL`) is defence in depth: under the order lock a
+  repeat call returns before reaching it, so no test can tell it from an unconditional update.
+- **Cancel or ship vs the payment webhook** is not exercised in one test: all three take `orders` first
+  (reviewed), and `payment_attempts` second via `acquireLocks`.

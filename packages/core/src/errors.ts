@@ -116,3 +116,22 @@ export class AttemptStillOpenError extends DomainError {
     super('PAYMENT_ATTEMPT_STILL_OPEN', 'The previous payment attempt is still open');
   }
 }
+
+export class OrderNotShippableError extends DomainError {
+  constructor(reason: string) {
+    super('ORDER_NOT_SHIPPABLE', `The order cannot be shipped: ${reason}`);
+  }
+}
+
+export class OrderNotCancellableError extends DomainError {
+  constructor(reason: string) {
+    super('ORDER_NOT_CANCELLABLE', `The order cannot be cancelled: ${reason}`);
+  }
+}
+
+/** A denormalised counter does not cover a live reservation or promo use: stock:reconcile territory. */
+export class StockDriftError extends DomainError {
+  constructor(what: string) {
+    super('STOCK_COUNTER_DRIFT', `Counter drift detected: ${what}`);
+  }
+}
