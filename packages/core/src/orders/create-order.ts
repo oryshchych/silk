@@ -14,7 +14,7 @@
  * The payment attempt and the provider call are NOT here: they happen after
  * this transaction commits.
  */
-import { createHash } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 
 import { eq, sql } from 'drizzle-orm';
 
@@ -66,6 +66,13 @@ export function payloadFingerprint(input: CreateOrderInput): string {
   return createHash('sha256').update(JSON.stringify(essential)).digest('hex');
 }
 
+/** Constant-time comparison of the cart token: it is the credential of a guest intent. */
+function sameToken(a: string, b: string): boolean {
+  const left = createHash('sha256').update(a).digest();
+  const right = createHash('sha256').update(b).digest();
+  return timingSafeEqual(left, right);
+}
+
 async function existingOrder(tx: Tx, orderId: string) {
   const [order] = await tx
     .select({ id: orders.id, orderNumber: orders.orderNumber })
@@ -85,7 +92,9 @@ export async function createOrder(tx: Tx, input: CreateOrderInput): Promise<Crea
     .select({ cartId: checkoutIntents.cartId, ownerToken: checkoutIntents.ownerToken })
     .from(checkoutIntents)
     .where(eq(checkoutIntents.id, input.intentId));
-  if (probe === undefined || probe.ownerToken !== input.ownerToken) throw new IntentNotFoundError();
+  if (probe === undefined || !sameToken(probe.ownerToken, input.ownerToken)) {
+    throw new IntentNotFoundError();
+  }
 
   await acquireLocks(tx, { carts: [probe.cartId], checkout_intents: [input.intentId] });
   const [intent] = await tx

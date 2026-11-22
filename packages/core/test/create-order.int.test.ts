@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { productVariants, products } from '@store/db/schema';
 import type { DbHandle } from '@store/db/client';
+import { money } from '@store/shared/money';
 
 import { setCartItem, startCheckout } from '../src/cart/cart.ts';
 import {
@@ -22,7 +23,9 @@ import {
   UnsupportedPurchaseError,
   VariantNotFoundError,
 } from '../src/errors.ts';
+import { reserveStock, type CheckoutLine } from '../src/orders/checkout-lines.ts';
 import { createOrder, type CreateOrderInput } from '../src/orders/create-order.ts';
+import { consumePromoUse } from '../src/orders/persist-order.ts';
 import { Barrier } from './barrier.ts';
 import { createWorld, type TestWorld } from './fixtures.ts';
 
@@ -583,5 +586,68 @@ describe('failure inside the reservation, and promo restrictions', () => {
     );
     expect(row.rows[0]?.m).toBeGreaterThanOrEqual(17);
     expect(row.rows[0]?.m).toBeLessThanOrEqual(18);
+  });
+});
+
+describe('guards that must hold even when an upstream lock is bypassed', () => {
+  it('consumePromoUse refuses a use beyond max_uses', async () => {
+    await admin.db.execute(
+      sql`INSERT INTO promo_codes (code, type, value, max_uses, uses_count) VALUES ('FULL', 'fixed', 100, 1, 1)`,
+    );
+    const [row] = (await admin.db.execute<{ id: string }>(sql`SELECT id FROM promo_codes`)).rows;
+    await expect(
+      admin.db.transaction(async (tx) => {
+        await consumePromoUse(tx, row?.id ?? '');
+      }),
+    ).rejects.toBeInstanceOf(PromoRejectedError);
+    const after = await admin.db.execute<{ uses_count: number }>(
+      sql`SELECT uses_count FROM promo_codes`,
+    );
+    expect(after.rows[0]?.uses_count).toBe(1);
+  });
+
+  it('reserveStock alone (no acquireLocks) never oversells from two connections', async () => {
+    const line: CheckoutLine = {
+      variantId: v1,
+      productId: world.fixture.productId,
+      categoryId: '00000000-0000-4000-8000-000000000000',
+      quantity: 1,
+      unitPrice: money(129900),
+      hasCompareAtPrice: false,
+      isSellable: true,
+      nameSnapshot: 'x',
+      skuSnapshot: 'x',
+      brandSnapshot: 'x',
+      sizeLabel: 'x',
+      sizeSystem: 'x',
+      colorName: 'x',
+      uktzed: null,
+      unitCost: null,
+    };
+    const barrier = new Barrier(2);
+    const run = async () => {
+      const handle = world.connect();
+      await handle.db.execute(sql`SELECT 1`);
+      await barrier.wait();
+      await handle.db.transaction(async (tx) => {
+        await reserveStock(tx, [line]);
+      });
+    };
+    const results = await settle([run(), run()]);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect(await stock(v1)).toEqual({ stock: 1, reserved: 1 });
+  });
+
+  it('a new cart token after conversion starts a clean cart (the web layer rotates the token)', async () => {
+    await fillCart('old-token', [[v1, 1]]);
+    await placeOrder(details(await intentFor('old-token'), 'old-token'));
+    await fillCart('new-token', [[v2, 1]]);
+    const view = await admin.db.transaction(
+      async (tx) => await startCheckout(tx, { cartToken: tok('new-token') }),
+    );
+    expect(view.orderId).toBeNull();
+    await expect(placeOrder(details(view.intentId, 'new-token'))).resolves.toMatchObject({
+      created: true,
+    });
   });
 });

@@ -16,12 +16,12 @@ import {
   orders,
   outbox,
   promoCodeRedemptions,
-  promoCodes,
   settings,
   stockReservations,
 } from '@store/db/schema';
 import type { Tx } from '@store/db/types';
 
+import { PromoRejectedError } from '../errors.ts';
 import type { CartPricing } from '../pricing/calculate-cart.ts';
 import type { CheckoutLine } from './checkout-lines.ts';
 import type { CreateOrderInput } from './types.ts';
@@ -47,6 +47,20 @@ async function reservationMinutes(
   }
   if (provider === 'cod') return numberOr(ttl['cod_hours'], DEFAULT_TTL_MINUTES.cod / 60) * 60;
   return numberOr(ttl['card_minutes'], DEFAULT_TTL_MINUTES.card);
+}
+
+/**
+ * Takes one use of a promo. Conditional on the limit even though the caller
+ * holds the row lock: if the lock is ever bypassed the use is refused here
+ * instead of overshooting (the CHECK `promo_uses_lte_max` is the last line).
+ */
+export async function consumePromoUse(tx: Tx, promoId: string): Promise<void> {
+  const updated = await tx.execute(
+    sql`UPDATE promo_codes SET uses_count = uses_count + 1
+         WHERE id = ${promoId} AND (max_uses IS NULL OR uses_count < max_uses)
+        RETURNING id`,
+  );
+  if (updated.rows.length === 0) throw new PromoRejectedError('usage limit reached');
 }
 
 export interface PersistedOrder {
@@ -138,10 +152,7 @@ export async function persistOrder(
       orderId: order.id,
       discountAmount: pricing.discountTotal,
     });
-    await tx
-      .update(promoCodes)
-      .set({ usesCount: sql`${promoCodes.usesCount} + 1` })
-      .where(eq(promoCodes.id, promo.id));
+    await consumePromoUse(tx, promo.id);
   }
 
   await tx.insert(orderStatusHistory).values([
@@ -152,7 +163,7 @@ export async function persistOrder(
     action: 'create',
     entity: 'order',
     entityId: order.id,
-    diff: { source: 'checkout', total: pricing.total },
+    diff: { source: 'checkout', actor: 'guest', total: pricing.total },
   });
   // Mail goes through the outbox, never straight from the request (AGENTS.md 5b).
   await tx.insert(outbox).values({

@@ -127,6 +127,15 @@ WayForPay звичайний `200` не замінює підписаної ві
 Перемикання провайдера не має залишати попередню спробу платоспроможною:
 перед створенням нової попередня закривається або скасовується у провайдера.
 
+**Converted carts (contract).** Once an intent completes, its cart is
+terminal: `carts.converted_at` is set and `setCartItem` throws `CART_CONVERTED`.
+`startCheckout` on that cart returns the completed intent with its `orderId`, so
+a reload shows the order. The cart token is the guest credential and is never
+reused for a second purchase: on `CART_CONVERTED` (or after showing the order)
+the web layer mints a NEW token, sets a new cookie, and the next cart is a new
+row. Tokens are minted by the server (16..64 URL-safe characters), never chosen
+by the client.
+
 ### ADR-5. Снапшоти в замовленнях
 
 `order_items` зберігає `name_snapshot`, `sku_snapshot`, `size_label`, `color_name`, `unit_price`. Замовлення дворічної давнини мусить показувати ціну й назву на момент покупки, навіть якщо товар видалено. `product_id` та `variant_id` — nullable FK з `ON DELETE SET NULL`.
