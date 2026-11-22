@@ -336,12 +336,12 @@ describe('0006_cart_version_trigger', () => {
   beforeAll(async () => {
     const { id: categoryId } = await one<{ id: string }>(
       app,
-      `INSERT INTO categories (slug, name_uk, name_en) VALUES ('cv-cat', 'К', 'C') RETURNING id`,
+      `INSERT INTO categories (slug, name_uk, name_en) VALUES ('cv-cat', 'K', 'C') RETURNING id`,
     );
     const { id: productId } = await one<{ id: string }>(
       app,
       `INSERT INTO products (sku, slug, brand, category_id, name_uk, name_en, base_price)
-       VALUES ('CV-1', 'cv-1', 'B', $1, 'Т', 'T', 1000) RETURNING id`,
+       VALUES ('CV-1', 'cv-1', 'B', $1, 'T', 'T', 1000) RETURNING id`,
       [categoryId],
     );
     const { id: sizeId } = await one<{ id: string }>(
@@ -350,7 +350,7 @@ describe('0006_cart_version_trigger', () => {
     );
     const { id: colorId } = await one<{ id: string }>(
       app,
-      `INSERT INTO colors (slug, name_uk, name_en, hex) VALUES ('cv', 'К', 'C', '#000000')
+      `INSERT INTO colors (slug, name_uk, name_en, hex) VALUES ('cv', 'K', 'C', '#000000')
        RETURNING id`,
     );
     ({ id: variantId } = await one<{ id: string }>(
