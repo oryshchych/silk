@@ -172,6 +172,20 @@ async function snapshot(): Promise<unknown> {
   return result.rows[0];
 }
 
+/** Test setup: a refund operation holding budget on the order's paid attempt. */
+async function refundRow(orderId: string, amount: number, state: string): Promise<void> {
+  await admin.db.execute(
+    sql`INSERT INTO payment_attempts (order_id, attempt_number, provider, amount, state, status, captured_amount, external_id)
+        SELECT id, 1, 'mono', total, 'succeeded', 'paid', total, ${`inv-${orderId}`}
+          FROM orders WHERE id = ${orderId}`,
+  );
+  await admin.db.execute(
+    sql`INSERT INTO refund_operations (order_id, payment_attempt_id, amount, state)
+        SELECT ${orderId}::uuid, id, ${amount}, ${state}::operation_state
+          FROM payment_attempts WHERE order_id = ${orderId}`,
+  );
+}
+
 describe('criterion 10: paid does not reduce stock, shipped reduces it exactly once', () => {
   it('payment leaves stock alone; shipping moves stock and reserved together', async () => {
     const orderId = await place(v1);
@@ -516,15 +530,13 @@ describe('review round: proven overlap, guards and rollback', () => {
   it('the refund alert is the NET amount: nothing left to refund means no alert', async () => {
     const full = await place(v1);
     await markPaid(full);
-    await admin.db.execute(
-      sql`UPDATE orders SET refunded_total = captured_total WHERE id = ${full}`,
-    );
+    await refundRow(full, 129900, 'succeeded');
     await cancel(full);
     expect(await countOf('outbox', sql`topic = 'alert.refund-due'`)).toBe(0);
 
     const partial = await place(v2);
     await markPaid(partial);
-    await admin.db.execute(sql`UPDATE orders SET refunded_total = 1000 WHERE id = ${partial}`);
+    await refundRow(partial, 1000, 'unknown'); // held budget counts as already refunded
     await cancel(partial);
     const alert = await admin.db.execute<{ payload: { refundable: number } }>(
       sql`SELECT payload FROM outbox WHERE topic = 'alert.refund-due'`,

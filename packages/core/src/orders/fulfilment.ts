@@ -25,6 +25,7 @@ import {
   outbox,
   paymentAttempts,
   promoCodeRedemptions,
+  refundOperations,
   stockReservations,
 } from '@store/db/schema';
 import type { Tx } from '@store/db/types';
@@ -45,6 +46,20 @@ async function lockedOrder(tx: Tx, orderId: string): Promise<Order | undefined> 
   await acquireLocks(tx, { orders: [orderId] });
   const [order] = await tx.select().from(orders).where(eq(orders.id, orderId));
   return order;
+}
+
+/** Sum of the refunds that hold budget: pending, in_flight, unknown and succeeded. */
+async function heldRefundTotal(tx: Tx, orderId: string): Promise<number> {
+  const [held] = await tx
+    .select({ sum: sql<number>`coalesce(sum(${refundOperations.amount}), 0)::int` })
+    .from(refundOperations)
+    .where(
+      and(
+        eq(refundOperations.orderId, orderId),
+        inArray(refundOperations.state, ['pending', 'in_flight', 'unknown', 'succeeded']),
+      ),
+    );
+  return held?.sum ?? 0;
 }
 
 async function liveReservations(tx: Tx, orderId: string) {
@@ -114,8 +129,11 @@ export async function shipOrder(
   if (order.paymentStatus !== 'paid') {
     throw new OrderNotShippableError('the order is not paid');
   }
-  if (order.capturedTotal < order.total) {
-    throw new OrderNotShippableError('the captured amount does not cover the order total');
+  // Money that a refund has reserved, sent or settled is not money the order still holds: shipping
+  // while a refund is pending, in flight or unknown would give the customer both goods and money.
+  const heldRefunds = await heldRefundTotal(tx, order.id);
+  if (order.capturedTotal - heldRefunds < order.total) {
+    throw new OrderNotShippableError('a refund covers part of the captured amount');
   }
 
   const reservations = await liveReservations(tx, order.id);
@@ -250,7 +268,7 @@ export async function cancelOrder(
   await recordTransition(tx, order, 'cancelled', input.source, input.reason);
 
   // Money to give back: what was captured minus what was already refunded.
-  const refundable = order.capturedTotal - order.refundedTotal;
+  const refundable = order.capturedTotal - (await heldRefundTotal(tx, order.id));
   const heldAuthorization = openAttempts.some((a) => a.status === 'authorized');
   if (refundable > 0 || heldAuthorization) {
     // The refund (or the release of a card hold at the provider) is its own operation and a

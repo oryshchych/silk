@@ -231,3 +231,30 @@ Left as notes:
   repeat call returns before reaching it, so no test can tell it from an unconditional update.
 - **Cancel or ship vs the payment webhook** is not exercised in one test: all three take `orders` first
   (reviewed), and `payment_attempts` second via `acquireLocks`.
+
+## Phase 0.5, slice 8b: refunds (2026-11-23)
+
+- **An in-flight refund whose provider call never happened cannot be told from one that was sent.** The
+  claim commits before the call, so a crash in between leaves `in_flight` with the budget held. Nothing is
+  retried blindly. Whether Mono treats `/invoice/cancel` with the same `extRef` as idempotent (which
+  would make a retry safe) is one more fact for the sandbox run (Q13). Until then a person or the future
+  `payments:reconcile-open` job closes it through `settleRefund` with a confirmation.
+- **No refund reconciliation job yet**: the adapter has no refund status lookup. `unknown` and
+  `in_flight` operations hold budget until someone settles them with a confirmation (audit row with the
+  person), and `pending` ones can be withdrawn with `cancelPendingRefund`.
+- **Webhook `reversed` never settles a refund** (ALLOWED has no refund target): refund state comes from
+  `refund_operations` only. A late capture on an order already `refunded` raises `alert.double-payment`
+  but leaves the status `refunded`; re-deriving it is a phase 5 admin concern.
+- **`requestFullRefund` is all-or-nothing**: one attempt without a route (COD, gift card, an unregistered
+  provider) refuses the whole request; refund such attempts separately with `requestRefund`.
+- **Refund state changes are provenance-checked**: the result of our own provider call (`processRefund`) is the
+  only way to settle an `in_flight` operation without a confirmation; `settleRefund` always takes a
+  `confirmation` (audited), `pending` operations cannot be settled at all, and `unknown` never reopens.
+- **A refund reservation is serialised by both locks and by Postgres foreign-key locks**: removing the
+  explicit order lock from `requestRefund` is caught only by the full-vs-partial race test, because the
+  insert's FK lock on `orders` already blocks a concurrent ship. The explicit lock stays (it carries the
+  ADR-22 protocol).
+- **Refund reconciliation has no owner yet**: queued as Q17.
+- **Refund reason is limited to 200 characters**; use codes, not customer text.
+- **Returns**: stock goes back only through the physical receipt of a return (a later phase); a refund
+  does not touch `stock_quantity`.

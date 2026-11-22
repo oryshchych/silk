@@ -11,7 +11,8 @@
     "./errors": "./src/errors.ts",
     "./payments": "./src/payments/handle-webhook.ts",
     "./payment-attempts": "./src/payments/attempts.ts",
-    "./fulfilment": "./src/orders/fulfilment.ts"
+    "./fulfilment": "./src/orders/fulfilment.ts",
+    "./refunds": "./src/payments/refunds.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"

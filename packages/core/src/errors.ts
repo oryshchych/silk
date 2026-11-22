@@ -135,3 +135,23 @@ export class StockDriftError extends DomainError {
     super('STOCK_COUNTER_DRIFT', `Counter drift detected: ${what}`);
   }
 }
+
+/** The requested refund exceeds what is left of the captured payment (pending and unknown refunds count). */
+export class RefundBudgetError extends DomainError {
+  constructor(reason: string) {
+    super('REFUND_BUDGET_EXCEEDED', `Refund refused: ${reason}`);
+  }
+}
+
+/** No provider can refund this attempt (e.g. a COD or gift-card payment, or an unregistered provider). */
+export class RefundRoutingError extends DomainError {
+  constructor(provider: string) {
+    super('REFUND_NO_PROVIDER', `No refund route for payments made through ${provider}`);
+  }
+}
+
+export class RefundNotAllowedError extends DomainError {
+  constructor(reason: string) {
+    super('REFUND_NOT_ALLOWED', `Refund not allowed: ${reason}`);
+  }
+}
