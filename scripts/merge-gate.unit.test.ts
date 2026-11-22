@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
-import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -9,13 +9,15 @@ import {
   classifyCommand,
   evaluateMerge,
   latestReview,
+  protectedPathsTouched,
   requiredCheckNames,
-  splitCommands,
+  tokenize,
   type CheckEntry,
   type Classified,
   type GateContext,
   type PrSnapshot,
-} from './merge-gate';
+} from './merge-gate.ts';
+import { guard, type GuardDeps } from './guard-merge.ts';
 
 const HEAD = 'abcdef0123456789abcdef0123456789abcdef01';
 const SHORT = HEAD.slice(0, 12);
@@ -39,6 +41,8 @@ function pr(overrides: Partial<PrSnapshot> = {}): PrSnapshot {
     headRefOid: HEAD,
     statusCheckRollup: green,
     comments: [report('PASS', SHORT)],
+    files: [{ path: 'packages/core/src/x.ts' }],
+    changedFiles: 1,
     ...overrides,
   };
 }
@@ -150,13 +154,39 @@ describe('evaluateMerge', () => {
     expect(text).toMatch(/external: pending/);
   });
 
-  it('uses the latest attempt of a re-run check', () => {
-    const rollup: CheckEntry[] = [
-      { name: 'lint', status: 'COMPLETED', conclusion: 'FAILURE' },
-      ok('lint'),
-      ok('build'),
+  it('requires every entry of a name to succeed, whatever the order', () => {
+    const failed: CheckEntry = { name: 'lint', status: 'COMPLETED', conclusion: 'FAILURE' };
+    expect(reasons(pr({ statusCheckRollup: [failed, ok('lint'), ok('build')] }))).toMatch(
+      /lint: failure/,
+    );
+    expect(reasons(pr({ statusCheckRollup: [ok('lint'), failed, ok('build')] }))).toMatch(
+      /lint: failure/,
+    );
+  });
+
+  it('does not let a commit status stand in for a check run', () => {
+    const status: CheckEntry = { context: 'build', state: 'SUCCESS' };
+    expect(reasons(pr({ statusCheckRollup: [ok('lint'), status] }))).toMatch(
+      /build: has not reported/,
+    );
+  });
+
+  it('refuses PRs that change the guard rails, or whose file list is truncated', () => {
+    const files = [{ path: '.claude/hooks/guard-merge.mjs' }];
+    expect(reasons(pr({ files, changedFiles: 1 }))).toMatch(/the owner merges those/);
+    expect(reasons(pr({ files: [], changedFiles: 400 }))).toMatch(/lists only 0 of 400/);
+  });
+
+  it('rejects a header that is not the first line or has a bad verdict word', () => {
+    const body = (text: string): PrSnapshot['comments'] => [
+      { body: text, author: { login: OWNER } },
     ];
-    expect(evaluateMerge(pr({ statusCheckRollup: rollup }), context()).ok).toBe(true);
+    const header = `## review-pr-silk: PASS @ \`${SHORT}\``;
+    expect(reasons(pr({ comments: body(`\n${header}`) }))).toMatch(/run the skill first/);
+    expect(reasons(pr({ comments: body(`> ${header}`) }))).toMatch(/run the skill first/);
+    expect(reasons(pr({ comments: body(header.replace('PASS', 'PASS-not')) }))).toMatch(
+      /run the skill first/,
+    );
   });
 
   it('blocks an extra failing check but tolerates a skipped extra one', () => {
@@ -207,11 +237,62 @@ describe('evaluateMerge', () => {
   });
 });
 
-describe('splitCommands', () => {
+describe('tokenize', () => {
+  const texts = (command: string): string[][] =>
+    tokenize(command).map((words) => words.map((word) => word.text));
+
   it('keeps quoted operators inside a word', () => {
-    expect(splitCommands('git commit -m "a && b; c" && echo done')).toEqual([
+    expect(texts('git commit -m "a && b; c" && echo done')).toEqual([
       ['git', 'commit', '-m', 'a && b; c'],
       ['echo', 'done'],
+    ]);
+  });
+
+  it('joins quoted fragments and understands ANSI-C quoting', () => {
+    expect(texts('gh pr "mer"ge 5')).toEqual([['gh', 'pr', 'merge', '5']]);
+    expect(texts("gh pr $'merge' 5")).toEqual([['gh', 'pr', 'merge', '5']]);
+  });
+
+  it('flags words the shell would compute', () => {
+    const dynamic = tokenize('gh $X `z` *.ts {a,b}')
+      .flat()
+      .map((word) => word.dynamic);
+    expect(dynamic).toEqual([false, true, true, true, true]);
+    expect(
+      tokenize('gh pr merge 5')
+        .flat()
+        .some((word) => word.dynamic),
+    ).toBe(false);
+  });
+
+  it('does not skip heredoc bodies', () => {
+    expect(texts("cat <<'EOF'\nharmless\nEOF\ngit push origin main")).toContainEqual([
+      'git',
+      'push',
+      'origin',
+      'main',
+    ]);
+  });
+});
+
+describe('protectedPathsTouched', () => {
+  it('finds guard-rail files only', () => {
+    expect(
+      protectedPathsTouched([
+        'packages/core/src/x.ts',
+        '.claude/hooks/guard-merge.mjs',
+        'scripts/merge-gate.ts',
+        '.github/workflows/ci.yml',
+        '.claude/settings.json',
+        'docs/AUTONOMOUS_MODE.md',
+        'docs/PROMO_CODES.md',
+      ]),
+    ).toEqual([
+      '.claude/hooks/guard-merge.mjs',
+      'scripts/merge-gate.ts',
+      '.github/workflows/ci.yml',
+      '.claude/settings.json',
+      'docs/AUTONOMOUS_MODE.md',
     ]);
   });
 });
@@ -231,6 +312,8 @@ describe('classifyCommand: merges', () => {
     ['gh --repo oryshchych/silk pr merge 5', merge('5', { repo: 'oryshchych/silk' })],
     ['gh pr merge --subject "feat: x" --body "y" 12', merge('12')],
     ['gh pr merge --subject "a && b; c" --body \'d | e\' 12', merge('12')],
+    ['gh pr merge -A a@b.c 16', merge('16')],
+    ['gh pr merge 5 -Rowner/repo', merge('5', { repo: 'owner/repo' })],
     ['cd x && gh pr merge 3 --merge', merge('3')],
     ['git commit -m "x" && gh pr merge 3', merge('3')],
     // Wrappers that Claude Code strips before matching permission rules.
@@ -276,11 +359,28 @@ describe('classifyCommand: refusals', () => {
     'git push --all',
     'git push --mirror origin',
     'git -C packages/db push origin main',
-    // Heredocs the shell expands or runs.
-    'cat <<EOF\n`gh pr merge 5`\nEOF',
-    "bash <<'EOF'\ngh pr merge 5 --admin\nEOF",
-    "sh <<'EOF'\ngit push origin main\nEOF",
+    // Bypasses found by the security audits.
     "cat <<'EOF'\nharmless\nEOF\ngit push origin main",
+    "cat <<'EOF'\nx\nEOF\n$(gh pr merge 5)",
+    'if true; then gh pr merge 5 --admin; fi',
+    'timeout -s KILL 30 gh pr merge 5 --admin',
+    "gh pr $'merge' 5 --admin",
+    'gh pr "mer"ge 5 --auto',
+    'git --git-dir=/tmp/x push origin main',
+    'git -C . push origin HEAD:main',
+    'git push origin refs/heads/*:refs/heads/*',
+    'git push origin HEAD:ma*',
+    'git push origin $BRANCH',
+    'git -c alias.p=push p origin main',
+    'git config alias.p "push origin main"',
+    'gh alias set m "pr merge"',
+    'gh m 5',
+    'gh extension install x/y',
+    'gh pr merge $PR --merge',
+    'gh pr merge 5 --repo $R',
+    'GH_REPO=other/repo gh pr merge 5',
+    'git checkout main && git push',
+    'cd /tmp && git push',
   ])('%s', (command) => {
     const result = classifyCommand(command);
     expect(result.some((item) => item.kind === 'refuse')).toBe(true);
@@ -311,89 +411,103 @@ describe('classifyCommand: push-check and harmless commands', () => {
     'git commit -m "docs: how gh pr merge works"',
     'git status',
     'pnpm verify',
-    // Documentation in a quoted heredoc is data, not commands.
-    "python3 - <<'PY'\nprint('`gh pr merge 5 --admin`, git push origin main, $(gh pr merge 5)')\nPY",
-    "cat > notes.md <<'EOF'\ngit push origin main\ngh pr merge 5 --auto\nEOF",
-    'cat > notes.md <<"EOF"\nbash -c "gh pr merge 5"\nEOF',
-    "cat <<-'EOF'\n\tgit push --all\n\tEOF",
   ])('is not touched: %s', (command) => {
     expect(classifyCommand(command)).toEqual([]);
   });
 });
 
-describe('guard-merge hook (a real process, with a fake gh)', () => {
-  const root = resolve(import.meta.dirname, '..');
-  const hook = join(root, '.claude/hooks/guard-merge.mjs');
+describe('guard (fake gh and git, no network)', () => {
   const workflow = 'name: CI\njobs:\n  lint:\n    runs-on: x\n  build:\n    runs-on: x\n';
-
-  /** A directory with a `gh` shell script that answers like GitHub would. */
-  function fakeGh(view: string, userCode = 0): string {
-    const dir = mkdtempSync(join(tmpdir(), 'fake-gh-'));
-    const content = Buffer.from(workflow).toString('base64');
-    const script = [
-      '#!/bin/sh',
-      'case "$*" in',
-      `  "api user --jq .login") if [ ${String(userCode)} -ne 0 ]; then exit ${String(userCode)}; fi; echo ${OWNER} ;;`,
-      `  api\\ repos/*) printf '%s' '${content}' ;;`,
-      `  pr\\ view*) printf '%s' '${view}' ;;`,
-      '  *) exit 1 ;;',
-      'esac',
-      '',
-    ].join('\n');
-    writeFileSync(join(dir, 'gh'), script);
-    chmodSync(join(dir, 'gh'), 0o755);
-    return dir;
-  }
-
-  /**
-   * Runs the hook with a hermetic environment: a throwaway HOME, and a PATH that
-   * holds only the fake gh (when given) and, if asked, the system tools. No real
-   * gh is ever reachable, so nothing here touches the network or the repo.
-   */
-  function run(
-    command: string,
-    options: { ghDir?: string; cwd?: string; system?: boolean } = {},
-  ): number | null {
-    const cwd = options.cwd ?? root;
-    const parts = [options.ghDir, options.system === false ? undefined : '/usr/bin:/bin'];
-    const empty = mkdtempSync(join(tmpdir(), 'empty-path-'));
-    return spawnSync(process.execPath, [hook], {
-      cwd,
-      input: JSON.stringify({ tool_input: { command } }),
-      encoding: 'utf8',
-      env: {
-        PATH: parts.filter((part) => part !== undefined).join(':') || empty,
-        CLAUDE_PROJECT_DIR: cwd,
-        HOME: mkdtempSync(join(tmpdir(), 'home-')),
-      },
-    }).status;
-  }
-
-  const view = (overrides: Partial<PrSnapshot> = {}): string =>
-    JSON.stringify({ number: 7, ...pr(overrides) }).replaceAll("'", '');
   const merge = `gh pr merge 7 --merge --match-head-commit ${HEAD}`;
 
-  it('lets a ready PR through', () => {
-    expect(run(merge, { ghDir: fakeGh(view()) })).toBe(0);
+  interface Setup {
+    view?: unknown;
+    branch?: string;
+    differing?: string;
+    ghFails?: boolean;
+  }
+
+  function deps(setup: Setup = {}): GuardDeps & { calls: string[] } {
+    const calls: string[] = [];
+    return {
+      calls,
+      gh: (args) => {
+        calls.push(`gh ${args.join(' ')}`);
+        if (setup.ghFails === true) throw new Error('gh failed');
+        if (args[0] === 'pr') return JSON.stringify(setup.view ?? { number: 7, ...pr() });
+        if (args[0] === 'api' && args[1] === 'user') return `${OWNER}\n`;
+        return Buffer.from(workflow).toString('base64');
+      },
+      git: (args) => {
+        calls.push(`git ${args.join(' ')}`);
+        if (args[0] === 'branch') return `${setup.branch ?? 'feat/x'}\n`;
+        if (args[0] === 'diff') return setup.differing ?? '';
+        return '';
+      },
+    };
+  }
+
+  it('lets a ready PR through and reads ci.yml from main', () => {
+    const d = deps();
+    expect(guard(merge, d)).toEqual({ refusal: null });
+    expect(d.calls.some((call) => call.includes('ci.yml?ref=main'))).toBe(true);
   });
 
-  it('blocks a PR that is not ready, with a clear reason', () => {
-    expect(run(merge, { ghDir: fakeGh(view({ isDraft: true })) })).toBe(2);
+  it('refuses a PR that is not ready, naming the reason', () => {
+    const result = guard(merge, deps({ view: { number: 7, ...pr({ isDraft: true }) } }));
+    expect(result.refusal).toMatch(/PR #7 is not ready[\s\S]*draft/);
   });
 
-  it('does not crash open when GitHub returns nulls', () => {
-    expect(run(merge, { ghDir: fakeGh(view({ statusCheckRollup: null as never })) })).toBe(2);
-    expect(run(merge, { ghDir: fakeGh('null') })).toBe(2);
-    expect(run(merge, { ghDir: fakeGh('not json') })).toBe(2);
+  it('refuses a PR that changes the guard rails', () => {
+    const files = [{ path: 'scripts/merge-gate.ts' }];
+    const result = guard(merge, deps({ view: { number: 7, ...pr({ files }) } }));
+    expect(result.refusal).toMatch(/the owner merges those/);
   });
 
-  it('fails closed when gh itself fails', () => {
-    expect(run(merge, { ghDir: fakeGh(view(), 1) })).toBe(2);
+  it('refuses when the gate files in the checkout differ from origin/main', () => {
+    const result = guard(merge, deps({ differing: 'scripts/merge-gate.ts\n' }));
+    expect(result.refusal).toMatch(/differ from origin\/main/);
   });
 
-  it('fails closed when gh is not installed', () => {
-    expect(run(merge, { system: false })).toBe(2);
+  it('survives nulls from GitHub by refusing, not crashing', () => {
+    const result = guard(
+      merge,
+      deps({ view: { number: 7, state: null, statusCheckRollup: null } }),
+    );
+    expect(result.refusal).not.toBeNull();
   });
+
+  it('throws (the hook turns that into a refusal) when gh fails or answers garbage', () => {
+    expect(() => guard(merge, deps({ ghFails: true }))).toThrow();
+    expect(() => guard(merge, deps({ view: 'garbage' }))).toThrow();
+  });
+
+  it('refuses bypass attempts without asking GitHub', () => {
+    const d = deps();
+    expect(guard('gh pr merge 5 --admin', d).refusal).toMatch(/admin/);
+    expect(d.calls).toEqual([]);
+  });
+
+  it('refuses a bare push on main or a detached HEAD, allows it on a feature branch', () => {
+    expect(guard('git push', deps({ branch: 'main' })).refusal).toMatch(/direct push to main/);
+    expect(guard('git push', deps({ branch: '' })).refusal).toMatch(/direct push to main/);
+    expect(guard('git push', deps({ branch: 'feat/x' }))).toEqual({ refusal: null });
+  });
+});
+
+describe('guard-merge hook (a real process)', () => {
+  const root = resolve(import.meta.dirname, '..');
+  const hook = join(root, '.claude/hooks/guard-merge.mjs');
+
+  /** A hermetic environment: a throwaway HOME and a PATH without a real gh. */
+  function run(command: string, cwd = root, path = '/usr/bin:/bin'): number | null {
+    return spawnSync(process.execPath, [hook], {
+      cwd,
+      input: JSON.stringify({ tool_input: { command }, cwd }),
+      encoding: 'utf8',
+      env: { PATH: path, CLAUDE_PROJECT_DIR: root, HOME: mkdtempSync(join(tmpdir(), 'home-')) },
+    }).status;
+  }
 
   it.each([
     'gh pr merge 5 --admin',
@@ -402,21 +516,23 @@ describe('guard-merge hook (a real process, with a fake gh)', () => {
     'gh api -X PUT repos/oryshchych/silk/pulls/5/merge',
     'bash -c "gh pr merge 5"',
     'git push origin main',
-  ])('refuses without asking GitHub: %s', (command) => {
+    'gh m 5',
+  ])('refuses: %s', (command) => {
     expect(run(command)).toBe(2);
   });
 
-  it.each([
-    'gh pr view 5',
-    'echo gh pr merge 5',
-    'git status',
-    'git push origin feat/x',
-    'pnpm verify',
-  ])('ignores: %s', (command) => {
-    expect(run(command)).toBe(0);
+  it.each(['gh pr view 5', 'git status', 'git push origin feat/x', 'pnpm verify', 'ls'])(
+    'ignores: %s',
+    (command) => {
+      expect(run(command)).toBe(0);
+    },
+  );
+
+  it('fails closed when a merge cannot be checked (no gh on PATH)', () => {
+    expect(run(`gh pr merge 7 --match-head-commit ${HEAD}`, root, '/nonexistent')).toBe(2);
   });
 
-  it('refuses a bare push while main is checked out, and allows it on a feature branch', () => {
+  it('checks the branch in the directory the command runs in', () => {
     const repo = mkdtempSync(join(tmpdir(), 'push-check-'));
     const git = (...args: string[]): string =>
       execFileSync('git', args, {
@@ -425,9 +541,9 @@ describe('guard-merge hook (a real process, with a fake gh)', () => {
         env: { PATH: '/usr/bin:/bin', HOME: repo },
       });
     git('init', '-q', '-b', 'main');
-    expect(run('git push', { cwd: repo })).toBe(2);
+    expect(run('git push', repo)).toBe(2);
     git('checkout', '-q', '-b', 'feat/x');
-    expect(run('git push', { cwd: repo })).toBe(0);
+    expect(run('git push', repo)).toBe(0);
   });
 
   it('does not block on garbage input', () => {

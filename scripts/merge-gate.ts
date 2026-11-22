@@ -1,15 +1,17 @@
 /**
- * Merge gate: the objective conditions under which an agent session may merge
- * a PR, plus the command classifier that finds every way a command could merge
- * or push to `main`. Used by the `guard-merge` Claude Code hook and unit-tested
- * separately. Pure functions, no I/O.
+ * Merge gate rules: the objective conditions under which an agent session may
+ * merge a PR, and the command classifier that finds every way a command could
+ * merge a PR or push to `main`. Pure functions, no I/O. The orchestration that
+ * talks to GitHub and git lives in `guard-merge.ts`; the Claude Code hook is
+ * `.claude/hooks/guard-merge.mjs`.
  *
- * The hook imports this file directly (Node runs TypeScript with type
- * stripping), so keep it free of imports and of non-erasable syntax.
+ * Node runs this file directly (type stripping), so it has no imports and uses
+ * only erasable syntax.
  *
- * This guards against agent mistakes. It is not a sandbox: a script run by an
- * interpreter can still do anything. The real backstop is branch protection on
- * `main`, which the owner has to enable (see docs/plan/OWNER_QUEUE.md).
+ * Scope. This catches agent mistakes and plain obfuscation. It is not a
+ * sandbox: a script run by an interpreter can still do anything. The backstop is
+ * branch protection on `main`, which the owner has to enable
+ * (docs/plan/OWNER_QUEUE.md, Q9).
  */
 
 export interface CheckEntry {
@@ -19,7 +21,7 @@ export interface CheckEntry {
   status?: string;
   /** GitHub Actions check run result: SUCCESS, FAILURE, ... */
   conclusion?: string;
-  /** Commit status context: SUCCESS, PENDING, FAILURE, ERROR. */
+  /** Commit status context (not a check run): SUCCESS, PENDING, FAILURE, ERROR. */
   state?: string;
 }
 
@@ -36,10 +38,12 @@ export interface PrSnapshot {
   headRefOid: string;
   statusCheckRollup: CheckEntry[];
   comments: PrComment[];
+  files: { path: string }[];
+  changedFiles: number;
 }
 
 export interface GateContext {
-  /** CI job names that must have succeeded (from ci.yml at the PR head). */
+  /** CI job names that must have succeeded (from ci.yml on main). */
   requiredChecks: readonly string[];
   /** Logins allowed to author the review report (the authenticated gh user). */
   trustedLogins: readonly string[];
@@ -50,6 +54,24 @@ export interface GateContext {
 export interface GateResult {
   ok: boolean;
   reasons: string[];
+}
+
+/**
+ * Files that define the guard rails. A PR that touches them is merged by the
+ * owner, never by an agent: otherwise a session could weaken the gate and use
+ * the weakened gate to merge itself.
+ */
+const PROTECTED_PATHS: readonly RegExp[] = [
+  /^\.claude\/settings\.json$/,
+  /^\.claude\/hooks\//,
+  /^\.claude\/skills\/review-pr-silk\//,
+  /^scripts\/(merge-gate|guard-merge)/,
+  /^\.github\/workflows\//,
+  /^docs\/AUTONOMOUS_MODE\.md$/,
+];
+
+export function protectedPathsTouched(paths: readonly string[]): string[] {
+  return paths.filter((path) => PROTECTED_PATHS.some((pattern) => pattern.test(path)));
 }
 
 const checkName = (entry: CheckEntry): string => entry.name ?? entry.context ?? 'unnamed check';
@@ -78,7 +100,9 @@ function describe(entry: CheckEntry): string {
 /**
  * Names of the jobs in a GitHub Actions workflow file: the job's `name:` if it
  * has one, otherwise its id. A small reader for the layout we use (jobs at two
- * spaces, `name:` at four), not a YAML parser.
+ * spaces, `name:` at four), not a YAML parser. Matrix jobs, reusable workflows
+ * and `${{ }}` names are not understood: they show up as "has not reported",
+ * which refuses the merge (the safe direction).
  */
 export function requiredCheckNames(workflow: string): string[] {
   const jobs: { id: string; name: string | null }[] = [];
@@ -109,8 +133,11 @@ export function requiredCheckNames(workflow: string): string[] {
 
 /**
  * The latest review-pr-silk verdict comment by a trusted author. The header must
- * be the very first line of the comment, so a quote, a code block or a later
- * line cannot pass for a report. The sha must have at least 12 hex characters.
+ * be the very first characters of the comment, so a quote, a code block or a
+ * later line cannot pass for a report. The sha needs at least 12 hex characters.
+ * Note: the agent runs as the same GitHub user as the owner, so this proves the
+ * report was posted, not that the review was honest. CI and the pinned head
+ * commit are what the gate can actually enforce.
  */
 export function latestReview(
   comments: readonly PrComment[],
@@ -118,7 +145,7 @@ export function latestReview(
 ): { verdict: string; sha: string } | null {
   for (const comment of [...comments].reverse()) {
     if (!trustedLogins.includes(comment.author?.login ?? '')) continue;
-    const header = /^\s*##\s*review-pr-silk:\s*(PASS|FAIL)\b[^\n]*/.exec(comment.body);
+    const header = /^##\s*review-pr-silk:\s*(PASS|FAIL)(?![\w-])[^\n]*/.exec(comment.body);
     if (header === null) continue;
     const sha = /@\s*`?([0-9a-f]{12,40})`?/i.exec(header[0]);
     return { verdict: header[1] ?? '', sha: sha?.[1]?.toLowerCase() ?? '' };
@@ -143,21 +170,38 @@ export function evaluateMerge(pr: PrSnapshot, context: GateContext): GateResult 
     );
   }
 
-  // Latest entry per check name: a re-run replaces the earlier attempt.
-  const latest = new Map<string, CheckEntry>();
-  for (const entry of pr.statusCheckRollup) latest.set(checkName(entry), entry);
+  if (pr.files.length < pr.changedFiles) {
+    reasons.push(
+      `GitHub lists only ${String(pr.files.length)} of ${String(pr.changedFiles)} changed files, ` +
+        'so the guard-rail paths cannot be checked',
+    );
+  }
+  const guarded = protectedPathsTouched(pr.files.map((file) => file.path));
+  if (guarded.length > 0) {
+    reasons.push(
+      `the PR changes the guard rails (${guarded.slice(0, 3).join(', ')}${guarded.length > 3 ? ', ...' : ''}): ` +
+        'the owner merges those',
+    );
+  }
 
   if (context.requiredChecks.length === 0) {
     reasons.push('could not determine the required CI checks from the workflow file');
   }
+  const byName = new Map<string, CheckEntry[]>();
+  for (const entry of pr.statusCheckRollup) {
+    byName.set(checkName(entry), [...(byName.get(checkName(entry)) ?? []), entry]);
+  }
   const problems: string[] = [];
   for (const name of context.requiredChecks) {
-    const entry = latest.get(name);
-    if (entry === undefined) problems.push(`${name}: has not reported`);
-    else if (!isSuccess(entry)) problems.push(describe(entry));
+    // Only real check runs count: a commit status with the same name cannot stand in.
+    const runs = (byName.get(name) ?? []).filter((entry) => entry.state === undefined);
+    if (runs.length === 0) problems.push(`${name}: has not reported`);
+    // Every entry under the name must succeed: the order of the rollup is not chronological.
+    for (const run of runs) if (!isSuccess(run)) problems.push(describe(run));
   }
-  for (const [name, entry] of latest) {
-    if (!context.requiredChecks.includes(name) && !isPassing(entry)) problems.push(describe(entry));
+  for (const [name, entries] of byName) {
+    if (context.requiredChecks.includes(name)) continue;
+    for (const entry of entries) if (!isPassing(entry)) problems.push(describe(entry));
   }
   if (problems.length > 0) reasons.push(`CI is not green: ${problems.join(', ')}`);
 
@@ -196,22 +240,34 @@ export type Classified =
   /** A push whose target depends on the current branch: refuse it on `main`. */
   | { kind: 'push-check' };
 
+export interface Word {
+  text: string;
+  /** The shell would compute this word: `$X`, backticks, globs, braces, `$'\\x..'`. */
+  dynamic: boolean;
+}
+
 /**
  * Splits a shell command line into simple commands, each a list of words.
- * Quotes group words and hide operators (`;`, `&&`, `||`, `|`, `&`, newline),
- * which end a command only when they are unquoted. A small tokenizer: enough
- * to read the commands we care about, not a shell parser.
+ * Quotes are removed (so `"mer"ge` reads as `merge`), `$'...'` quoting and line
+ * continuations are understood, comments are dropped, and `;`, `&`, `|`, `(`,
+ * `)` and newlines end a command only when unquoted. Words the shell would
+ * expand are flagged `dynamic`, because their value cannot be known here.
+ * Heredoc bodies are NOT skipped: each body line is read as a command, which
+ * errs on the side of refusing text that merely mentions these commands.
  */
-export function splitCommands(command: string): string[][] {
-  const commands: string[][] = [];
-  let words: string[] = [];
-  let word = '';
+export function tokenize(input: string): Word[][] {
+  const source = input.replace(/\\\r?\n/g, '');
+  const commands: Word[][] = [];
+  let words: Word[] = [];
+  let text = '';
+  let dynamic = false;
   let inWord = false;
-  let quote: '"' | "'" | null = null;
+  let quote: '"' | "'" | 'ansi' | null = null;
 
   const endWord = (): void => {
-    if (inWord) words.push(word);
-    word = '';
+    if (inWord) words.push({ text, dynamic });
+    text = '';
+    dynamic = false;
     inWord = false;
   };
   const endCommand = (): void => {
@@ -220,24 +276,43 @@ export function splitCommands(command: string): string[][] {
     words = [];
   };
 
-  for (let i = 0; i < command.length; i++) {
-    const char = command.charAt(i);
-    if (quote !== null) {
-      if (char === quote) quote = null;
-      else if (char === '\\' && quote === '"') word += command.charAt(++i);
-      else word += char;
-    } else if (char === '"' || char === "'") {
+  for (let i = 0; i < source.length; i++) {
+    const char = source.charAt(i);
+    if (quote === "'") {
+      if (char === "'") quote = null;
+      else text += char;
+    } else if (quote === 'ansi') {
+      if (char === '\\') {
+        dynamic = true;
+        text += source.charAt(++i);
+      } else if (char === "'") quote = null;
+      else text += char;
+    } else if (quote === '"') {
+      if (char === '"') quote = null;
+      else if (char === '\\') text += source.charAt(++i);
+      else {
+        if (char === '$' || char === '`') dynamic = true;
+        text += char;
+      }
+    } else if (char === "'" || char === '"') {
       quote = char;
       inWord = true;
-    } else if (char === '\\') {
-      word += command.charAt(++i);
+    } else if (char === '$' && source.charAt(i + 1) === "'") {
+      quote = 'ansi';
       inWord = true;
-    } else if (/\s/.test(char) && char !== '\n') {
+      i++;
+    } else if (char === '\\') {
+      text += source.charAt(++i);
+      inWord = true;
+    } else if (char === '#' && !inWord) {
+      while (i + 1 < source.length && source.charAt(i + 1) !== '\n') i++;
+    } else if (char === ' ' || char === '\t' || char === '\r') {
       endWord();
     } else if ('\n;&|()'.includes(char)) {
       endCommand();
     } else {
-      word += char;
+      if ('$`*?[{~'.includes(char)) dynamic = true;
+      text += char;
       inWord = true;
     }
   }
@@ -245,49 +320,61 @@ export function splitCommands(command: string): string[][] {
   return commands;
 }
 
-const ENV_ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
-const PREFIX_COMMANDS = new Set([
-  'time',
-  'nohup',
-  'command',
-  'exec',
-  'sudo',
-  'env',
-  'nice',
-  'timeout',
-  'stdbuf',
-  'then',
-  'do',
+const programName = (word: Word | undefined): string => (word?.text ?? '').split('/').pop() ?? '';
+const textAt = (words: Word[], index: number): string | undefined => words[index]?.text;
+
+const SHELLS = new Set([
+  'bash',
+  'sh',
+  'zsh',
+  'dash',
+  'ksh',
+  'ash',
+  'fish',
+  'csh',
+  'tcsh',
+  'busybox',
+  'eval',
+  'xargs',
 ]);
-const SHELLS = new Set(['bash', 'sh', 'zsh', 'dash', 'ksh', 'eval', 'xargs']);
 
-/** Drops `FOO=1`, `time`, `timeout 30`, `nohup`, `sudo`, `(` and similar prefixes. */
-function stripPrefix(input: string[]): string[] {
-  const words = [...input];
-  if (words[0] !== undefined) words[0] = words[0].replace(/^[({]+/, '');
-  let i = 0;
-  while (i < words.length) {
-    const word = words[i] ?? '';
-    if (word === '' || word === '!') {
-      i++;
-    } else if (ENV_ASSIGNMENT.test(word)) {
-      i++;
-    } else if (PREFIX_COMMANDS.has(word)) {
-      i++;
-      while (i < words.length) {
-        const next = words[i] ?? '';
-        if (next.startsWith('-') || ENV_ASSIGNMENT.test(next) || /^\d+(\.\d+)?[smhd]?$/.test(next))
-          i++;
-        else break;
-      }
-    } else {
-      break;
-    }
-  }
-  return words.slice(i);
-}
-
-const programName = (word: string | undefined): string => (word ?? '').split('/').pop() ?? '';
+// Top-level `gh` commands. Anything else is an alias or an extension, which can
+// hide a merge, so it is refused.
+const KNOWN_GH = new Set([
+  'agent-task',
+  'alias',
+  'api',
+  'attestation',
+  'auth',
+  'browse',
+  'cache',
+  'codespace',
+  'completion',
+  'config',
+  'copilot',
+  'extension',
+  'gist',
+  'gpg-key',
+  'help',
+  'issue',
+  'label',
+  'licenses',
+  'org',
+  'pr',
+  'preview',
+  'project',
+  'release',
+  'repo',
+  'ruleset',
+  'run',
+  'search',
+  'secret',
+  'ssh-key',
+  'status',
+  'variable',
+  'version',
+  'workflow',
+]);
 
 // `gh pr merge` flags that take a value, so the value is not mistaken for the PR.
 const MERGE_VALUE_FLAGS = new Set([
@@ -298,62 +385,125 @@ const MERGE_VALUE_FLAGS = new Set([
   '--subject',
   '-t',
   '--author-email',
+  '-A',
 ]);
 
-function classifyGh(words: string[]): Classified | null {
+const MERGE_API_PATTERN =
+  /\/pulls\/[^/\s]*\/merge\b|mergePullRequest|enablePullRequestAutoMerge|enableAutoMerge/;
+
+const refuse = (reason: string): Classified => ({ kind: 'refuse', reason });
+
+function classifyGh(words: Word[]): Classified | null {
   let i = 1;
   let repo: string | null = null;
   // Global flags may stand before the subcommand: gh --repo owner/name pr merge 5.
-  while (i < words.length && (words[i] ?? '').startsWith('-')) {
-    const flag = words[i] ?? '';
+  while (i < words.length && (textAt(words, i) ?? '').startsWith('-')) {
+    const flag = textAt(words, i) ?? '';
     if (flag === '--repo' || flag === '-R') {
-      repo = words[i + 1] ?? null;
+      repo = textAt(words, i + 1) ?? null;
       i += 2;
     } else {
       if (flag.startsWith('--repo=')) repo = flag.slice('--repo='.length);
+      else if (flag.startsWith('-R') && flag.length > 2) repo = flag.slice(2);
       i++;
     }
   }
 
-  if (words[i] === 'pr' && words[i + 1] === 'merge') {
+  const top = words[i];
+  if (top === undefined) return null;
+  if (top.dynamic) return refuse('the gh subcommand is built by the shell; write it literally');
+  if (!KNOWN_GH.has(top.text)) {
+    return refuse(
+      `unknown gh subcommand "${top.text}" (an alias can hide a merge); use the real command`,
+    );
+  }
+  if (top.text === 'alias' || top.text === 'extension') {
+    return refuse(`gh ${top.text} can hide a merge from the gate`);
+  }
+
+  if (top.text === 'pr') {
+    const sub = words[i + 1];
+    if (sub?.dynamic === true)
+      return refuse('the gh pr subcommand is built by the shell; write it literally');
+    if (sub?.text !== 'merge') return null;
+
     let ref: string | null = null;
     let matchHeadCommit: string | null = null;
     const rest = words.slice(i + 2);
+    if (rest.some((word) => word.dynamic)) {
+      return refuse(
+        'an argument of the merge is built by the shell ($, backticks, globs); write it literally',
+      );
+    }
     for (let j = 0; j < rest.length; j++) {
-      const word = rest[j] ?? '';
-      if (word === '--admin') {
-        return { kind: 'refuse', reason: '--admin bypasses the review gate' };
+      const word = rest[j];
+      if (word === undefined) continue;
+      if (word.dynamic) {
+        return refuse(
+          'an argument of the merge is built by the shell ($, backticks, globs); write it literally',
+        );
       }
-      if (word === '--auto') {
-        return {
-          kind: 'refuse',
-          reason: '--auto merges later without re-checking; merge now, once the gate passes',
-        };
+      const flag = word.text;
+      if (flag === '--admin') return refuse('--admin bypasses the review gate');
+      if (flag === '--auto') {
+        return refuse('--auto merges later without re-checking; merge now, once the gate passes');
       }
-      if (word === '--repo' || word === '-R') repo = rest[++j] ?? null;
-      else if (word.startsWith('--repo=')) repo = word.slice('--repo='.length);
-      else if (word === '--match-head-commit') matchHeadCommit = rest[++j] ?? null;
-      else if (word.startsWith('--match-head-commit=')) {
-        matchHeadCommit = word.slice('--match-head-commit='.length);
-      } else if (MERGE_VALUE_FLAGS.has(word)) j++;
-      else if (!word.startsWith('-') && ref === null) ref = word;
+      if (flag === '--repo' || flag === '-R') repo = rest[++j]?.text ?? null;
+      else if (flag.startsWith('--repo=')) repo = flag.slice('--repo='.length);
+      else if (flag.startsWith('-R') && flag.length > 2) repo = flag.slice(2);
+      else if (flag === '--match-head-commit') matchHeadCommit = rest[++j]?.text ?? null;
+      else if (flag.startsWith('--match-head-commit=')) {
+        matchHeadCommit = flag.slice('--match-head-commit='.length);
+      } else if (MERGE_VALUE_FLAGS.has(flag)) j++;
+      else if (!flag.startsWith('-') && ref === null) ref = flag;
     }
     return { kind: 'merge', ref, repo, matchHeadCommit };
   }
 
-  if (words[i] === 'api') {
-    const text = words.slice(i + 1).join(' ');
-    if (
-      /\/pulls\/\d+\/merge\b/.test(text) ||
-      /mergePullRequest|enablePullRequestAutoMerge|enableAutoMerge/.test(text)
-    ) {
-      return {
-        kind: 'refuse',
-        reason: 'merging through `gh api` skips the gate; use `gh pr merge`',
-      };
+  if (top.text === 'api') {
+    const text = words
+      .slice(i + 1)
+      .map((word) => word.text)
+      .join(' ');
+    if (MERGE_API_PATTERN.test(text)) {
+      return refuse('merging through `gh api` skips the gate; use `gh pr merge`');
     }
   }
   return null;
+}
+
+// git options that take a value and can redirect where or how git runs.
+const GIT_VALUE_OPTIONS = new Set(['-C', '-c', '--git-dir', '--work-tree', '--namespace']);
+
+interface GitCall {
+  subcommand: string | undefined;
+  redirected: boolean;
+  args: Word[];
+}
+
+function parseGit(words: Word[]): { call: GitCall; problem: Classified | null } {
+  let i = 1;
+  let redirected = false;
+  while (i < words.length && (textAt(words, i) ?? '').startsWith('-')) {
+    const flag = textAt(words, i) ?? '';
+    if (GIT_VALUE_OPTIONS.has(flag)) {
+      redirected = true;
+      if (flag === '-c' && /^alias\./i.test(textAt(words, i + 1) ?? '')) {
+        return {
+          call: { subcommand: undefined, redirected, args: [] },
+          problem: refuse('a git alias can hide a push to main'),
+        };
+      }
+      i += 2;
+    } else {
+      if (/^--(git-dir|work-tree|namespace)=/.test(flag)) redirected = true;
+      i++;
+    }
+  }
+  return {
+    call: { subcommand: textAt(words, i), redirected, args: words.slice(i + 1) },
+    problem: null,
+  };
 }
 
 /** Does a push refspec put something on main? `main`, `HEAD:main`, `+main`, `:main`. */
@@ -363,84 +513,93 @@ function refspecTargetsMain(refspec: string): boolean {
   return destination === 'main' || destination === 'refs/heads/main';
 }
 
-function classifyGit(words: string[]): Classified | null {
-  let i = 1;
-  // Global options before the subcommand: git -C dir push, git -c key=value push.
-  while (i < words.length && (words[i] ?? '').startsWith('-')) {
-    i += words[i] === '-C' || words[i] === '-c' ? 2 : 1;
-  }
-  if (words[i] !== 'push') return null;
+function classifyGit(words: Word[]): { result: Classified | null; changesContext: boolean } {
+  const { call, problem } = parseGit(words);
+  if (problem !== null) return { result: problem, changesContext: false };
+  const changesContext = call.subcommand === 'checkout' || call.subcommand === 'switch';
 
-  const args = words.slice(i + 1);
-  if (args.includes('--all') || args.includes('--mirror')) {
-    return { kind: 'refuse', reason: 'pushing all branches could update main; open a PR instead' };
-  }
-  const positionals = args.filter((arg) => !arg.startsWith('-'));
-  const refspecs = positionals.slice(1);
-  if (refspecs.some(refspecTargetsMain)) {
-    return { kind: 'refuse', reason: 'no direct push to main; open a PR (AGENTS.md section 6)' };
-  }
-  if (refspecs.length === 0 || refspecs.includes('HEAD')) return { kind: 'push-check' };
-  return null;
-}
-
-/**
- * Removes the bodies of heredocs whose delimiter is quoted (`<<'EOF'`): the shell
- * does not expand them, so their text is data, not commands (documentation,
- * a script handed to python). Kept when the receiver is a shell, because
- * `bash <<'EOF'` runs the body as a script. An unquoted `<<EOF` body is kept too:
- * the shell expands substitutions in it.
- */
-export function stripHeredocBodies(command: string): string {
-  const lines = command.split('\n');
-  const kept: string[] = [];
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i] ?? '';
-    kept.push(line);
-    const match = /<<-?\s*(?:'([A-Za-z_][\w-]*)'|"([A-Za-z_][\w-]*)"|\\([A-Za-z_][\w-]*))/.exec(
-      line,
-    );
-    if (match === null) continue;
-    const delimiter = match[1] ?? match[2] ?? match[3] ?? '';
-    const receiverCommands = splitCommands(line.slice(0, match.index));
-    const receiver = programName(
-      stripPrefix(receiverCommands[receiverCommands.length - 1] ?? [])[0],
-    );
-    if (SHELLS.has(receiver) || receiver === 'source' || receiver === '.') continue;
-    while (i + 1 < lines.length) {
-      i++;
-      if ((lines[i] ?? '').trim() === delimiter) break;
+  if (call.subcommand === 'config') {
+    if (call.args.some((arg) => /^alias\./i.test(arg.text))) {
+      return { result: refuse('a git alias can hide a push to main'), changesContext };
     }
+    return { result: null, changesContext };
   }
-  return kept.join('\n');
+  if (call.subcommand !== 'push') return { result: null, changesContext };
+
+  if (call.redirected) {
+    return {
+      result: refuse(
+        'git push with -C, -c, --git-dir or --work-tree: run it from the repository directory',
+      ),
+      changesContext,
+    };
+  }
+  if (call.args.some((arg) => arg.dynamic)) {
+    return {
+      result: refuse('an argument of git push is built by the shell; write it literally'),
+      changesContext,
+    };
+  }
+  const texts = call.args.map((arg) => arg.text);
+  if (texts.includes('--all') || texts.includes('--mirror')) {
+    return {
+      result: refuse('pushing all branches could update main; open a PR instead'),
+      changesContext,
+    };
+  }
+  const refspecs = texts.filter((arg) => !arg.startsWith('-')).slice(1);
+  if (refspecs.some((spec) => /[*?[]/.test(spec))) {
+    return { result: refuse('a glob refspec could update main; name the branch'), changesContext };
+  }
+  if (refspecs.some(refspecTargetsMain)) {
+    return {
+      result: refuse('no direct push to main; open a PR (AGENTS.md section 6)'),
+      changesContext,
+    };
+  }
+  if (refspecs.length === 0 || refspecs.includes('HEAD')) {
+    return { result: { kind: 'push-check' }, changesContext };
+  }
+  return { result: null, changesContext };
 }
 
 /** Everything in a command line that could merge a PR or push to main. */
-export function classifyCommand(input: string): Classified[] {
-  const command = stripHeredocBodies(input);
+export function classifyCommand(command: string): Classified[] {
   const found: Classified[] = [];
-  for (const raw of splitCommands(command)) {
-    const words = stripPrefix(raw);
-    const program = programName(words[0]);
-    let result: Classified | null = null;
-    if (program === 'gh') result = classifyGh(words);
-    else if (program === 'git') result = classifyGit(words);
-    else if (SHELLS.has(program)) {
-      const text = words.slice(1).join(' ');
-      const merges =
-        /\bgh\b/.test(text) &&
-        (/\bpr\s+merge\b/.test(text) ||
-          /mergePullRequest|enablePullRequestAutoMerge/.test(text) ||
-          /\/pulls\/\d+\/merge\b/.test(text));
-      const pushesMain = /\bgit\b[^;|&]*\bpush\b[^;|&]*\bmain\b/.test(text);
-      if (merges || pushesMain) {
-        result = {
-          kind: 'refuse',
-          reason: `\`${program}\` hides a merge or a push to main from the gate; run the command directly`,
-        };
+  let changesContext = false;
+
+  for (const words of tokenize(command)) {
+    const first = textAt(words, 0);
+    if (first === 'cd' || first === 'pushd') changesContext = true;
+    // Any position: this looks through every wrapper (time, timeout -s KILL 30,
+    // env -u X, sudo -u root, if, then, ...) without a list of them.
+    for (let k = 0; k < words.length; k++) {
+      const program = programName(words[k]);
+      const rest = words.slice(k);
+      if (program === 'gh') {
+        const result = classifyGh(rest);
+        if (result !== null) found.push(result);
+      } else if (program === 'git') {
+        const git = classifyGit(rest);
+        if (git.result !== null) found.push(git.result);
+        if (git.changesContext) changesContext = true;
+      } else if (SHELLS.has(program)) {
+        const text = rest
+          .slice(1)
+          .map((word) => word.text)
+          .join(' ');
+        const merges =
+          /\bgh\b/.test(text) && (/\bpr\s+merge\b/.test(text) || MERGE_API_PATTERN.test(text));
+        const pushesMain = /\bgit\b[^;|&]*\bpush\b[^;|&]*\bmain\b/.test(text);
+        if (merges || pushesMain) {
+          found.push(
+            refuse(
+              `\`${program}\` hides a merge or a push to main from the gate; run the command directly`,
+            ),
+          );
+        }
       }
     }
-    if (result !== null) found.push(result);
   }
 
   // A merge inside a command substitution: echo $(gh pr merge 5), `gh pr merge 5`.
@@ -448,11 +607,26 @@ export function classifyCommand(input: string): Classified[] {
     /\$\([^)]*\bgh\b[^)]*\bpr\s+merge\b/.test(command) ||
     /`[^`]*\bgh\b[^`]*\bpr\s+merge\b[^`]*`/.test(command)
   ) {
-    found.push({ kind: 'refuse', reason: 'a merge inside a command substitution skips the gate' });
+    found.push(refuse('a merge inside a command substitution skips the gate'));
   }
 
-  if (found.filter((item) => item.kind === 'merge').length > 1) {
-    return [{ kind: 'refuse', reason: 'one merge per command, so each one is gated' }];
+  const merges = found.filter((item) => item.kind === 'merge');
+  if (merges.length > 0 && /\bGH_(REPO|HOST)\s*=/.test(command)) {
+    found.push(
+      refuse(
+        'GH_REPO / GH_HOST would point the merge at a different repository than the gate checked',
+      ),
+    );
+  }
+  if (merges.length > 1) {
+    return [refuse('one merge per command, so each one is gated')];
+  }
+  if (changesContext && found.some((item) => item.kind === 'push-check')) {
+    found.push(
+      refuse(
+        'switching directory or branch in the same command as a push: the branch check would be wrong',
+      ),
+    );
   }
   return found;
 }
