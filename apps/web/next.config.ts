@@ -23,7 +23,7 @@ const nextConfig: NextConfig = {
   // Server-rendered 404 for a dynamic root layout (app/global-not-found.tsx).
   experimental: { globalNotFound: true },
   // Пакети монорепо — TypeScript-джерела, їх компілює Next.
-  transpilePackages: ['@store/shared'],
+  transpilePackages: ['@store/shared', '@store/db', '@store/core', '@store/payments'],
   headers: () =>
     Promise.resolve([
       {

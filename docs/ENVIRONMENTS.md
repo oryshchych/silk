@@ -171,4 +171,4 @@ STAGING_BASIC_AUTH_EXCLUDE=/api/webhooks/mono,/api/webhooks/wayforpay
 
 - `SITE_URL` is the runtime public origin (canonical, hreflang). It is required on staging and in production; compose fills it from the project's `NEXT_PUBLIC_SITE_URL` when it is not set, so the value is per environment and never baked into the image.
 - Never set `HOSTNAME` (or `next start -H`) to a specific IP or host name for the app: bound to `127.0.0.1` the proxy re-runs on next-intl's internal rewrite and the unprefixed Ukrainian pages loop. The Dockerfile sets `HOSTNAME=0.0.0.0`; leave it.
-- `pnpm smoke:web` (after `pnpm --filter web build`) checks a real server: locale routing, the `/uk` redirect, real 404 pages and that `SITE_URL` is read at runtime.
+- `pnpm smoke:web` (after `pnpm --filter web build`, with the local dev database migrated and seeded, or `--database-url=...`) checks a real server: locale routing, the `/uk` redirect, real 404 pages, canonical/hreflang/JSON-LD in the primary HTML, the ISR cache and that `SITE_URL` is read at runtime.

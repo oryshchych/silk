@@ -160,6 +160,12 @@ importers:
 
   apps/web:
     dependencies:
+      '@store/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@store/db':
+        specifier: workspace:*
+        version: link:../../packages/db
       '@store/shared':
         specifier: workspace:*
         version: link:../../packages/shared

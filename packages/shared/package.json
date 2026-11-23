@@ -8,6 +8,7 @@
     "./env-schema": "./src/env.schema.ts",
     "./money": "./src/money.ts",
     "./seo": "./src/seo.ts",
+    "./cache-tags": "./src/cache-tags.ts",
     "./schema-org": "./src/schema-org.ts",
     "./dto/serialize": "./src/dto/serialize.ts",
     "./dto/catalog": "./src/dto/catalog.ts",

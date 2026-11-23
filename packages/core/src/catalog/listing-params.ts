@@ -21,7 +21,11 @@ const MAX_PRICE_KOPIYKAS = 100_000_000;
  * `parseListingParams`. Anything that builds a `ListingParams` by hand must
  * respect them; `listProducts` clamps just the page number.
  */
+const parsed: unique symbol = Symbol('parsed-listing-params');
+
 export interface ListingParams {
+  /** Brand: only `parseListingParams` (or `restrictListingParams` on its result) can produce a value. */
+  readonly [parsed]: true;
   bands: number[];
   cups: string[];
   /** Labels of panty / apparel sizes (`M`, `XL`). */
@@ -39,7 +43,13 @@ export interface ListingParams {
 
 export type RawSearchParams = Readonly<Record<string, string | readonly string[] | undefined>>;
 
-export const defaultListingParams: ListingParams = {
+/** Object literal of the fields, then branded: this file is the only place that may do it. */
+const brandParams = (fields: Omit<ListingParams, typeof parsed>): ListingParams => ({
+  ...fields,
+  [parsed]: true,
+});
+
+export const defaultListingParams: ListingParams = brandParams({
   bands: [],
   cups: [],
   sizes: [],
@@ -51,7 +61,7 @@ export const defaultListingParams: ListingParams = {
   onSale: false,
   sort: 'newest',
   page: 1,
-};
+});
 
 /** `a=1&a=2` and `a=1,2` both mean two values. */
 function values(raw: RawSearchParams, key: string): string[] {
@@ -103,7 +113,7 @@ export function parseListingParams(raw: RawSearchParams): ListingParams {
     [priceMin, priceMax] = [priceMax, priceMin];
   }
   const pageNumber = page !== undefined && /^\d{1,4}$/.test(page) ? Number(page) : 1;
-  return {
+  return brandParams({
     bands: bands(raw),
     cups: matching(raw, 'cup', /^[A-Z]{1,3}$/),
     sizes: matching(raw, 'size', /^[A-Za-z0-9 -]{1,20}$/),
@@ -115,6 +125,48 @@ export function parseListingParams(raw: RawSearchParams): ListingParams {
     onSale: flag(raw, 'sale'),
     sort: SORT_KEYS.find((key) => key === sort) ?? 'newest',
     page: clampPage(pageNumber),
+  });
+}
+
+/**
+ * Re-reads params through the URL grammar: the brand only proves a value came
+ * from here, but a spread copies it, so `{ ...parsed, sort: 'x', priceMin: 1e12 }`
+ * is still typed as `ListingParams`. Whatever sits at a cache or SQL boundary
+ * calls this and trusts nothing about its caller. Prices keep whole
+ * hryvnias, as in the URL.
+ */
+export function normalizeListingParams(params: ListingParams): ListingParams {
+  return parseListingParams(
+    Object.fromEntries(new URLSearchParams(serializeListingParams(params))),
+  );
+}
+
+/** What a category actually offers; the shape of `FilterOptionsDto` that matters here. */
+export interface KnownFilterValues {
+  bands: readonly number[];
+  cups: readonly string[];
+  sizes: readonly { label: string }[];
+  colors: readonly { slug: string }[];
+  brands: readonly string[];
+}
+
+/**
+ * Drops filter values the category does not offer. A value that matches
+ * nothing can only produce an empty page, but it would still become a cache
+ * key and a database query, and a client can invent unlimited values. Run it
+ * before the params reach a cache or SQL.
+ */
+export function restrictListingParams(
+  params: ListingParams,
+  known: KnownFilterValues,
+): ListingParams {
+  return {
+    ...params,
+    bands: params.bands.filter((band) => known.bands.includes(band)),
+    cups: params.cups.filter((cup) => known.cups.includes(cup)),
+    sizes: params.sizes.filter((size) => known.sizes.some((option) => option.label === size)),
+    colors: params.colors.filter((color) => known.colors.some((option) => option.slug === color)),
+    brands: params.brands.filter((brand) => known.brands.includes(brand)),
   };
 }
 
