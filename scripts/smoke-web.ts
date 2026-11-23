@@ -5,7 +5,7 @@
  * `SITE_URL` are only provable here.
  */
 import { spawn } from 'node:child_process';
-import { cpSync, mkdtempSync, rmSync } from 'node:fs';
+import { cpSync, mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -49,6 +49,21 @@ const server = spawn(process.execPath, [join(copy, 'apps/web/server.js')], {
   },
   stdio: 'ignore',
 });
+
+/** Files under the build's runtime stores: rendered pages (server/) and data cache (cache/). */
+function storedFiles(): number {
+  let count = 0;
+  for (const dir of ['apps/web/.next/server', 'apps/web/.next/cache']) {
+    try {
+      for (const entry of readdirSync(join(copy, dir), { recursive: true })) {
+        if (statSync(join(copy, dir, String(entry))).isFile()) count += 1;
+      }
+    } catch {
+      // The directory may not exist yet.
+    }
+  }
+  return count;
+}
 
 const failures: string[] = [];
 const check = (name: string, ok: boolean): void => {
@@ -270,6 +285,77 @@ try {
     refused.status === 429 &&
       Number(refused.headers.get('retry-after')) > 0 &&
       refused.headers.get('cache-control') === 'no-store',
+  );
+
+  // The seed is deterministic: this product exists in the seeded dev database.
+  const productPath = '/product/push-up-bra-aurora-1';
+  const product = await get(productPath);
+  const productLd = [
+    ...product.html.matchAll(/<script type="application\/ld\+json">(.*?)<\/script>/g),
+  ].map((match) => match[1] ?? '');
+  check(
+    'product page is 200 with a title',
+    product.status === 200 && /<title>[^<]+<\/title>/.test(product.html),
+  );
+  check(
+    'product page canonical is absolute on the runtime host',
+    product.html.includes(`rel="canonical" href="${SITE}${productPath}"`),
+  );
+  check(
+    'product page has hreflang uk, en and x-default',
+    ['uk', 'en', 'x-default'].every((l) => product.html.includes(`hrefLang="${l}"`)),
+  );
+  check(
+    'product page has Product (with offers) and BreadcrumbList JSON-LD in the primary HTML',
+    productLd.some(
+      (j) =>
+        j.includes('"@type":"Product"') &&
+        j.includes('"priceCurrency":"UAH"') &&
+        j.includes('"availability":"https://schema.org/'),
+    ) && productLd.some((j) => j.includes('"BreadcrumbList"')),
+  );
+  check(
+    'product page renders an unavailable size as a disabled radio',
+    /<input type="radio"[^>]*disabled=""[^>]*name="size"/.test(product.html),
+  );
+  check(
+    'product page is served from the ISR cache on the second request (HIT)',
+    (await get(productPath)).cache === 'HIT',
+  );
+  check('an unknown product is a real 404', (await get('/product/nope')).status === 404);
+  check(
+    'product JSON-LD has an absolute image on the runtime host and no rating markup',
+    productLd.some((j) => j.includes(`"image":["${SITE}/placeholder.svg"]`)) &&
+      !productLd.some((j) => j.includes('aggregateRating')),
+  );
+
+  // Unknown, malformed, hostile and over-long slugs are answered before any page
+  // exists: they must not add files to the build's page or data caches.
+  const storedBefore = storedFiles();
+  const slugs = [
+    ...Array.from({ length: 40 }, (_, i) => `random-${String(i)}-${String(Date.now() % 1000)}`),
+    'x%00abc',
+    'UPPER',
+    'a--b',
+    'a'.repeat(300),
+    '%E0%A4%A',
+    'Mixed-Case-1',
+  ];
+  let codes: number[] = [];
+  for (const slug of slugs) {
+    codes = [
+      ...codes,
+      (await get(`/product/${slug}`)).status,
+      (await get(`/en/product/${slug}`)).status,
+    ];
+  }
+  check(
+    'unknown and malformed product slugs are 404s',
+    codes.every((code) => code === 404),
+  );
+  check(
+    'unknown and malformed product slugs add nothing to the page or data caches',
+    storedFiles() === storedBefore,
   );
 
   for (const path of ['/nope', '/en/nope', '/en/a/b']) {

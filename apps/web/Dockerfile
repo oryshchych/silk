@@ -51,6 +51,7 @@ WORKDIR /app
 # standalone містить server.js і лише ті файли node_modules, які трасувались.
 COPY --from=build --chown=node:node /repo/apps/web/.next/standalone ./
 COPY --from=build --chown=node:node /repo/apps/web/.next/static ./apps/web/.next/static
+COPY --from=build --chown=node:node /repo/apps/web/public ./apps/web/public
 
 # Не root: компрометація процесу не дає root у контейнері.
 USER node

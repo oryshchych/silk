@@ -8,6 +8,10 @@ vi.mock('next-intl/middleware', async () => {
   return { default: () => () => NextResponse.next() };
 });
 
+// The visible-slug set comes from the database; here it is controlled by the test.
+const has = vi.hoisted(() => vi.fn<(slug: string) => Promise<boolean | null>>());
+vi.mock('./lib/product-slugs', () => ({ knownProductSlugs: { has } }));
+
 async function loadProxy(appEnv: 'local' | 'production') {
   vi.resetModules();
   vi.stubEnv('APP_ENV', appEnv);
@@ -40,20 +44,70 @@ afterEach(() => {
 describe('proxy: /uk redirect', () => {
   it('answers 308 to the unprefixed URL and keeps the query string', async () => {
     const proxy = await loadProxy('local');
-    const response = proxy(new NextRequest('http://localhost:3000/uk/category/bras?a=1&b=2'));
+    const response = await proxy(new NextRequest('http://localhost:3000/uk/category/bras?a=1&b=2'));
     expect(response.status).toBe(308);
     expect(response.headers.get('location')).toBe('http://localhost:3000/category/bras?a=1&b=2');
   });
 
   it('marks the redirect noindex outside production only', async () => {
     const local = await loadProxy('local');
-    expect(local(new NextRequest('http://localhost:3000/uk')).headers.get('x-robots-tag')).toBe(
-      'noindex, nofollow',
-    );
+    expect(
+      (await local(new NextRequest('http://localhost:3000/uk'))).headers.get('x-robots-tag'),
+    ).toBe('noindex, nofollow');
     const production = await loadProxy('production');
-    expect(production(new NextRequest('https://shop.example/uk')).headers.get('x-robots-tag')).toBe(
-      null,
-    );
+    expect(
+      (await production(new NextRequest('https://shop.example/uk'))).headers.get('x-robots-tag'),
+    ).toBe(null);
+  });
+});
+
+describe('proxy: product URL gate', () => {
+  const rewriteOf = (response: Response): string | null =>
+    response.headers.get('x-middleware-rewrite');
+
+  it('lets a known product through and rewrites an unknown well-formed slug to the 404 page', async () => {
+    const proxy = await loadProxy('local');
+    has.mockImplementation(async (slug) => await Promise.resolve(slug === 'aurora-1'));
+
+    const known = await proxy(new NextRequest('http://localhost:3000/product/aurora-1'));
+    expect(rewriteOf(known)).toBeNull();
+
+    const unknown = await proxy(new NextRequest('http://localhost:3000/product/nope-1'));
+    expect(rewriteOf(unknown)).toBe('http://localhost:3000/uk/__missing__/product');
+    expect(unknown.headers.get('cache-control')).toBe('no-store');
+
+    const english = await proxy(new NextRequest('http://localhost:3000/en/product/nope-1?x=1'));
+    expect(rewriteOf(english)).toBe('http://localhost:3000/en/__missing__/product');
+  });
+
+  it('rejects a malformed slug without asking the database', async () => {
+    const proxy = await loadProxy('local');
+    has.mockReset();
+    for (const path of [
+      '/product/x%00abc',
+      '/product/Aurora',
+      `/product/${'a'.repeat(201)}`,
+      '/en/product/a--b',
+    ]) {
+      const response = await proxy(new NextRequest(`http://localhost:3000${path}`));
+      expect(rewriteOf(response)).toMatch(/__missing__\/product$/);
+    }
+    expect(has).not.toHaveBeenCalled();
+  });
+
+  it('lets the request through when the slug set cannot be loaded at all', async () => {
+    const proxy = await loadProxy('local');
+    has.mockResolvedValue(null);
+    const response = await proxy(new NextRequest('http://localhost:3000/product/anything-1'));
+    expect(rewriteOf(response)).toBeNull();
+  });
+
+  it('does not touch other pages or methods other than GET and HEAD', async () => {
+    const proxy = await loadProxy('local');
+    has.mockReset();
+    await proxy(new NextRequest('http://localhost:3000/category/bras'));
+    await proxy(new NextRequest('http://localhost:3000/product/nope-1', { method: 'POST' }));
+    expect(has).not.toHaveBeenCalled();
   });
 });
 
@@ -65,20 +119,20 @@ describe('proxy: search rate limit', () => {
     });
 
   /** Sends `count` searches and returns how many were answered 429. */
-  function blockedOf(
+  async function blockedOf(
     proxy: Awaited<ReturnType<typeof loadProxy>>,
     count: number,
     make: (i: number) => NextRequest,
-  ): number {
+  ): Promise<number> {
     let blocked = 0;
-    for (let i = 0; i < count; i++) if (proxy(make(i)).status === 429) blocked += 1;
+    for (let i = 0; i < count; i++) if ((await proxy(make(i))).status === 429) blocked += 1;
     return blocked;
   }
 
   it('answers 429 with Retry-After and no-store after 30 searches a minute from one address', async () => {
     const proxy = await loadProxy('local');
-    for (let i = 0; i < 30; i++) expect(proxy(search('203.0.113.7')).status).not.toBe(429);
-    const blocked = proxy(search('203.0.113.7', { path: '/en/search' }));
+    for (let i = 0; i < 30; i++) expect((await proxy(search('203.0.113.7'))).status).not.toBe(429);
+    const blocked = await proxy(search('203.0.113.7', { path: '/en/search' }));
     expect(blocked.status).toBe(429);
     expect(Number(blocked.headers.get('retry-after'))).toBeGreaterThan(0);
     expect(blocked.headers.get('cache-control')).toBe('no-store');
@@ -87,9 +141,9 @@ describe('proxy: search rate limit', () => {
 
   it('does not limit another address or other pages', async () => {
     const proxy = await loadProxy('local');
-    blockedOf(proxy, 31, () => search('203.0.113.7'));
-    expect(proxy(search('198.51.100.9')).status).not.toBe(429);
-    const others = blockedOf(
+    await blockedOf(proxy, 31, () => search('203.0.113.7'));
+    expect((await proxy(search('198.51.100.9'))).status).not.toBe(429);
+    const others = await blockedOf(
       proxy,
       40,
       () =>
@@ -103,21 +157,21 @@ describe('proxy: search rate limit', () => {
   it('cannot be escaped by rotating X-Forwarded-For entries the client controls', async () => {
     const proxy = await loadProxy('local');
     // The trusted proxy appends the real address (203.0.113.7); the client rotates what it sends before it.
-    const blocked = blockedOf(proxy, 100, (i) => search(`9.9.9.${String(i)}, 203.0.113.7`));
+    const blocked = await blockedOf(proxy, 100, (i) => search(`9.9.9.${String(i)}, 203.0.113.7`));
     expect(blocked).toBe(70);
   });
 
   it("cannot be used to burn another client's bucket", async () => {
     const proxy = await loadProxy('local');
     // The attacker claims to be the victim; the key is the address the proxy appended.
-    blockedOf(proxy, 40, () => search('5.5.5.5, 192.0.2.50'));
-    expect(proxy(search('5.5.5.5, 10.0.0.1')).status).not.toBe(429);
-    expect(proxy(search('5.5.5.5')).status).not.toBe(429);
+    await blockedOf(proxy, 40, () => search('5.5.5.5, 192.0.2.50'));
+    expect((await proxy(search('5.5.5.5, 10.0.0.1'))).status).not.toBe(429);
+    expect((await proxy(search('5.5.5.5'))).status).not.toBe(429);
   });
 
   it('limits HEAD and POST and every spelling of the path, but not OPTIONS', async () => {
     const proxy = await loadProxy('local');
-    blockedOf(proxy, 30, () => search('203.0.113.7'));
+    await blockedOf(proxy, 30, () => search('203.0.113.7'));
     for (const request of [
       search('203.0.113.7', { method: 'HEAD' }),
       search('203.0.113.7', { method: 'POST' }),
@@ -126,25 +180,25 @@ describe('proxy: search rate limit', () => {
       search('203.0.113.7', { path: '/en/%73earch' }),
       search('203.0.113.7', { path: '/search/' }),
     ]) {
-      expect(proxy(request).status).toBe(429);
+      expect((await proxy(request)).status).toBe(429);
     }
-    expect(proxy(search('203.0.113.7', { method: 'OPTIONS' })).status).not.toBe(429);
+    expect((await proxy(search('203.0.113.7', { method: 'OPTIONS' }))).status).not.toBe(429);
   });
 
   it('puts requests without a trustworthy address in one shared bucket', async () => {
     const proxy = await loadProxy('local');
-    expect(blockedOf(proxy, 35, () => search(null))).toBe(5);
+    expect(await blockedOf(proxy, 35, () => search(null))).toBe(5);
     // A request that does have an address is not caught by the shared bucket.
-    expect(proxy(search('203.0.113.7')).status).not.toBe(429);
+    expect((await proxy(search('203.0.113.7'))).status).not.toBe(429);
     // A header that is not an address is treated as missing, not as a key chosen by the client.
-    expect(proxy(search('not-an-ip')).status).toBe(429);
+    expect((await proxy(search('not-an-ip'))).status).toBe(429);
   });
 
   it('counts hops from the right as configured (Cloudflare then Traefik is two)', async () => {
     vi.stubEnv('TRUSTED_PROXY_HOPS', '2');
     const proxy = await loadProxy('local');
     // client, Cloudflare edge: the key is the client, whatever the edge address is.
-    const blocked = blockedOf(proxy, 35, (i) => search(`203.0.113.7, 172.70.1.${String(i)}`));
+    const blocked = await blockedOf(proxy, 35, (i) => search(`203.0.113.7, 172.70.1.${String(i)}`));
     expect(blocked).toBe(5);
   });
 });

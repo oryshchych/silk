@@ -5,11 +5,14 @@
  * and a TTL is the safety net for a missed invalidation.
  */
 import { unstable_cache } from 'next/cache';
+import { cache } from 'react';
 
 import {
   getCategories,
   getCategoryPage,
   getFilterOptions,
+  getProductBySlug,
+  getProductRef,
   listProducts,
   listShowcase,
   normalizeListingParams,
@@ -18,7 +21,7 @@ import {
   type ListingParams,
   type ShowcaseKind,
 } from '@store/core/catalog';
-import { categoryTag, CATEGORIES_TAG, SHOWCASE_TAG } from '@store/shared/cache-tags';
+import { categoryTag, CATEGORIES_TAG, productTag, SHOWCASE_TAG } from '@store/shared/cache-tags';
 import type { FilterOptionsDto, ListingDto } from '@store/shared/dto/catalog';
 import type { SiteLocale } from '@store/shared/seo';
 
@@ -118,6 +121,25 @@ export async function loadListing(input: {
 export async function searchCatalog(input: { query: string; locale: SiteLocale; page: number }) {
   return await searchProducts(await getDb(), input);
 }
+
+/**
+ * Product page data, tagged `product:{id}` and `category:{id}` (ADR-8). The
+ * cheap slug lookup runs first only to learn the id: tags must be known when
+ * the cache is created. It runs when a page is (re)generated, not per visit.
+ * `cache` shares the result between the metadata and the page of one render.
+ */
+export const loadProduct = cache(async (slug: string, locale: SiteLocale) => {
+  const ref = await getProductRef(await getDb(), slug);
+  if (ref === null) return null;
+  return await unstable_cache(
+    async () => await getProductBySlug(await getDb(), slug, locale),
+    ['product', ref.id, locale],
+    {
+      tags: [productTag(ref.id), categoryTag(ref.categoryId), CATEGORIES_TAG],
+      revalidate: CATEGORY_TTL,
+    },
+  )();
+});
 
 const SHOWCASE_SIZE = 8;
 

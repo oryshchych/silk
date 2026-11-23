@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { productCardDto } from './catalog';
+import { productCardDto, productDetailDto } from './catalog';
 import { customerOrderDto } from './order';
 import { serialize } from './serialize';
 
@@ -97,5 +97,106 @@ describe('customerOrderDto', () => {
     const dto = serialize(customerOrderDto, orderRow);
     expect(dto.total).toBe(233820);
     expect(dto.items[0]?.lineTotal).toBe(233820);
+  });
+});
+
+describe('productDetailDto', () => {
+  const uuid = (n: number): string => `0193f0a4-7c3e-7000-8000-${String(n).padStart(12, '0')}`;
+  const row = {
+    id: uuid(1),
+    slug: 'lace-bra-1',
+    sku: 'LS-1',
+    brand: 'Aurelia',
+    name: 'Bra',
+    shortDescription: null,
+    description: null,
+    composition: null,
+    care: null,
+    price: 129900,
+    compareAtPrice: null,
+    badge: 'none',
+    ratingAvg: null,
+    reviewsCount: 0,
+    metaTitle: null,
+    metaDescription: null,
+    ogImageUrl: null,
+    noindex: false,
+    category: { slug: 'bras', name: 'Bras' },
+    breadcrumbs: [{ slug: 'bras', name: 'Bras' }],
+    images: [{ url: '/a.jpg', alt: 'a', width: 1, height: 1, colorSlug: null, costPrice: 1 }],
+    colors: [{ slug: 'black', name: 'Black', hex: '#000000' }],
+    variants: [
+      {
+        id: uuid(2),
+        sizeLabel: '75B',
+        sizeSystem: 'bra',
+        band: 75,
+        cup: 'B',
+        colorSlug: 'black',
+        price: 129900,
+        available: true,
+        lastUnits: false,
+        stockQuantity: 7,
+        reservedQuantity: 2,
+        costPrice: 58455,
+      },
+    ],
+    attributes: [],
+    // Internal fields that must not come out:
+    costPrice: 58455,
+    isActive: true,
+    searchVector: "'bra':1",
+    adminNote: 'internal',
+  };
+
+  it('has exactly the listed fields, on the product and on every nested item', () => {
+    const dto = serialize(productDetailDto, row);
+    expect(Object.keys(dto).sort()).toEqual([
+      'attributes',
+      'badge',
+      'brand',
+      'breadcrumbs',
+      'care',
+      'category',
+      'colors',
+      'compareAtPrice',
+      'composition',
+      'description',
+      'id',
+      'images',
+      'metaDescription',
+      'metaTitle',
+      'name',
+      'noindex',
+      'ogImageUrl',
+      'price',
+      'ratingAvg',
+      'reviewsCount',
+      'shortDescription',
+      'sku',
+      'slug',
+      'variants',
+    ]);
+    expect(Object.keys(dto.variants[0] ?? {}).sort()).toEqual([
+      'available',
+      'band',
+      'colorSlug',
+      'cup',
+      'id',
+      'lastUnits',
+      'price',
+      'sizeLabel',
+      'sizeSystem',
+    ]);
+    expect(Object.keys(dto.images[0] ?? {}).sort()).toEqual([
+      'alt',
+      'colorSlug',
+      'height',
+      'url',
+      'width',
+    ]);
+    expect(JSON.stringify(dto)).not.toMatch(
+      /cost|stockQuantity|reservedQuantity|searchVector|adminNote|isActive/i,
+    );
   });
 });

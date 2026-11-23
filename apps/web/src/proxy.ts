@@ -1,3 +1,4 @@
+import { isProductSlug } from '@store/core/product-slug';
 import { env } from '@store/shared/env';
 import createMiddleware from 'next-intl/middleware';
 import { NextResponse, type NextRequest } from 'next/server';
@@ -5,6 +6,8 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { routing } from './i18n/routing';
 import { stripDefaultLocalePrefix } from './lib/locale-redirect';
 import { clientAddress, UNKNOWN_CLIENT } from './lib/client-address';
+import { missingPath, parseProductPath } from './lib/product-path';
+import { knownProductSlugs } from './lib/product-slugs';
 import { createRateLimiter } from './lib/rate-limit';
 import { isSearchPath } from './lib/search-path';
 import { isAuthorized, parseExcludeList, requiresAuth } from './lib/staging-gate';
@@ -54,7 +57,7 @@ function withNoindex(response: NextResponse): NextResponse {
   return response;
 }
 
-export function proxy(request: NextRequest): NextResponse {
+export async function proxy(request: NextRequest): Promise<NextResponse> {
   const { pathname } = request.nextUrl;
 
   if (
@@ -95,6 +98,26 @@ export function proxy(request: NextRequest): NextResponse {
     const target = request.nextUrl.clone();
     target.pathname = unprefixed;
     return withNoindex(NextResponse.redirect(target, 308));
+  }
+
+  // An unknown or malformed product slug is answered here with the server-rendered
+  // 404 page, BEFORE the ISR product route: Next stores every distinct slug that
+  // reaches it (a 404 included) in its page cache, which a client could fill
+  // without limit. A slug that cannot exist (shape) never touches the database;
+  // a well-formed one is checked against the in-memory set of visible slugs
+  // (refreshed every minute, stale-on-error). If the set cannot be loaded at all,
+  // the request passes and the page decides.
+  const product = parseProductPath(pathname);
+  if (product !== null && (request.method === 'GET' || request.method === 'HEAD')) {
+    const known = isProductSlug(product.slug) ? await knownProductSlugs.has(product.slug) : false;
+    if (known === false) {
+      const target = request.nextUrl.clone();
+      target.pathname = missingPath(product.locale);
+      target.search = '';
+      const response = NextResponse.rewrite(target);
+      response.headers.set('Cache-Control', 'no-store');
+      return withNoindex(response);
+    }
   }
 
   // Мовна маршрутизація — лише для сторінок: не для API і не для файлів
