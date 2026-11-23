@@ -5,51 +5,56 @@
 
 ## Current phase
 
-**Phase 2, "cart, checkout, delivery": 14 of 14 acceptance criteria verified by execution** (2026-11-23),
-three with caveats (below). Evidence per criterion: `docs/plan/phase-02-checkout.md`.
-Phase 3 (payments) starts in a NEW session. Standing rules (`AGENTS.md` section 0): technical text in
-English; one phase per session.
+**Phase 3, "payments": 13 of 16 acceptance criteria verified by execution** (2026-11-23), three
+left UNCHECKED (and the Checkbox-sandbox half of the receipts criterion) because they need real
+sandboxes or clients. Evidence per criterion, with test
+names: `docs/plan/phase-03-payments.md`. Phase 4 starts in a NEW session. Standing rules
+(`AGENTS.md` section 0): technical text in English; one phase per session.
 
 Infra: staging `https://staging.damazla.com` (basic auth), Hetzner CAX11, Dokploy. Next 16.4.6.
 
-## Done (phase 2, merged PRs)
+## Done (phase 3, merged PRs)
 
-- #52 core: migrations 0007 (quoted total, RR1 composite FKs, RR2 triggers) and 0008, quote guard,
-  shipping fee, COD guards, expiry runner, cart merge, order lookup
-- #53 web: cookie cart, cart, checkout, order success/failed/track, city autocomplete, consent checkbox
-- #55 worker parts: Resend order emails, router, expiry/reconcile/Nova Poshta sync jobs (NOT deployed, Q31)
-- Verified on `main` + #55: `pnpm verify` (568 unit), `pnpm test:int` (315), `pnpm smoke:web` (96 checks
-  on the built app, including the shopper path), `db:check`, knip, boundaries, `ai:check`
+- #58 providers: WayForPay (HMAC_MD5, signed accept) and Checkbox `FiscalProvider`, local fakes
+- #59 payment flow: start payment (new attempt on the same order), `reconcileOpenAttempts`, COD and
+  transfer confirmation, webhook routes `/api/webhooks/mono` and `/wayforpay`, card step, payments smoke
+- #60 fiscal and worker: receipts in the payment transaction (card, COD at handover, return that points
+  at the sale, transfer `not_required`), payment and refund emails (dark-mode shell), jobs
+  `payments.reconcile-open`, `quarantine.cleanup`, `fiscal.reconcile`; the expiry job is now scheduled
+- On `main` (814e591): `pnpm verify` 627 unit, `pnpm test:int` 400, `pnpm smoke:web` 139 checks,
+  knip, boundaries, `db:check` clean. One test (`fulfilment` "no deadlock over 12 rounds") hits its 30 s
+  limit on a loaded laptop and passes on a re-run; CI is green
 
 ## Next step
 
-1. Phase 3 (payments) in a NEW session; read `phase-03-payments.md` and Q27 (reconciliation must exist
-   before the expiry job ships) and Q31 (the worker needs an entrypoint and a deploy).
-2. Owner: the items still open in `docs/plan/OWNER_QUEUE.md` (Q1, Q2, Q3, Q8, Q13, Q19, Q24, Q31).
+1. Phase 4 (admin catalog) in a NEW session. FIRST: the fiscal uniqueness migration (Q35: partial unique
+   indexes for one sale per order and one return per refund, `last_reconciled_at` on
+   `payment_attempts`) through `/new-migration` with `migration-reviewer`.
+2. Owner: Q31 worker entrypoint, Dockerfile, compose service and env var (nothing runs the jobs until then),
+   then the sandboxes: Q3 Checkbox, Q13 Mono token, Q32 WayForPay and the unconfirmed facts, Q33 dark-mode
+   emails, Q36, Q37. Open too: Q1, Q2, Q8, Q19, Q24, Q34.
 
-## Open decisions for the owner (full list: `docs/plan/OWNER_QUEUE.md`)
+## UNCHECKED criteria (reason, queue entry)
 
-- Q31 worker entrypoint and deploy (new env var for the pg-boss connection, `RESEND_API_KEY`, `EMAIL_FROM`):
-  until then nothing sends the order emails, releases expired reservations or syncs the directory
-- Q2 Nova Poshta key (the sync client is only tested against recorded-shape fixtures), Q3 Checkbox account
-- Q13 Mono sandbox token, Q24 proxy trust (`TRUSTED_PROXY_HOPS` 2 behind Cloudflare), Q19 bra size table
-- Q1 shop name and palette, Q8 backup check
+- Sandbox payment end to end on staging, both providers: no credentials (Q13, Q32)
+- Emails in dark mode in Gmail (iOS, web) and Outlook: needs the clients (Q33); contrast and colour
+  scheme tests pass
+- Receipts against the Checkbox sandbox (the second half of the receipts criterion; the first half, against
+  the fake, is checked): no account (Q3, Q32)
+- Return receipt carries the primary's fiscal number: the document points at the sale and waits for
+  it, but the adapter does not send the number and the real return shape is unconfirmed (Q32)
 
-## Caveats on the criteria
+## Caveats
 
-- Worker job (expiry): proven through a real pg-boss, but no worker process runs on staging (Q31)
-- Cart merge at login: proven at core level; login arrives with phase 7, nothing calls it yet
-- End-to-end in CI: HTTP level (server actions POSTed on the built app), not a browser (Playwright, Q6)
+- Worker not deployed (Q31): reconcile, expiry, receipts, emails and cleanup run only from tests
+- Fakes sign like the adapters: consistency, not correctness; a recorded real sample is still missing
+- Cards are off in `payment_providers` and no provider credentials exist on staging, so no card is offered
 
 ## Deviations from the plan
-
-- `quoted_total` is set by `quoteCheckout` (not `startCheckout`): delivery and promo are unknown earlier
-- Delivery fee is a flat tariff from `settings` (placeholder numbers); cards are off until phase 3
-- Orders created from the storefront refuse without a quote and without accepted terms (audit entry,
-  no column); the legal texts and their versions arrive with phase 8
-- Promo answer is one public message; per-customer and first-order codes are refused for guests (Q28)
-- Rate limits are in process memory (a full table refuses new clients, Q29); shared limiter is phase 12
-- Not built: payment providers (phase 3), emails for payment and refunds, login merge (phase 7),
-  worker deployment (Q31), real Nova Poshta calls (Q2)
-- Earlier: TS 6.0.3; Tailwind v4 tokens in CSS; staging basic auth in `proxy.ts`; hooks are Node scripts;
-  phase 0.5 and phase 1 deviations stand (see their phase files)
+- `payments.reconcile-open` every 10 minutes (plan: hourly), so the expiry job holds stock briefly
+- A live invoice is reused, never cancelled at the provider; "another card" works after a failed or
+  expired attempt (Q34). Reconcile closes a not-found attempt only if it never had an invoice (Q36)
+- Receipts: a duplicate charge refund gives a full-sale return receipt (Q37); gift cards get none (ADR-20)
+- Added env vars `MONO_API_BASE_URL`, `WAYFORPAY_API_BASE_URL`, `WAYFORPAY_MERCHANT_DOMAIN`,
+  `PAYMENT_PAGE_HOSTS`; `proxyClientMaxBodySize` 64 KB, web `mem_limit` 1g
+- Earlier phase deviations stand (see their phase files)
