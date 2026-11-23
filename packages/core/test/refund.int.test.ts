@@ -623,10 +623,12 @@ describe('review round: shipping, cancelling and recovery around a refund', () =
         confirmation: { by: null },
       });
     });
-    const rows = await admin.db.execute(
-      sql`SELECT 1 FROM outbox WHERE topic = 'email.refund-issued' AND dedup_key = ${`refund:${reservation.operationId}`}`,
+    const rows = await admin.db.execute<{ payload: { orderId: string; operationId: string } }>(
+      sql`SELECT payload FROM outbox WHERE topic = 'email.refund-issued' AND dedup_key = ${`refund:${reservation.operationId}`}`,
     );
     expect(rows.rowCount).toBe(1);
+    // The consumer trusts this payload only after checking it: it must name THIS operation.
+    expect(rows.rows[0]?.payload).toEqual({ orderId, operationId: reservation.operationId });
   });
 
   it('five parallel settles of one in-flight operation change it once and refund once', async () => {

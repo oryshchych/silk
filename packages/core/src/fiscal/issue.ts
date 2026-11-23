@@ -11,7 +11,7 @@
  * the document is `failed`, the order gets `fiscal_status = 'failed'` and an alert is queued; a
  * person retries it from the admin (phase 5). The payment itself is never touched.
  */
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 
 import { fiscalDocuments, orders, outbox } from '@store/db/schema';
 import type { Tx } from '@store/db/types';
@@ -47,9 +47,15 @@ async function failDocument(tx: Tx, document: Document, error: string): Promise<
     .update(fiscalDocuments)
     .set({ state: 'failed', lastError: error.slice(0, 200) })
     .where(eq(fiscalDocuments.id, document.id));
+  // A failed RETURN must not overwrite the status of a sale that WAS issued: only the error text
+  // says what failed (the gap job lists failed returns by their document).
   await tx
     .update(orders)
-    .set({ fiscalStatus: 'failed', fiscalError: error.slice(0, 200) })
+    .set(
+      document.kind === 'return'
+        ? { fiscalError: error.slice(0, 200) }
+        : { fiscalStatus: 'failed', fiscalError: error.slice(0, 200) },
+    )
     .where(eq(orders.id, document.orderId));
   await tx
     .insert(outbox)
@@ -62,7 +68,12 @@ async function failDocument(tx: Tx, document: Document, error: string): Promise<
     .onConflictDoNothing();
 }
 
-async function claim(tx: Tx, documentId: string): Promise<Claim | FiscalOutcome> {
+/** The attempts ran out: the caller makes ONE last lookup before it gives up. */
+interface Exhausted {
+  exhausted: Document;
+}
+
+async function claim(tx: Tx, documentId: string): Promise<Claim | Exhausted | FiscalOutcome> {
   const [probe] = await tx
     .select({ orderId: fiscalDocuments.orderId })
     .from(fiscalDocuments)
@@ -87,16 +98,18 @@ async function claim(tx: Tx, documentId: string): Promise<Claim | FiscalOutcome>
             .select()
             .from(fiscalDocuments)
             .where(eq(fiscalDocuments.id, document.parentDocumentId));
+    if (primary?.state === 'failed') {
+      // Nothing to wait for: the primary receipt is gone for good, a person must look at it.
+      await failDocument(tx, document, 'the primary receipt failed');
+      return 'failed';
+    }
     if (primary === undefined || primary.state !== 'succeeded' || primary.fiscalNumber === null) {
       // The return receipt carries the primary's fiscal number: it waits until that exists.
       throw new FiscalRetryError('the primary receipt is not issued yet');
     }
     parent = { providerId: primary.localReference, fiscalNumber: primary.fiscalNumber };
   }
-  if (document.attempts >= MAX_FISCAL_ATTEMPTS) {
-    await failDocument(tx, document, 'the retries ran out');
-    return 'failed';
-  }
+  if (document.attempts >= MAX_FISCAL_ATTEMPTS) return { exhausted: document };
   await tx
     .update(fiscalDocuments)
     .set({ attempts: document.attempts + 1, state: 'in_flight' })
@@ -121,7 +134,7 @@ async function record(
         state: 'succeeded',
         fiscalNumber: result.fiscalNumber,
         receiptUrl: result.receiptUrl,
-        issuedAt: new Date(),
+        issuedAt: sql`now()`,
         lastError: null,
       })
       .where(eq(fiscalDocuments.id, document.id));
@@ -160,6 +173,21 @@ export async function issueFiscalReceipt(
 ): Promise<FiscalOutcome> {
   const claimed = await deps.runInTransaction(async (tx) => await claim(tx, documentId));
   if (typeof claimed === 'string') return claimed;
+  if ('exhausted' in claimed) {
+    const { exhausted } = claimed;
+    // One last look before giving up: the receipt may exist although every answer was lost.
+    const found =
+      exhausted.state === 'unknown' || exhausted.state === 'in_flight'
+        ? await deps.provider.lookup(exhausted.localReference).catch(() => null)
+        : null;
+    const adopted = found?.found === true && found.result.state === 'issued' ? found.result : null;
+    return await deps.runInTransaction(async (tx) => {
+      if (adopted !== null)
+        return (await record(tx, exhausted, adopted)) === 'issued' ? 'issued' : 'failed';
+      await failDocument(tx, exhausted, 'the retries ran out');
+      return 'failed';
+    });
+  }
   const { document, parent } = claimed;
   const snapshot = receiptSnapshotSchema.safeParse(document.itemsSnapshot);
   if (!snapshot.success) {

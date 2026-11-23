@@ -40,6 +40,8 @@ import {
 } from '../src/payments/refunds.ts';
 import { money } from '@store/shared/money';
 
+import { acquireLocks } from '../src/locks/acquire-locks.ts';
+
 import { createWorld, type TestWorld } from './fixtures.ts';
 import { placeOrder } from './place-order.ts';
 
@@ -351,6 +353,170 @@ describe('refund: the return receipt points at the primary one', () => {
     expect(ret?.amount).toBe(50000);
     expect(JSON.stringify(ret?.itemsSnapshot)).toContain('"unitPrice":50000');
     expect(await issueFiscalReceipt(deps(), ret?.id ?? '')).toBe('issued');
+  });
+});
+
+describe('review round: the receipt always adds up to what was paid', () => {
+  it('a NEGATIVE adjustment (a compensation) is spread over the goods: the lines sum to the order total', async () => {
+    const orderId = await placeOrder(admin, variants[0] ?? '', 'wayforpay');
+    await admin.db.execute(
+      sql`UPDATE orders SET adjustment_total = -5001, total = total - 5001 WHERE id = ${orderId}`,
+    );
+    await admin.db.execute(
+      sql`UPDATE orders SET payment_status = 'paid', paid_at = now() WHERE id = ${orderId}`,
+    );
+    expect(
+      await admin.db.transaction(
+        async (tx) => await enqueueSaleReceipt(tx, { orderId, paymentForm: 'card' }),
+      ),
+    ).toBe('queued');
+    const [doc] = await docsOf(orderId);
+    const order = await orderRow(orderId);
+    const lines = (doc?.itemsSnapshot as { items: { unitPrice: number; quantity: number }[] })
+      .items;
+    expect(lines.reduce((total, l) => total + l.unitPrice * l.quantity, 0)).toBe(order?.total);
+    expect(doc?.amount).toBe(order?.total);
+    expect(await issueFiscalReceipt(deps(), doc?.id ?? '')).toBe('issued');
+  });
+
+  it('lines that cannot add up never throw out of the payment: a failed document, the order says so, ONE alert', async () => {
+    const orderId = await placeOrder(admin, variants[0] ?? '', 'wayforpay');
+    await admin.db.execute(
+      sql`UPDATE order_items SET line_discount = line_discount + 100, line_total = line_total - 100 WHERE order_id = ${orderId}`,
+    );
+    await admin.db.execute(
+      sql`UPDATE orders SET payment_status = 'paid', paid_at = now() WHERE id = ${orderId}`,
+    );
+    for (let i = 0; i < 2; i += 1) {
+      await admin.db.transaction(async (tx) => {
+        await enqueueSaleReceipt(tx, { orderId, paymentForm: 'card' });
+      });
+    }
+    expect(await orderRow(orderId)).toMatchObject({
+      paymentStatus: 'paid',
+      fiscalStatus: 'failed',
+    });
+    expect((await docsOf(orderId))[0]).toMatchObject({ state: 'failed' });
+    expect(
+      await count(sql`SELECT count(*)::int AS n FROM outbox WHERE topic = 'alert.fiscal-failed'`),
+    ).toBe(1);
+  });
+
+  it('a compensation that swallows the goods is the same failed document, not a thrown error', async () => {
+    const orderId = await placeOrder(admin, variants[0] ?? '', 'wayforpay');
+    await admin.db.execute(
+      sql`UPDATE orders SET shipping_total = 7000, adjustment_total = -subtotal, total = 7000 WHERE id = ${orderId}`,
+    );
+    await admin.db.execute(
+      sql`UPDATE orders SET payment_status = 'paid', paid_at = now() WHERE id = ${orderId}`,
+    );
+    expect(
+      await admin.db.transaction(
+        async (tx) => await enqueueSaleReceipt(tx, { orderId, paymentForm: 'card' }),
+      ),
+    ).toBe('failed');
+  });
+});
+
+describe('review round: the job under pressure', () => {
+  it('the claim holds the order lock: a worker waits behind a held lock and then issues ONE receipt', async () => {
+    const orderId = await paidCardOrder();
+    const [doc] = await docsOf(orderId);
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let locked: () => void = () => undefined;
+    const lockTaken = new Promise<void>((resolve) => {
+      locked = resolve;
+    });
+    const holder = world.connect().db.transaction(async (tx) => {
+      await acquireLocks(tx, { orders: [orderId] });
+      locked();
+      await held;
+    });
+    await lockTaken;
+    let done = false;
+    const worker = issueFiscalReceipt(deps(world.connect()), doc?.id ?? '').then((outcome) => {
+      done = true;
+      return outcome;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    expect(done).toBe(false);
+    expect(checkbox.receipts.size).toBe(0);
+    release();
+    await holder;
+    expect(await worker).toBe('issued');
+    expect(checkbox.receipts.size).toBe(1);
+  });
+
+  it('when the attempts run out the job looks once more: a receipt that exists is adopted, not failed', async () => {
+    const orderId = await paidCardOrder();
+    const [doc] = await docsOf(orderId);
+    checkbox.failNextSell({ status: 200, hang: true, store: true });
+    await expect(issueFiscalReceipt(deps(), doc?.id ?? '')).rejects.toBeInstanceOf(
+      FiscalRetryError,
+    );
+    await admin.db.execute(
+      sql`UPDATE fiscal_documents SET attempts = ${MAX_FISCAL_ATTEMPTS}, state = 'unknown' WHERE id = ${doc?.id ?? ''}`,
+    );
+    expect(await issueFiscalReceipt(deps(), doc?.id ?? '')).toBe('issued');
+    expect(await orderRow(orderId)).toMatchObject({ fiscalStatus: 'issued' });
+  });
+
+  it('a return behind a FAILED sale fails at once with an alert instead of waiting for hours', async () => {
+    const orderId = await paidCardOrder();
+    const [sale] = await docsOf(orderId);
+    checkbox.failNextSell({ status: 422 });
+    expect(await issueFiscalReceipt(deps(), sale?.id ?? '')).toBe('failed');
+    const attemptId = (
+      await admin.db.execute<{ id: string }>(
+        sql`SELECT id FROM payment_attempts WHERE order_id = ${orderId} AND status = 'paid'`,
+      )
+    ).rows[0]?.id;
+    const operationId = (
+      await admin.db.execute<{ id: string }>(
+        sql`INSERT INTO refund_operations (order_id, payment_attempt_id, amount, state) VALUES (${orderId}, ${attemptId}, 5000, 'succeeded') RETURNING id`,
+      )
+    ).rows[0]?.id;
+    await admin.db.execute(
+      sql`INSERT INTO fiscal_documents (order_id, kind, parent_document_id, refund_operation_id, provider, amount, items_snapshot)
+          VALUES (${orderId}, 'return', ${sale?.id ?? ''}, ${operationId}, 'checkbox', 5000,
+                  '{"paymentForm":"card","items":[{"code":"R","name":"Refund","unitPrice":5000,"quantity":1}]}'::jsonb)`,
+    );
+    const ret = (await docsOf(orderId)).find((d) => d.kind === 'return');
+    expect(await issueFiscalReceipt(deps(), ret?.id ?? '')).toBe('failed');
+    expect(
+      await count(sql`SELECT count(*)::int AS n FROM outbox WHERE topic = 'alert.fiscal-failed'`),
+    ).toBe(2);
+  });
+
+  it('a failed RETURN does not overwrite the status of a sale that WAS issued', async () => {
+    const orderId = await paidCardOrder();
+    const [sale] = await docsOf(orderId);
+    await issueFiscalReceipt(deps(), sale?.id ?? '');
+    expect(await orderRow(orderId)).toMatchObject({ fiscalStatus: 'issued' });
+    const attemptId = (
+      await admin.db.execute<{ id: string }>(
+        sql`SELECT id FROM payment_attempts WHERE order_id = ${orderId} AND status = 'paid'`,
+      )
+    ).rows[0]?.id;
+    const operationId = (
+      await admin.db.execute<{ id: string }>(
+        sql`INSERT INTO refund_operations (order_id, payment_attempt_id, amount, state) VALUES (${orderId}, ${attemptId}, 5000, 'succeeded') RETURNING id`,
+      )
+    ).rows[0]?.id;
+    await admin.db.execute(
+      sql`INSERT INTO fiscal_documents (order_id, kind, parent_document_id, refund_operation_id, provider, amount, items_snapshot)
+          VALUES (${orderId}, 'return', ${sale?.id ?? ''}, ${operationId}, 'checkbox', 5000,
+                  '{"paymentForm":"card","items":[{"code":"R","name":"Refund","unitPrice":5000,"quantity":1}]}'::jsonb)`,
+    );
+    const ret = (await docsOf(orderId)).find((d) => d.kind === 'return');
+    checkbox.failNextSell({ status: 422 });
+    expect(await issueFiscalReceipt(deps(), ret?.id ?? '')).toBe('failed');
+    const order = await orderRow(orderId);
+    expect(order?.fiscalStatus).toBe('issued');
+    expect(order?.fiscalError).toBeTruthy();
   });
 });
 

@@ -18,6 +18,7 @@ import { reconcileOpenAttempts } from '@store/core/reconcile';
 import type { ProviderMap } from '@store/core/refunds';
 import type { Reader, Tx } from '@store/db/types';
 
+import { DEAD_LETTER_QUEUE } from './boss.ts';
 import type { NovaPoshtaDirectory } from './np/client.ts';
 import { syncNpDirectory } from './np/sync.ts';
 
@@ -94,7 +95,8 @@ export function createJobHandlers(deps: JobDeps): JobHandlers {
     [JOB_NAMES.reconcileOpen]: async () => {
       const result = await reconcileOpenAttempts({ db: deps.db, providers: deps.providers });
       line({
-        level: result.providerErrors > 0 || result.alerts > 0 ? 'warn' : 'info',
+        level:
+          result.providerErrors > 0 || result.alerts > 0 || result.unaskable > 0 ? 'warn' : 'info',
         scope: JOB_NAMES.reconcileOpen,
         ...result,
       });
@@ -155,6 +157,9 @@ export async function registerJobs(
     // The directory sync makes many sequential calls: give it an hour before pg-boss re-runs it.
     await boss.createQueue(name, {
       expireInSeconds: name === JOB_NAMES.syncNp ? 3600 : 900,
+      // A job that fails by design (a drifted counter, a receipt gap) lands where the watcher of
+      // the outbox looks (Q15), not only in `pgboss.job`.
+      deadLetter: DEAD_LETTER_QUEUE,
     });
     await boss.schedule(name, cron, undefined, { tz: CRON_TZ });
   }

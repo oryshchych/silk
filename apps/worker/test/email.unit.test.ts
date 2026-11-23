@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { money } from '@store/shared/money';
+
 import { createResendSender, EmailSendError } from '../src/email/resend.ts';
 import { renderAdminEmail, renderCustomerEmail, type EmailOrder } from '../src/email/templates.ts';
 
@@ -14,12 +16,14 @@ const order: EmailOrder = {
   paymentProvider: 'cod',
   status: 'pending',
   // Gross lines: 1299.00 x 2 = 2598.00; discount 100.00; shipping 70.00; adjustment 5.00.
-  items: [{ name: 'Бюстгальтер', size: '75B', color: 'Чорний', quantity: 2, lineTotal: 259800 }],
-  subtotal: 259800,
-  discountTotal: 10000,
-  shippingTotal: 7000,
-  adjustmentTotal: 500,
-  total: 257300,
+  items: [
+    { name: 'Бюстгальтер', size: '75B', color: 'Чорний', quantity: 2, lineTotal: money(259800) },
+  ],
+  subtotal: money(259800),
+  discountTotal: money(10000),
+  shippingTotal: money(7000),
+  adjustmentTotal: money(500),
+  total: money(257300),
   trackUrl: 'https://shop.example/order/track',
 };
 

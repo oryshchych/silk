@@ -166,7 +166,10 @@ export async function reconcileOpenAttempts(deps: ReconcileDeps): Promise<Reconc
   async function reconcileOne(attempt: Candidate): Promise<void> {
     const adapter = adapterOf(deps.providers, attempt.provider);
     if (adapter === undefined) {
+      // No adapter (a removed or rotated key): nothing can settle it, expiry skips the order. A
+      // person must hear about it once the attempt has been open for a day.
       result.unaskable += 1;
+      if (attempt.alertDue) await alert(attempt);
       return;
     }
     const key =

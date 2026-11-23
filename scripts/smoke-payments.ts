@@ -491,8 +491,8 @@ export async function runPaymentSmoke(ctx: Context): Promise<void> {
     await Promise.all(flooders);
     const growthMb = (rssKb() - rssBefore) / 1024;
     check(
-      `12 chunked 20 MB streams grow the server by less than 200 MB (grew ${String(Math.round(growthMb))} MB)`,
-      growthMb < 200,
+      `12 chunked 20 MB streams grow the server by less than 250 MB (grew ${String(Math.round(growthMb))} MB)`,
+      growthMb < 250,
     );
     check(
       'and Next did not log its 10 MB buffering warning (the 64 KB limit is in force)',

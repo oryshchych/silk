@@ -3,7 +3,7 @@
  * value that came from a person (name, address, branch) is HTML-escaped. Amounts are
  * formatted from integer kopiykas by `formatMoney`.
  */
-import { formatMoney, money } from '@store/shared/money';
+import { formatMoney, money, type Money } from '@store/shared/money';
 
 export type EmailLocale = 'uk' | 'en';
 
@@ -16,13 +16,13 @@ export interface EmailOrder {
   /** Human-readable delivery line, already composed (method, city, branch or address). */
   deliveryLine: string;
   paymentLabel: string;
-  items: { name: string; size: string; color: string; quantity: number; lineTotal: number }[];
-  subtotal: number;
-  discountTotal: number;
-  shippingTotal: number;
+  items: { name: string; size: string; color: string; quantity: number; lineTotal: Money }[];
+  subtotal: Money;
+  discountTotal: Money;
+  shippingTotal: Money;
   /** Manual correction from the admin (can be negative). */
-  adjustmentTotal: number;
-  total: number;
+  adjustmentTotal: Money;
+  total: Money;
   /** Absolute address of the tracking page. */
   trackUrl: string;
   paymentProvider: string | null;
@@ -98,6 +98,7 @@ export function shell(options: { lang: EmailLocale; title: string; content: stri
     `[data-ogsb] .card{background:${dark.card}!important}`,
     `[data-ogsb] .page{background:${dark.page}!important}`,
     `[data-ogsc] .brand,[data-ogsc] a{color:${dark.link}!important}`,
+    `[data-ogsc] .muted{color:${dark.muted}!important}`,
     '</style></head>',
     `<body class="page" style="margin:0;padding:16px;background:${light.page};color:${light.text};font-family:sans-serif">`,
     `<div class="card" style="max-width:600px;margin:0 auto;padding:24px;background:${light.card};color:${light.text}">`,
@@ -153,7 +154,7 @@ const COPY = {
 
 function body(order: EmailOrder, audience: 'customer' | 'admin'): { html: string; text: string } {
   const c = COPY[order.locale];
-  const fmt = (kopiykas: number): string => formatMoney(money(kopiykas), order.locale);
+  const fmt = (amount: Money): string => formatMoney(amount, order.locale);
   const next =
     order.paymentProvider === 'cod'
       ? c.cod

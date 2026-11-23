@@ -10,7 +10,7 @@ import { z } from 'zod';
 
 import { refundOperations } from '@store/db/schema';
 import type { Reader } from '@store/db/types';
-import { formatMoney, money } from '@store/shared/money';
+import { formatMoney, money, type Money } from '@store/shared/money';
 
 import { loadEmailOrder, OrderEmailError } from './order-created.ts';
 import type { EmailSender } from './resend.ts';
@@ -84,9 +84,9 @@ function frame(facts: Facts, subject: string, lines: string[]): RenderedEmail {
   return { subject, html: shell({ lang: facts.locale, title: subject, content }), text };
 }
 
-export function renderPaymentReceived(facts: Facts, amountKopiykas: number): RenderedEmail {
+export function renderPaymentReceived(facts: Facts, paid: Money): RenderedEmail {
   const c = COPY[facts.locale];
-  const amount = formatMoney(money(amountKopiykas), facts.locale);
+  const amount = formatMoney(paid, facts.locale);
   return frame(facts, c.receivedSubject(facts.orderNumber), [c.receivedText(amount)]);
 }
 
@@ -95,9 +95,9 @@ export function renderPaymentFailed(facts: Facts): RenderedEmail {
   return frame(facts, c.failedSubject(facts.orderNumber), [c.failedText]);
 }
 
-export function renderRefund(facts: Facts, amountKopiykas: number, full: boolean): RenderedEmail {
+export function renderRefund(facts: Facts, refunded: Money, full: boolean): RenderedEmail {
   const c = COPY[facts.locale];
-  const amount = formatMoney(money(amountKopiykas), facts.locale);
+  const amount = formatMoney(refunded, facts.locale);
   return frame(facts, c.refundSubject(facts.orderNumber), [
     full ? c.refundFull(amount) : c.refundPartial(amount),
     c.refundLater,
@@ -142,17 +142,23 @@ export async function handleRefundIssued(deps: Deps, message: Message): Promise<
   const parsed = refund.safeParse(message.payload);
   if (!parsed.success) throw new OrderEmailError('malformed payload');
   const [operation] = await deps.reader
-    .select({ amount: refundOperations.amount, orderId: refundOperations.orderId })
+    .select({
+      amount: refundOperations.amount,
+      orderId: refundOperations.orderId,
+      state: refundOperations.state,
+    })
     .from(refundOperations)
     .where(eq(refundOperations.id, parsed.data.operationId));
   // The payload names the order too: both must agree, or the message is not ours to send.
   if (operation === undefined || operation.orderId !== parsed.data.orderId) {
     throw new OrderEmailError('refund operation not found');
   }
+  // The buyer is told about a refund that HAPPENED: a pending, in-flight or unknown one is not one.
+  if (operation.state !== 'succeeded') throw new OrderEmailError('the refund is not succeeded');
   const order = await loadEmailOrder(deps.reader, parsed.data.orderId, deps.siteUrl);
   await deps.sender.send({
     to: order.customerEmail,
-    ...renderRefund(order, operation.amount, operation.amount >= order.total),
+    ...renderRefund(order, money(operation.amount), money(operation.amount) >= order.total),
     idempotencyKey: `${message.dedupKey}:customer`,
   });
 }

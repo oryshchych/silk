@@ -216,6 +216,94 @@ describe('payment and refund emails', () => {
   });
 });
 
+describe('review round: the refund email and the receipt gaps', () => {
+  it('a refund that has not succeeded gets no email, whatever the payload says', async () => {
+    const placed = await placeOrder('cod', 'en');
+    const email = new Recorder();
+    const sender = senderFor(email, false);
+    for (const state of ['pending', 'in_flight', 'unknown', 'failed']) {
+      const operationId = (
+        await app.db.execute<{ id: string }>(
+          sql`INSERT INTO refund_operations (order_id, amount, state) VALUES (${placed.orderId}, 1000, ${state}) RETURNING id`,
+        )
+      ).rows[0]?.id;
+      await expect(
+        sender.send({
+          idempotencyKey: `refund:${operationId ?? ''}`,
+          topic: 'email.refund-issued',
+          payload: { orderId: placed.orderId, operationId },
+        }),
+      ).rejects.toThrow('the refund is not succeeded');
+    }
+    expect(email.sent).toHaveLength(0);
+  });
+
+  it('fiscal.reconcile also finds a paid card order that never got a sale document, and a stuck return', async () => {
+    const logs: string[] = [];
+    const handlers = createJobHandlers({
+      db: app.db,
+      directory: null,
+      providers: {},
+      log: (line) => logs.push(line),
+    });
+    // (a) paid by card three hours ago, the default fiscal_status (not_required), no document at all
+    const never = await placeOrder('wayforpay');
+    await app.db.execute(
+      sql`UPDATE orders SET payment_status = 'paid', paid_at = now() - interval '3 hours' WHERE id = ${never.orderId}`,
+    );
+    await expect(handlers[JOB_NAMES.reconcileFiscal]()).rejects.toThrow('no fiscal receipt');
+    expect(JSON.parse(logs[0] ?? '{}')).toMatchObject({ missing: 1, orders: [never.orderId] });
+    // a succeeded sale document clears it
+    await app.db.execute(
+      sql`INSERT INTO fiscal_documents (order_id, kind, state, provider, amount, fiscal_number)
+          SELECT id, 'sale', 'succeeded', 'checkbox', total, 'FN1' FROM orders WHERE id = ${never.orderId}`,
+    );
+    await handlers[JOB_NAMES.reconcileFiscal]();
+    expect(JSON.parse(logs[1] ?? '{}')).toMatchObject({ missing: 0 });
+    // (b) an open return document older than the grace period
+    const sale = (
+      await app.db.execute<{ id: string }>(
+        sql`SELECT id FROM fiscal_documents WHERE order_id = ${never.orderId}`,
+      )
+    ).rows[0]?.id;
+    const operationId = (
+      await app.db.execute<{ id: string }>(
+        sql`INSERT INTO refund_operations (order_id, amount, state) VALUES (${never.orderId}, 1000, 'succeeded') RETURNING id`,
+      )
+    ).rows[0]?.id;
+    await app.db.execute(
+      sql`INSERT INTO fiscal_documents (order_id, kind, parent_document_id, refund_operation_id, state, provider, amount, created_at)
+          VALUES (${never.orderId}, 'return', ${sale}, ${operationId}, 'pending', 'checkbox', 1000, now() - interval '3 hours')`,
+    );
+    await expect(handlers[JOB_NAMES.reconcileFiscal]()).rejects.toThrow('no fiscal receipt');
+    expect(JSON.parse(logs[2] ?? '{}')).toMatchObject({ missing: 1 });
+  });
+
+  it('payments.reconcile-open warns about attempts it cannot ask (no adapter) and alerts after a day', async () => {
+    const placed = await placeOrder('wayforpay');
+    await app.db.execute(
+      sql`INSERT INTO payment_attempts (order_id, attempt_number, provider, amount, state, created_at)
+          SELECT id, 1, 'wayforpay', total, 'in_flight', now() - interval '26 hours' FROM orders WHERE id = ${placed.orderId}`,
+    );
+    const logs: string[] = [];
+    const handlers = createJobHandlers({
+      db: app.db,
+      directory: null,
+      providers: {},
+      log: (line) => logs.push(line),
+    });
+    await handlers[JOB_NAMES.reconcileOpen]();
+    await handlers[JOB_NAMES.reconcileOpen]();
+    expect(JSON.parse(logs[0] ?? '{}')).toMatchObject({ level: 'warn', unaskable: 1, alerts: 1 });
+    // The alert is raised once, however often the job runs.
+    expect(JSON.parse(logs[1] ?? '{}')).toMatchObject({ unaskable: 1, alerts: 0 });
+    const alerts = await app.db.execute<{ n: number }>(
+      sql`SELECT count(*)::int AS n FROM outbox WHERE topic = 'alert.attempt-unresolved'`,
+    );
+    expect(alerts.rows[0]?.n).toBe(1);
+  });
+});
+
 describe('fiscal.issue-receipt through the router', () => {
   it('issues the receipt with the provider; without a provider it fails visibly and the document stays pending', async () => {
     const placed = await placeOrder('cod');

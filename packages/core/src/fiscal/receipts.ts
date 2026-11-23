@@ -17,23 +17,31 @@ import { z } from 'zod';
 
 import { fiscalDocuments, orderItems, orders, outbox } from '@store/db/schema';
 import type { Tx } from '@store/db/types';
+import { allocate, money, multiply, subtract, sum, ZERO, type Money } from '@store/shared/money';
 
-/** A receipt line in kopiykas and whole units (plain numbers: the snapshot is stored as JSON). */
+/** A receipt line: a price in kopiykas (`Money`) and whole units. */
 export interface ReceiptLine {
   code: string;
   name: string;
-  unitPrice: number;
+  unitPrice: Money;
   quantity: number;
 }
 
-/** What is stored in `fiscal_documents.items_snapshot`: read back through this, never trusted as is. */
+/**
+ * What is stored in `fiscal_documents.items_snapshot`: read back through this, never trusted as
+ * is. The JSON holds plain integers; they become `Money` here, at the boundary.
+ */
 export const receiptSnapshotSchema = z.object({
   paymentForm: z.enum(['card', 'cash_on_delivery']),
   items: z.array(
     z.object({
       code: z.string(),
       name: z.string(),
-      unitPrice: z.number().int().positive(),
+      unitPrice: z
+        .number()
+        .int()
+        .positive()
+        .transform((value) => money(value)),
       quantity: z.number().int().positive(),
     }),
   ),
@@ -47,50 +55,75 @@ type ItemRow = Pick<
   'nameSnapshot' | 'colorName' | 'sizeLabel' | 'skuSnapshot' | 'quantity' | 'lineTotal'
 >;
 
+/** A line total split into `quantity` equal units, or one unit named with the quantity. */
+function toLine(item: ItemRow, name: string, total: Money): ReceiptLine {
+  const units = allocate(
+    total,
+    Array.from({ length: item.quantity }, () => total),
+  );
+  const first = units[0];
+  if (first !== undefined && units.every((unit) => unit === first)) {
+    return { code: item.skuSnapshot, name, unitPrice: first, quantity: item.quantity };
+  }
+  return {
+    code: item.skuSnapshot,
+    name: `${name} x ${String(item.quantity)}`,
+    unitPrice: total,
+    quantity: 1,
+  };
+}
+
 /**
  * Receipt lines from the order's items, delivery and adjustment. The receipt total must equal what
- * the buyer paid, so the DISCOUNT is spread into unit prices (the line total after discount): a
- * line whose total divides by its quantity keeps the quantity; one that does not becomes a single
- * unit named with its quantity, so no kopiyka is invented or lost.
+ * the buyer paid (`orders.total`), so:
+ *  - the DISCOUNT is spread into unit prices (the line total after discount): a line whose total
+ *    divides by its quantity keeps the quantity; one that does not becomes a single unit named
+ *    with its quantity, so no kopiyka is invented or lost;
+ *  - a POSITIVE adjustment is a line of its own;
+ *  - a NEGATIVE adjustment (a compensation) is spread over the goods lines in proportion to their
+ *    totals (`allocate`), because a receipt line cannot carry a negative price.
+ * Returns an empty list when no valid receipt can be built (the compensation swallows the goods).
  */
 export function buildReceiptLines(order: OrderRow, items: readonly ItemRow[]): ReceiptLine[] {
-  const lines: ReceiptLine[] = items.map((item) => {
+  let totals = items.map((item) => money(item.lineTotal));
+  if (order.adjustmentTotal < 0) {
+    const reduction = money(-order.adjustmentTotal);
+    if (totals.length === 0 || reduction >= sum(totals)) return [];
+    const shares = allocate(reduction, totals);
+    totals = totals.map((total, index) => subtract(total, shares[index] ?? ZERO));
+  }
+  const lines: ReceiptLine[] = [];
+  items.forEach((item, index) => {
+    const total = totals[index] ?? ZERO;
+    if (total <= 0 || item.quantity <= 0) return;
     const name = [item.nameSnapshot, item.colorName, item.sizeLabel]
       .filter((part) => part !== '')
       .join(', ');
-    if (item.quantity > 0 && item.lineTotal % item.quantity === 0) {
-      return {
-        code: item.skuSnapshot,
-        name,
-        unitPrice: item.lineTotal / item.quantity,
-        quantity: item.quantity,
-      };
-    }
-    return {
-      code: item.skuSnapshot,
-      name: `${name} x ${String(item.quantity)}`,
-      unitPrice: item.lineTotal,
-      quantity: 1,
-    };
+    lines.push(toLine(item, name, total));
   });
   if (order.shippingTotal > 0) {
-    lines.push({ code: 'DELIVERY', name: 'Delivery', unitPrice: order.shippingTotal, quantity: 1 });
+    lines.push({
+      code: 'DELIVERY',
+      name: 'Delivery',
+      unitPrice: money(order.shippingTotal),
+      quantity: 1,
+    });
   }
   if (order.adjustmentTotal > 0) {
     lines.push({
       code: 'ADJUSTMENT',
       name: 'Adjustment',
-      unitPrice: order.adjustmentTotal,
+      unitPrice: money(order.adjustmentTotal),
       quantity: 1,
     });
   }
   return lines;
 }
 
-export const lineTotalOf = (lines: readonly ReceiptLine[]): number =>
-  lines.reduce((total, line) => total + line.unitPrice * line.quantity, 0);
+export const lineTotalOf = (lines: readonly ReceiptLine[]): Money =>
+  sum(lines.map((line) => multiply(line.unitPrice, line.quantity)));
 
-export type EnqueueResult = 'queued' | 'exists' | 'not_required';
+export type EnqueueResult = 'queued' | 'exists' | 'not_required' | 'failed';
 
 async function queue(tx: Tx, documentId: string): Promise<void> {
   await tx
@@ -102,6 +135,42 @@ async function queue(tx: Tx, documentId: string): Promise<void> {
       dedupKey: `fiscal:${documentId}`,
     })
     .onConflictDoNothing();
+}
+
+/**
+ * The lines do not add up to what the buyer paid: the document is written `failed` with the
+ * reason, the order says so and ONE alert is queued. It must never throw: this runs inside the
+ * payment's transaction, and a fiscal problem must not undo a payment (ADR-16).
+ */
+async function recordUnbuildable(
+  tx: Tx,
+  order: typeof orders.$inferSelect,
+  reason: string,
+): Promise<EnqueueResult> {
+  const [document] = await tx
+    .insert(fiscalDocuments)
+    .values({
+      orderId: order.id,
+      kind: 'sale',
+      provider: 'checkbox',
+      amount: order.total,
+      state: 'failed',
+      lastError: reason,
+    })
+    .returning({ id: fiscalDocuments.id });
+  await tx
+    .update(orders)
+    .set({ fiscalStatus: 'failed', fiscalError: reason })
+    .where(eq(orders.id, order.id));
+  await tx
+    .insert(outbox)
+    .values({
+      topic: 'alert.fiscal-failed',
+      payload: { orderId: order.id, documentId: document?.id ?? null },
+      dedupKey: `fiscal-failed:order:${order.id}`,
+    })
+    .onConflictDoNothing();
+  return 'failed';
 }
 
 /**
@@ -130,6 +199,9 @@ export async function enqueueSaleReceipt(
     .where(eq(orderItems.orderId, order.id))
     .orderBy(asc(orderItems.id));
   const lines = buildReceiptLines(order, items);
+  if (lines.length === 0 || lineTotalOf(lines) !== money(order.total)) {
+    return await recordUnbuildable(tx, order, 'the receipt lines do not add up to the order total');
+  }
   const snapshot: ReceiptSnapshot = { paymentForm: input.paymentForm, items: lines };
   const [document] = await tx
     .insert(fiscalDocuments)
@@ -154,7 +226,7 @@ export async function enqueueSaleReceipt(
  */
 export async function enqueueReturnReceipt(
   tx: Tx,
-  input: { orderId: string; refundOperationId: string; amount: number },
+  input: { orderId: string; refundOperationId: string; amount: Money },
 ): Promise<EnqueueResult> {
   const [sale] = await tx
     .select()
@@ -170,9 +242,10 @@ export async function enqueueReturnReceipt(
   const parsed = receiptSnapshotSchema.safeParse(sale.itemsSnapshot);
   const paymentForm = parsed.success ? parsed.data.paymentForm : 'card';
   const items: ReceiptLine[] =
-    parsed.success && input.amount === sale.amount
+    parsed.success && input.amount === money(sale.amount)
       ? parsed.data.items
       : [{ code: 'REFUND', name: 'Refund', unitPrice: input.amount, quantity: 1 }];
+  const snapshot: ReceiptSnapshot = { paymentForm, items };
   const [document] = await tx
     .insert(fiscalDocuments)
     .values({
@@ -182,7 +255,7 @@ export async function enqueueReturnReceipt(
       refundOperationId: input.refundOperationId,
       provider: 'checkbox',
       amount: input.amount,
-      itemsSnapshot: { paymentForm, items } satisfies ReceiptSnapshot,
+      itemsSnapshot: snapshot,
     })
     .returning({ id: fiscalDocuments.id });
   if (document === undefined) throw new Error('fiscal document insert returned no row');
