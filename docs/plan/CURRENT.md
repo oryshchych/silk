@@ -5,8 +5,9 @@
 
 ## Current phase
 
-**Phase 3, "payments": 12 of 16 acceptance criteria verified by execution** (2026-11-23), four
-left UNCHECKED because they need real sandboxes or clients. Evidence per criterion, with test
+**Phase 3, "payments": 13 of 16 acceptance criteria verified by execution** (2026-11-23), three
+left UNCHECKED (and the Checkbox-sandbox half of the receipts criterion) because they need real
+sandboxes or clients. Evidence per criterion, with test
 names: `docs/plan/phase-03-payments.md`. Phase 4 starts in a NEW session. Standing rules
 (`AGENTS.md` section 0): technical text in English; one phase per session.
 
@@ -38,7 +39,8 @@ Infra: staging `https://staging.damazla.com` (basic auth), Hetzner CAX11, Dokplo
 - Sandbox payment end to end on staging, both providers: no credentials (Q13, Q32)
 - Emails in dark mode in Gmail (iOS, web) and Outlook: needs the clients (Q33); contrast and colour
   scheme tests pass
-- Receipts against the Checkbox sandbox: no account (Q3, Q32)
+- Receipts against the Checkbox sandbox (the second half of the receipts criterion; the first half, against
+  the fake, is checked): no account (Q3, Q32)
 - Return receipt carries the primary's fiscal number: the document points at the sale and waits for
   it, but the adapter does not send the number and the real return shape is unconfirmed (Q32)
 
