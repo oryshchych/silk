@@ -36,6 +36,8 @@ export const placeOrderSchema = z.object({
   address: text(z.string().trim().max(300)).optional(),
   payment: z.enum(['cod', 'bank_transfer', 'mono', 'wayforpay']),
   promoCode: text(z.string().trim().max(64)).optional(),
+  /** The buyer accepted the terms and the privacy policy: refused when absent or false. */
+  terms: z.literal(true),
 });
 
 export const quoteSchema = z.object({

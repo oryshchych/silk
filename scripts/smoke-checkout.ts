@@ -142,6 +142,7 @@ export async function runCheckoutSmoke({
     warehouseRef: 'seed-wh-kyiv-1',
     payment: 'cod',
     promoCode: '',
+    terms: true,
     ...over,
   });
 
@@ -568,4 +569,38 @@ export async function runCheckoutSmoke({
     'a NUL byte in a form field is a validation answer, not a server error',
     nul.status === 200 && resultOf(nul.body)['code'] === 'INVALID_FIELDS',
   );
+
+  // The terms must be accepted: refused with its own message, and nothing is created.
+  const termsJar: Jar = new Map();
+  const termsClient = newClient();
+  await call(
+    'addToCartAction',
+    { variantId: nextPlenty(), quantity: 1 },
+    termsJar,
+    termsClient,
+    slug,
+  );
+  await call(
+    'quoteAction',
+    { locale: 'uk', delivery: 'pickup', promoCode: '' },
+    termsJar,
+    termsClient,
+  );
+  for (const terms of [false, undefined]) {
+    const refused = await call(
+      'placeOrderAction',
+      buyer(phoneOf('008'), {
+        delivery: 'pickup',
+        settlementRef: undefined,
+        warehouseRef: undefined,
+        terms,
+      }),
+      termsJar,
+      termsClient,
+    );
+    check(
+      `placing without accepting the terms (${String(terms)}) is refused`,
+      refused.redirect === null && resultOf(refused.body)['code'] === 'CHECKOUT_TERMS_REQUIRED',
+    );
+  }
 }

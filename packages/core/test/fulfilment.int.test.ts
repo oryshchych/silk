@@ -63,6 +63,7 @@ async function placeMany(variantIds: string[], promoCode: string | null = null):
         promoCode,
         locale: 'uk',
         allowUnquoted: true,
+        termsAccepted: true,
       }),
   );
   return placed.orderId;
@@ -381,6 +382,7 @@ describe('criterion 13: cancelling an order while a new one is being created', (
               promoCode: 'SHARED',
               locale: 'uk',
               allowUnquoted: true,
+              termsAccepted: true,
             }),
         );
       })();
@@ -459,6 +461,7 @@ describe('review round: proven overlap, guards and rollback', () => {
             promoCode: 'SHARED',
             locale: 'uk',
             allowUnquoted: true,
+            termsAccepted: true,
           }),
       )
       .catch((e: unknown) => e);
@@ -634,6 +637,7 @@ describe('review round 2: transitions, ship drift, ship against a checkout', () 
             promoCode: null,
             locale: 'uk',
             allowUnquoted: true,
+            termsAccepted: true,
           }),
       )
       .catch((e: unknown) => e);

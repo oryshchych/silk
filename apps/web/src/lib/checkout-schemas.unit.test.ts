@@ -13,6 +13,7 @@ const valid = {
   warehouseRef: 'branch',
   payment: 'cod',
   promoCode: ' SAVE ',
+  terms: true,
 } as const;
 
 describe('placeOrderSchema', () => {
@@ -43,6 +44,7 @@ describe('placeOrderSchema', () => {
         'phone',
         'promoCode',
         'settlementRef',
+        'terms',
         'warehouseRef',
       ]
         .filter((key) => key in parsed)
@@ -61,6 +63,8 @@ describe('placeOrderSchema', () => {
     ['the gift card provider', { payment: 'gift_card' }],
     ['an unknown locale', { locale: 'de' }],
     ['an over-long promo code', { promoCode: 'x'.repeat(65) }],
+    ['the terms not accepted', { terms: false }],
+    ['the terms missing', { terms: undefined }],
     ['a NUL byte in the name', { name: 'Іван\u0000' }],
     ['a NUL byte in the promo code', { promoCode: 'A\u0000B' }],
   ])('refuses %s', (_label, over) => {

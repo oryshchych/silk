@@ -219,6 +219,13 @@ export class CartMergeConflictError extends DomainError {
   }
 }
 
+/** The buyer did not accept the terms: the order is not created. */
+export class TermsNotAcceptedError extends DomainError {
+  constructor() {
+    super('CHECKOUT_TERMS_REQUIRED', 'The terms must be accepted to place an order');
+  }
+}
+
 /** Contact details the domain refuses (phone not in the canonical `+380XXXXXXXXX` form). */
 export class ContactInvalidError extends DomainError {
   constructor(field: 'phone') {

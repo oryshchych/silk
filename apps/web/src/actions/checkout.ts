@@ -117,7 +117,12 @@ export type PlaceOrderResult =
 export async function placeOrderAction(input: unknown): Promise<PlaceOrderResult> {
   const parsed = placeOrderSchema.safeParse(input);
   if (!parsed.success) {
-    return { ok: false, kind: 'error', code: 'INVALID_FIELDS' };
+    const missingTerms = parsed.error.issues.some((issue) => issue.path[0] === 'terms');
+    return {
+      ok: false,
+      kind: 'error',
+      code: missingTerms ? 'CHECKOUT_TERMS_REQUIRED' : 'INVALID_FIELDS',
+    };
   }
   const data = parsed.data;
   for (const [limiter, suffix] of [
@@ -158,6 +163,7 @@ export async function placeOrderAction(input: unknown): Promise<PlaceOrderResult
           paymentProvider: data.payment,
           promoCode: data.promoCode === undefined || data.promoCode === '' ? null : data.promoCode,
           locale: data.locale,
+          termsAccepted: data.terms,
         }),
     );
   } catch (error) {

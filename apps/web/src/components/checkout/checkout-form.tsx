@@ -16,6 +16,7 @@ type Payment = 'cod' | 'bank_transfer' | 'mono' | 'wayforpay';
 
 const DELIVERY: readonly Delivery[] = ['np_warehouse', 'np_courier', 'ukrposhta', 'pickup'];
 const GROUP = { delivery: 'delivery', payment: 'payment' } as const;
+const FIELD_NAME = { terms: 'terms' } as const;
 const FIELD = 'min-h-10 rounded-sm border border-border bg-surface px-3';
 const RADIO =
   'flex min-h-10 cursor-pointer items-center gap-2 rounded-sm border border-border px-3 has-[:checked]:border-accent has-[:focus-visible]:outline-2';
@@ -96,6 +97,7 @@ export function CheckoutForm({
           ? { address: text('address') }
           : {}),
         payment,
+        terms: form.get(FIELD_NAME.terms) === 'on',
         // Only a code the server accepted travels: a refused one would make the order impossible.
         promoCode: quote.status === 'ready' && quote.summary.promo?.accepted === true ? promo : '',
       });
@@ -229,6 +231,15 @@ export function CheckoutForm({
 
       <div className="flex flex-col gap-4">
         <OrderSummary quote={quote} />
+        <label className="flex items-start gap-2 text-sm">
+          <input
+            type="checkbox"
+            name={FIELD_NAME.terms}
+            required
+            className="mt-0.5 size-6 shrink-0 focus-visible:outline-2"
+          />
+          <span>{t('terms')}</span>
+        </label>
         <div aria-live="assertive" role="status" className="text-sm text-danger">
           <Failure failure={failure} />
         </div>

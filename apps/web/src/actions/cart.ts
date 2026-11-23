@@ -1,5 +1,7 @@
 'use server';
 
+import { refresh } from 'next/cache';
+
 import { setCartItem } from '@store/core/cart';
 import { getCartView } from '@store/core/cart-view';
 import { DomainError } from '@store/core/errors';
@@ -39,6 +41,8 @@ async function change(
     }
     const { itemCount } = await getCartView(db, token, 'uk');
     await setCartCount(itemCount);
+    // The client router cache must not keep showing the old cart (ADR-caching, trap 4).
+    refresh();
     return { ok: true, itemCount };
   } catch (error) {
     if (!(error instanceof DomainError)) {

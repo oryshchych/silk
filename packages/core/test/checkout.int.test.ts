@@ -58,6 +58,7 @@ const order = (intentId: string, name: string, over: Partial<CreateOrderInput> =
     paymentProvider: 'bank_transfer',
     promoCode: null,
     locale: 'uk',
+    termsAccepted: true,
     ...over,
   }) satisfies CreateOrderInput;
 
@@ -1014,5 +1015,27 @@ describe('add to cart', () => {
       }),
     );
     expect((await getCartView(admin.db, tok('par-add'), 'uk')).lines[0]?.quantity).toBe(6);
+  });
+});
+
+describe('terms acceptance', () => {
+  it('an order without the terms is refused before anything is reserved; the acceptance is audited', async () => {
+    const intent = await cart('terms1');
+    await quote('terms1', intent);
+    await expect(place(order(intent, 'terms1', { termsAccepted: false }))).rejects.toMatchObject({
+      code: 'CHECKOUT_TERMS_REQUIRED',
+    });
+    const [none] = (
+      await admin.db.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM orders`)
+    ).rows;
+    expect(none?.n).toBe(0);
+    const placed = await place(order(intent, 'terms1'));
+    const [audit] = (
+      await admin.db.execute<{ accepted: boolean }>(
+        sql`SELECT (diff ->> 'termsAccepted')::boolean AS accepted FROM audit_log
+             WHERE entity = 'order' AND entity_id = ${placed.orderId}`,
+      )
+    ).rows;
+    expect(audit?.accepted).toBe(true);
   });
 });

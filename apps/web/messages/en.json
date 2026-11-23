@@ -46,7 +46,8 @@
       "INVALID_FIELDS": "Please check the highlighted fields.",
       "RATE_LIMITED": "Too many attempts. Please wait a moment and try again.",
       "TRACK_NOT_FOUND": "We could not find an order with this number and phone.",
-      "GENERIC": "Something went wrong. Please try again."
+      "GENERIC": "Something went wrong. Please try again.",
+      "CHECKOUT_TERMS_REQUIRED": "Please accept the terms to place the order."
     }
   },
   "nav": {
@@ -222,7 +223,8 @@
     "place": "Place order",
     "placing": "Placing order…",
     "priceChanged": "The total is now {total}. Review it and press the button again to confirm.",
-    "stockLine": "{name}, {size}: not enough in stock"
+    "stockLine": "{name}, {size}: not enough in stock",
+    "terms": "I accept the terms of the offer and the privacy policy"
   },
   "order": {
     "successTitle": "Thank you, your order is placed",
