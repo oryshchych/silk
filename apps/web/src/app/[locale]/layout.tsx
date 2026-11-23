@@ -24,7 +24,7 @@ export async function generateMetadata({ params }: LayoutProps<'/[locale]'>): Pr
 
 export default async function LocaleLayout({ children, params }: LayoutProps<'/[locale]'>) {
   // The root layout always renders a valid <html lang>. An unknown segment
-  // (`/nope`) is rejected by the page with notFound(), shown by not-found.tsx.
+  // (`/nope`) is rejected by the page with notFound(); app/global-not-found.tsx renders it.
   const { locale } = resolveLocale((await params).locale);
 
   return (

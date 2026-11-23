@@ -115,17 +115,13 @@ export const envSchema = z
       }
     }
 
-    if (
-      value.APP_ENV === 'staging' &&
-      value.SITE_URL === undefined &&
-      value.NEXT_PUBLIC_SITE_URL === undefined
-    ) {
+    if (value.APP_ENV === 'staging' && value.SITE_URL === undefined) {
       ctx.addIssue({
         code: 'custom',
         path: ['SITE_URL'],
         message:
-          'SITE_URL (or the build-time NEXT_PUBLIC_SITE_URL) is required on staging: ' +
-          'canonical and hreflang must not fall back to localhost.',
+          'SITE_URL is required on staging: canonical and hreflang must not fall back ' +
+          'to localhost or to a build-time value (ADR-10).',
       });
     }
 

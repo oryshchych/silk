@@ -67,7 +67,7 @@ describe('parseEnv', () => {
     expect(parseEnv(example).APP_ENV).toBe('local');
   });
 
-  it('requires a site URL on staging, either runtime or build-time', () => {
+  it('requires the runtime SITE_URL on staging, not the build-time value', () => {
     const staging = {
       ...base,
       APP_ENV: 'staging',
@@ -76,8 +76,8 @@ describe('parseEnv', () => {
     } as const;
     expect(() => parseEnv(staging)).toThrow(/SITE_URL/);
     expect(parseEnv({ ...staging, SITE_URL: 'https://s.example' }).APP_ENV).toBe('staging');
-    expect(parseEnv({ ...staging, NEXT_PUBLIC_SITE_URL: 'https://s.example' }).APP_ENV).toBe(
-      'staging',
+    expect(() => parseEnv({ ...staging, NEXT_PUBLIC_SITE_URL: 'https://s.example' })).toThrow(
+      /SITE_URL/,
     );
   });
 

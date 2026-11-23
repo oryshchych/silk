@@ -20,6 +20,8 @@ const nextConfig: NextConfig = {
   // (@store/shared) не потраплять у standalone.
   outputFileTracingRoot: resolve(import.meta.dirname, '../..'),
   poweredByHeader: false,
+  // Server-rendered 404 for a dynamic root layout (app/global-not-found.tsx).
+  experimental: { globalNotFound: true },
   // Пакети монорепо — TypeScript-джерела, їх компілює Next.
   transpilePackages: ['@store/shared'],
   headers: () =>
