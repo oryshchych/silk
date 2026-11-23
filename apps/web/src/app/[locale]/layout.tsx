@@ -1,30 +1,31 @@
 import type { Metadata } from 'next';
-import { hasLocale, NextIntlClientProvider } from 'next-intl';
+import { NextIntlClientProvider } from 'next-intl';
 import { getTranslations } from 'next-intl/server';
-import { notFound } from 'next/navigation';
 
-import { routing } from '@/i18n/routing';
+import { resolveLocale } from '@/i18n/locale';
+import { getSiteUrl } from '@/lib/site-url';
 
 import '../globals.css';
 
-export function generateStaticParams(): { locale: string }[] {
-  return routing.locales.map((locale) => ({ locale }));
-}
+// No generateStaticParams on purpose: nothing under [locale] is prerendered at
+// build time, so getSiteUrl() reads the RUNTIME SITE_URL (ADR-10); getSiteUrl()
+// fails the build if that ever stops being true. Today the pages are rendered
+// per request; ISR (`revalidate` + tags) comes with the catalog pages.
 
 export async function generateMetadata({ params }: LayoutProps<'/[locale]'>): Promise<Metadata> {
-  const { locale } = await params;
-  if (!hasLocale(routing.locales, locale)) return {};
+  const { locale } = resolveLocale((await params).locale);
   const t = await getTranslations({ locale, namespace: 'meta' });
   return {
     title: t('title'),
     description: t('description'),
-    alternates: { languages: { uk: '/', en: '/en' } },
+    metadataBase: new URL(await getSiteUrl()),
   };
 }
 
 export default async function LocaleLayout({ children, params }: LayoutProps<'/[locale]'>) {
-  const { locale } = await params;
-  if (!hasLocale(routing.locales, locale)) notFound();
+  // The root layout always renders a valid <html lang>. An unknown segment
+  // (`/nope`) is rejected by the page with notFound(); app/global-not-found.tsx renders it.
+  const { locale } = resolveLocale((await params).locale);
 
   return (
     <html lang={locale}>

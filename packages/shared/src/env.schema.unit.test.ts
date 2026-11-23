@@ -14,6 +14,7 @@ const withoutOverride = {
 const base = { ...withoutOverride, EMAIL_TO_OVERRIDE: 'dev@example.com' } as const;
 
 const productionSecrets = {
+  SITE_URL: 'https://shop.example',
   AUTH_SECRET: 'x',
   MONO_PLATA_TOKEN: 'x',
   WAYFORPAY_MERCHANT_ACCOUNT: 'x',
@@ -64,6 +65,28 @@ describe('parseEnv', () => {
       readFileSync(new URL('../../../.env.example', import.meta.url), 'utf8'),
     );
     expect(parseEnv(example).APP_ENV).toBe('local');
+  });
+
+  it('requires the runtime SITE_URL on staging, not the build-time value', () => {
+    const staging = {
+      ...base,
+      APP_ENV: 'staging',
+      STAGING_BASIC_AUTH_USER: 'u',
+      STAGING_BASIC_AUTH_PASSWORD: 'p',
+    } as const;
+    expect(() => parseEnv(staging)).toThrow(/SITE_URL/);
+    expect(parseEnv({ ...staging, SITE_URL: 'https://s.example' }).APP_ENV).toBe('staging');
+    expect(() => parseEnv({ ...staging, NEXT_PUBLIC_SITE_URL: 'https://s.example' })).toThrow(
+      /SITE_URL/,
+    );
+  });
+
+  it('requires SITE_URL in production', () => {
+    const rest: Record<string, string> = { ...productionSecrets };
+    delete rest['SITE_URL'];
+    expect(() => parseEnv({ ...withoutOverride, APP_ENV: 'production', ...rest })).toThrow(
+      /SITE_URL/,
+    );
   });
 
   it('порожній секрет у production — відсутній, а не заданий', () => {

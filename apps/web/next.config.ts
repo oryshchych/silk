@@ -20,8 +20,26 @@ const nextConfig: NextConfig = {
   // (@store/shared) не потраплять у standalone.
   outputFileTracingRoot: resolve(import.meta.dirname, '../..'),
   poweredByHeader: false,
+  // Server-rendered 404 for a dynamic root layout (app/global-not-found.tsx).
+  experimental: { globalNotFound: true },
   // Пакети монорепо — TypeScript-джерела, їх компілює Next.
   transpilePackages: ['@store/shared'],
+  headers: () =>
+    Promise.resolve([
+      {
+        source: '/:path*',
+        headers: [
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          { key: 'X-Frame-Options', value: 'DENY' },
+          { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
+          { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+          // No includeSubDomains / preload: those are hard to undo and the
+          // staging host shares a parent domain with other services.
+          { key: 'Strict-Transport-Security', value: 'max-age=31536000' },
+        ],
+      },
+    ]),
   images: {
     // `domains` у 16 немає. Хости R2 / CDN додаються разом із packages/media.
     remotePatterns: [],

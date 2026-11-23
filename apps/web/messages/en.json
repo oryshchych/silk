@@ -8,5 +8,13 @@
     "tagline": "Lingerie and homewear. Original products only.",
     "comingSoon": "The store opens soon.",
     "switchLanguage": "Українська"
+  },
+  "errors": {
+    "notFoundTitle": "Page not found",
+    "notFoundText": "This page does not exist or has been moved.",
+    "backHome": "Back to home",
+    "errorTitle": "Something went wrong",
+    "errorText": "The page could not be loaded. Please try again.",
+    "retry": "Try again"
   }
 }

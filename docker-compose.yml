@@ -60,6 +60,10 @@ services:
       R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
       R2_BUCKET_MEDIA: ${R2_BUCKET_MEDIA:-}
       SENTRY_DSN: ${SENTRY_DSN:-}
+      # Runtime public origin. Defaults to the project's NEXT_PUBLIC_SITE_URL (the
+      # build argument above is NOT visible to the running container), so the
+      # Dokploy project needs no new variable.
+      SITE_URL: ${SITE_URL:-${NEXT_PUBLIC_SITE_URL:-}}
       STAGING_BASIC_AUTH_USER: ${STAGING_BASIC_AUTH_USER:-}
       STAGING_BASIC_AUTH_PASSWORD: ${STAGING_BASIC_AUTH_PASSWORD:-}
       STAGING_BASIC_AUTH_EXCLUDE: ${STAGING_BASIC_AUTH_EXCLUDE:-}

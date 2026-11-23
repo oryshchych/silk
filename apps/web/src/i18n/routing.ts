@@ -13,6 +13,9 @@ export const routing = defineRouting({
   localePrefix: 'as-needed',
   localeDetection: false,
   localeCookie: false,
+  // hreflang comes from the metadata API only (buildAlternates); next-intl's own
+  // `Link` header would disagree with it (RR6).
+  alternateLinks: false,
 });
 
 export type Locale = (typeof routing.locales)[number];
