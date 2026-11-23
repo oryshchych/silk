@@ -114,3 +114,5 @@ integer: арифметика без коштів на decimal-обгортки 
 Наслідок для COD: чек пробивається в потоці відвантаження (створення ТТН /
 передача на пошту), а не оплати. Для нього ADR-16 означає те саме — чек не
 блокує відвантаження, а падіння ПРРО дає `fiscal_status = 'failed'` і алерт.
+
+**Implementation (phase 3).** The payment (webhook or reconciliation) writes a `pending` `fiscal_documents` row and an outbox message `fiscal.issue-receipt` in the SAME transaction; COD does the same in `shipOrder`; a succeeded refund writes a `return` document whose `parent_document_id` is the sale and which waits (retryable) until the sale receipt is issued. The job (`issueFiscalReceipt`) uses the document's `local_reference` as the receipt id at the provider, looks an `unknown` or `in_flight` document up before sending, and after 12 attempts marks the document and the order `failed` and queues ONE `alert.fiscal-failed`. A transfer to the IBAN never gets a document (`not_required`). Discounts are spread into unit prices (a line whose total does not divide by its quantity becomes one unit named with the quantity), delivery is its own line.
