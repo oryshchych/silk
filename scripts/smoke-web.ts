@@ -68,7 +68,12 @@ const server = spawn(process.execPath, [join(copy, 'apps/web/server.js')], {
     WAYFORPAY_MERCHANT_DOMAIN: 'smoke.example',
     PAYMENT_PAGE_HOSTS: 'secure.example,pay.example',
   },
-  stdio: 'ignore',
+  // stderr is kept: the smoke checks that a chunked flood does not make Next log its 10 MB warning.
+  stdio: ['ignore', 'ignore', 'pipe'],
+});
+let serverLog = '';
+server.stderr.on('data', (chunk: Buffer) => {
+  serverLog = (serverLog + chunk.toString('utf8')).slice(-200_000);
 });
 
 /** Files under the build's runtime stores: rendered pages (server/) and data cache (cache/). */
@@ -398,6 +403,8 @@ try {
   await runCheckoutSmoke({ base, buildRoot: copy, check, storedFiles });
   await runPaymentSmoke({
     base,
+    serverPid: server.pid ?? 0,
+    serverLog: () => serverLog,
     buildRoot: copy,
     databaseUrl,
     staticDir: join(root, 'apps/web/.next/static'),

@@ -8,6 +8,7 @@
  * ATTEMPT on the same order, method and size and rate guards on the routes, no secret in the
  * client bundle. Never talks to a real provider.
  */
+import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -20,6 +21,9 @@ import { absorb, actionIds, cookieHeader, plentyVariants, type Jar } from './smo
 interface Context {
   base: string;
   buildRoot: string;
+  /** The web server process and what it has written to stderr so far. */
+  serverPid: number;
+  serverLog: () => string;
   /** The client bundle of the build (the standalone copy does not hold it). */
   staticDir: string;
   databaseUrl: string;
@@ -66,7 +70,7 @@ export async function runPaymentSmoke(ctx: Context): Promise<void> {
     check('payment smoke: found well-stocked variants', plenty.length > 0);
     // A database kept across runs may have been drained by earlier ones: top the variants up.
     await query(
-      `UPDATE product_variants SET stock_quantity = GREATEST(stock_quantity, 20) WHERE id = ANY($1::uuid[])`,
+      `UPDATE product_variants SET stock_quantity = GREATEST(stock_quantity, 500) WHERE id = ANY($1::uuid[])`,
       [plenty],
     );
     let drawn = 0;
@@ -431,6 +435,69 @@ export async function runPaymentSmoke(ctx: Context): Promise<void> {
       (await scalar(`SELECT count(*)::int AS n FROM webhook_quarantine`)) - quarantineBeforeFloods;
     // 1600+ refused bodies were sent; the shared bucket stores at most ~300 a minute.
     check('the floods stored a bounded number of refused bodies', storedByFloods < 1_000);
+
+    // ── A foreign payment URL is refused end to end ────────────────────────
+    wfp.onCreate(() => ({
+      status: 200,
+      json: { reasonCode: 1100, invoiceUrl: 'https://evil.example/pay' },
+    }));
+    const evil = await placeCardOrder('wayforpay');
+    wfp.reset();
+    check(
+      'a payment URL on a foreign host is never redirected to or stored',
+      evil.redirect === '/order/success' &&
+        (await scalar(
+          `SELECT count(*)::int AS n FROM payment_attempts WHERE order_id = $1 AND redirect_url IS NOT NULL`,
+          [evil.orderId],
+        )) === 0,
+    );
+
+    // ── A chunked body flood stays small (proxyClientMaxBodySize) ──────────
+    const rssKb = (): number => {
+      const out = spawnSync('ps', ['-o', 'rss=', '-p', String(ctx.serverPid)], {
+        encoding: 'utf8',
+      });
+      return Number.parseInt(out.stdout.trim(), 10);
+    };
+    // Without the 64 KB limit the same flood grew the server by about 380 MB; with it, about 120 MB.
+    const rssBefore = rssKb();
+    const chunk = new Uint8Array(1024 * 1024).fill(120);
+    const stream = (): ReadableStream<Uint8Array> => {
+      let sent = 0;
+      return new ReadableStream({
+        pull(controller) {
+          if (sent >= 20) controller.close();
+          else {
+            controller.enqueue(chunk);
+            sent += 1;
+          }
+        },
+      });
+    };
+    const flooders = Array.from({ length: 12 }, async (_, index) => {
+      try {
+        const response = await fetch(base + '/api/webhooks/mono', {
+          method: 'POST',
+          headers: { 'X-Forwarded-For': `198.19.0.${String(index + 1)}` },
+          body: stream(),
+          // Node's fetch needs this to send a stream.
+          duplex: 'half',
+        });
+        return response.status;
+      } catch {
+        return 0;
+      }
+    });
+    await Promise.all(flooders);
+    const growthMb = (rssKb() - rssBefore) / 1024;
+    check(
+      `12 chunked 20 MB streams grow the server by less than 200 MB (grew ${String(Math.round(growthMb))} MB)`,
+      growthMb < 200,
+    );
+    check(
+      'and Next did not log its 10 MB buffering warning (the 64 KB limit is in force)',
+      !/10\s?MB/i.test(ctx.serverLog()),
+    );
 
     // ── Secrets ────────────────────────────────────────────────────────────
     const leaks: string[] = [];
