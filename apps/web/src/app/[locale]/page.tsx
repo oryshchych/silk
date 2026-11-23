@@ -5,8 +5,10 @@ import { notFound } from 'next/navigation';
 
 import { buildAlternates } from '@store/shared/seo';
 
+import { ShowcaseSection } from '@/components/showcase-section';
 import { SiteShell } from '@/components/site-shell';
 import { resolveLocale } from '@/i18n/locale';
+import { loadShowcase } from '@/lib/catalog';
 import { loadCategoryTree } from '@/lib/navigation';
 import { pageMetadata } from '@/lib/metadata';
 import { href, paths } from '@/lib/paths';
@@ -34,7 +36,11 @@ export default async function HomePage({ params }: PageProps<'/[locale]'>) {
   const { locale, known } = resolveLocale((await params).locale);
   if (!known) notFound();
   const t = await getTranslations('home');
-  const tree = await loadCategoryTree(locale, { degrade: true });
+  const [tree, newest, bestsellers] = await Promise.all([
+    loadCategoryTree(locale, { degrade: true }),
+    loadShowcase('new', locale),
+    loadShowcase('bestseller', locale),
+  ]);
   const first = tree[0];
   const usp = [
     ['usp1Title', 'usp1Text'],
@@ -74,6 +80,14 @@ export default async function HomePage({ params }: PageProps<'/[locale]'>) {
           ))}
         </ul>
       </section>
+
+      <ShowcaseSection id="home-new" title={t('newTitle')} items={newest} locale={locale} />
+      <ShowcaseSection
+        id="home-bestsellers"
+        title={t('bestsellersTitle')}
+        items={bestsellers}
+        locale={locale}
+      />
 
       <section aria-labelledby="home-usp" className="py-6">
         <h2 id="home-usp" className="mb-4 font-display text-2xl">

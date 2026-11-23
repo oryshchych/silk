@@ -126,6 +126,7 @@ export async function seedCatalogFixture(tx: Tx): Promise<CatalogFixture> {
       daysAgo?: number | null;
       active?: boolean;
       kind?: 'physical' | 'gift_card';
+      badge?: 'bestseller';
       variants: readonly (readonly [string, string, number])[];
     },
   ): Promise<void> {
@@ -146,6 +147,7 @@ export async function seedCatalogFixture(tx: Tx): Promise<CatalogFixture> {
         costPrice: SECRET_COST,
         weightGrams: v.kind === 'gift_card' ? 0 : 200,
         isActive: v.active ?? true,
+        badge: v.badge ?? 'none',
         publishedAt:
           v.daysAgo === null ? null : sql`now() - make_interval(days => ${v.daysAgo ?? 1})`,
       })
@@ -187,6 +189,7 @@ export async function seedCatalogFixture(tx: Tx): Promise<CatalogFixture> {
     brand: 'Aurelia',
     nameUk: 'Бюстгальтер пуш-ап «Лаванда»',
     nameEn: 'Push-up bra "Lavender"',
+    badge: 'bestseller',
     price: 99_900,
     daysAgo: 2,
     variants: [

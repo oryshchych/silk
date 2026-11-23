@@ -102,6 +102,19 @@ try {
   check('/ is 200 with <html lang="uk">', uk.status === 200 && uk.html.includes('<html lang="uk"'));
   check('/ canonical uses the runtime SITE_URL', uk.html.includes(`rel="canonical" href="${SITE}`));
 
+  const home = await get('/');
+  check(
+    'home shows the new arrivals and bestsellers sections with product links',
+    home.html.includes('id="home-new"') &&
+      home.html.includes('id="home-bestsellers"') &&
+      (home.html.match(/href="\/product\//g) ?? []).length >= 2,
+  );
+  const icon = await fetch(`${base}/icon.svg`);
+  check(
+    'the favicon is served',
+    icon.status === 200 && (icon.headers.get('content-type') ?? '').includes('svg'),
+  );
+
   const en = await get('/en');
   check(
     '/en is 200 with <html lang="en">',

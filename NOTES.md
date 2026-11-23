@@ -299,3 +299,9 @@ Left as notes:
 - **Media URLs are allowlisted** (`https://` or a site-relative path) in core before they reach pages, Open Graph or JSON-LD (`safeMediaUrl`); images are rendered unoptimised for now (no `remotePatterns` to enforce anything), so this allowlist is the control. Gallery images are the full-size originals without `srcset` until the media phase; missing dimensions fall back to 800x1000 to reserve space.
 - **The browser gets no prices:** variant prices are formatted on the server; the client variants carry no `price` field.
 - **A takedown or price change is not instant:** `is_active = false` keeps the cached page (up to an hour) and there is no purge path yet (`revalidateTag` is only defined, not called). The trusted invalidation endpoint must exist before any admin mutation ships (owner item Q23). Checkout re-reads price and stock from the database (phase 2), so a stale page can never charge a stale price.
+
+## Phase 1: home showcases and favicon (2026-11-23)
+
+- **Bestsellers are the products marked `bestseller` (badge) by the shop;** there is no sales ranking yet (orders exist only from phase 2). Both lists show the newest published first, eight items, and a section with no products is not rendered.
+- **The home page tolerates a failing showcase** (it is rendered per request and never cached): the section is skipped and one JSON line with the error name and code goes to stderr (`scope: showcase`), next to the `navigation` line. Included in the alert recommendation of Q21.
+- **Favicon** is a neutral placeholder monogram (`app/icon.svg`), a branding item for Q1.

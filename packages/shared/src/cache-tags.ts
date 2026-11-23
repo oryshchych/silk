@@ -8,3 +8,6 @@ export const CATEGORIES_TAG = 'categories';
 
 export const productTag = (id: string): string => `product:${id}`;
 export const categoryTag = (id: string): string => `category:${id}`;
+
+/** The home page showcases (newest, bestsellers): any product change refreshes them. */
+export const SHOWCASE_TAG = 'showcase';
