@@ -1,4 +1,3 @@
-import { env } from '@store/shared/env';
 import { resolveSiteUrl } from '@store/shared/seo';
 
 /**
@@ -7,7 +6,11 @@ import { resolveSiteUrl } from '@store/shared/seo';
  * be baked into canonical and hreflang URLs: the catalog routes have no
  * `generateStaticParams`, so they render on the first request and are cached
  * by ISR afterwards.
+ *
+ * The environment module is imported lazily: it validates the whole
+ * environment on import, and `next build` (CI, Docker) has none.
  */
-export function getSiteUrl(): string {
+export async function getSiteUrl(): Promise<string> {
+  const { env } = await import('@store/shared/env');
   return resolveSiteUrl(env);
 }

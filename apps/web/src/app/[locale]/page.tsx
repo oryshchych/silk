@@ -11,7 +11,7 @@ import { buildAlternates } from '@store/shared/seo';
 export async function generateMetadata({ params }: PageProps<'/[locale]'>): Promise<Metadata> {
   const { locale } = await params;
   if (!hasLocale(routing.locales, locale)) return {};
-  return { alternates: buildAlternates({ siteUrl: getSiteUrl(), locale, path: '/' }) };
+  return { alternates: buildAlternates({ siteUrl: await getSiteUrl(), locale, path: '/' }) };
 }
 
 export default async function HomePage({ params }: PageProps<'/[locale]'>) {

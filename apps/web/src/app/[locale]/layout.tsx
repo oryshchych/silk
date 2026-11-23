@@ -19,7 +19,7 @@ export async function generateMetadata({ params }: LayoutProps<'/[locale]'>): Pr
   return {
     title: t('title'),
     description: t('description'),
-    metadataBase: new URL(getSiteUrl()),
+    metadataBase: new URL(await getSiteUrl()),
   };
 }
 
