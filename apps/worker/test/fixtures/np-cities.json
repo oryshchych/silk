@@ -1,0 +1,27 @@
+{
+  "success": true,
+  "data": [
+    {
+      "Ref": "np-city-kyiv",
+      "Description": "Київ",
+      "AreaDescription": "Київська",
+      "SettlementTypeDescription": "місто"
+    },
+    {
+      "Ref": "np-city-lviv",
+      "Description": "Львів",
+      "AreaDescription": "Львівська",
+      "SettlementTypeDescription": "місто"
+    },
+    {
+      "Ref": "np-city-bucha",
+      "Description": "Буча",
+      "AreaDescription": "Київська",
+      "SettlementTypeDescription": "місто"
+    },
+    { "Description": "Без референсу" }
+  ],
+  "errors": [],
+  "warnings": [],
+  "info": { "totalCount": 3 }
+}

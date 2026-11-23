@@ -1,0 +1,70 @@
+{
+  "success": true,
+  "data": [
+    {
+      "Ref": "np-wh-kyiv-1",
+      "CityRef": "np-city-kyiv",
+      "Number": "1",
+      "Description": "Відділення №1: вул. Хрещатик, 1",
+      "CategoryOfWarehouse": "Branch",
+      "TotalMaxWeightAllowed": "30",
+      "Latitude": "50.45",
+      "Longitude": "30.52",
+      "WarehouseStatus": "Working"
+    },
+    {
+      "Ref": "np-wh-kyiv-2",
+      "CityRef": "np-city-kyiv",
+      "Number": "2",
+      "Description": "Відділення №2: вул. Лісова, 5",
+      "CategoryOfWarehouse": "Branch",
+      "TotalMaxWeightAllowed": "0",
+      "Latitude": "0",
+      "Longitude": "0",
+      "WarehouseStatus": "Working"
+    },
+    {
+      "Ref": "np-wh-kyiv-pm",
+      "CityRef": "np-city-kyiv",
+      "Number": "9001",
+      "Description": "Поштомат №9001",
+      "CategoryOfWarehouse": "Postomat",
+      "WarehouseStatus": "Working"
+    },
+    {
+      "Ref": "np-wh-kyiv-cargo",
+      "CityRef": "np-city-kyiv",
+      "Number": "3",
+      "Description": "Вантажне відділення №3",
+      "CategoryOfWarehouse": "Cargo",
+      "WarehouseStatus": "Working"
+    },
+    {
+      "Ref": "np-wh-lviv-1",
+      "CityRef": "np-city-lviv",
+      "Number": "1",
+      "Description": "Відділення №1: пл. Ринок, 1",
+      "CategoryOfWarehouse": "Branch",
+      "WarehouseStatus": "Working"
+    },
+    {
+      "Ref": "np-wh-lviv-closed",
+      "CityRef": "np-city-lviv",
+      "Number": "2",
+      "Description": "Відділення №2 (зачинено)",
+      "CategoryOfWarehouse": "Branch",
+      "WarehouseStatus": "Closed"
+    },
+    {
+      "Ref": "np-wh-bucha-1",
+      "CityRef": "np-city-bucha",
+      "Number": "1",
+      "Description": "Відділення №1: Буча",
+      "CategoryOfWarehouse": "Branch",
+      "WarehouseStatus": "Working"
+    }
+  ],
+  "errors": [],
+  "warnings": [],
+  "info": { "totalCount": 7 }
+}

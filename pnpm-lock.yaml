@@ -206,9 +206,15 @@ importers:
 
   apps/worker:
     dependencies:
+      '@store/core':
+        specifier: workspace:*
+        version: link:../../packages/core
       '@store/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@store/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       drizzle-orm:
         specifier: 0.45.2
         version: 0.45.2(@opentelemetry/api@1.10.0)(@types/pg@8.23.1)(pg@8.23.1)
@@ -218,6 +224,9 @@ importers:
       pg-boss:
         specifier: 12.39.0
         version: 12.39.0(@opentelemetry/api@1.10.0)
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
     devDependencies:
       '@types/node':
         specifier: ^24.13.3
