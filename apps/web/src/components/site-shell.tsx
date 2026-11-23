@@ -2,10 +2,9 @@ import { getTranslations } from 'next-intl/server';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
-import { buildCategoryTree } from '@store/core/catalog';
 import type { SiteLocale } from '@store/shared/seo';
 
-import { getCachedCategories } from '@/lib/catalog';
+import { loadCategoryTree } from '@/lib/navigation';
 import { href, paths } from '@/lib/paths';
 
 const OTHER = { uk: 'en', en: 'uk' } as const;
@@ -32,7 +31,7 @@ export async function SiteShell({
   const t = await getTranslations('nav');
   const brand = await getTranslations('meta');
   const tf = await getTranslations('footer');
-  const tree = buildCategoryTree(await getCachedCategories(locale));
+  const tree = await loadCategoryTree(locale);
   const other = OTHER[locale];
   const focus = 'rounded-sm hover:underline';
 

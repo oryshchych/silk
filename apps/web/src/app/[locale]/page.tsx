@@ -3,12 +3,11 @@ import { getTranslations } from 'next-intl/server';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
-import { buildCategoryTree } from '@store/core/catalog';
 import { buildAlternates } from '@store/shared/seo';
 
 import { SiteShell } from '@/components/site-shell';
 import { resolveLocale } from '@/i18n/locale';
-import { getCachedCategories } from '@/lib/catalog';
+import { loadCategoryTree } from '@/lib/navigation';
 import { pageMetadata } from '@/lib/metadata';
 import { href, paths } from '@/lib/paths';
 import { getSiteUrl } from '@/lib/site-url';
@@ -43,7 +42,7 @@ export default async function HomePage({ params }: PageProps<'/[locale]'>) {
   const { locale, known } = resolveLocale((await params).locale);
   if (!known) notFound();
   const t = await getTranslations('home');
-  const tree = buildCategoryTree(await getCachedCategories(locale));
+  const tree = await loadCategoryTree(locale);
   const first = tree[0];
   const usp = [
     ['usp1Title', 'usp1Text'],
