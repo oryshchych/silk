@@ -119,6 +119,7 @@ async function paidAttempt(externalId: string, provider: 'mono' | 'wayforpay'): 
 
 const wayforpayStandIn: PaymentProvider = {
   code: 'wayforpay',
+  statusLookupKey: 'localReference',
   createPayment: async (a) => await mono.createPayment(a),
   getPaymentStatus: async (id) => await mono.getPaymentStatus(id),
   verifyWebhook: async (b, h) => await mono.verifyWebhook(b, h),

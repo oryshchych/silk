@@ -64,6 +64,7 @@ function assertPositiveMoney(amount: number): void {
 
 export class MonoProvider implements PaymentProvider {
   readonly code = 'mono';
+  readonly statusLookupKey = 'externalId';
 
   private readonly config: MonoConfig;
   private readonly http: typeof fetch;

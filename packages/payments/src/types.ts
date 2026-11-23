@@ -82,6 +82,13 @@ export type RefundResult =
 export interface PaymentProvider {
   readonly code: 'mono' | 'wayforpay';
 
+  /**
+   * What `getPaymentStatus` is keyed by. Mono looks an invoice up by its own `invoiceId`
+   * (unknown if the create answer was lost); WayForPay looks a payment up by OUR reference,
+   * so even a lost create answer can be reconciled.
+   */
+  readonly statusLookupKey: 'externalId' | 'localReference';
+
   createPayment(attempt: PaymentAttemptRef): Promise<CreatePaymentResult>;
 
   /** Active reconciliation (ADR-4): a webhook may never arrive. */
@@ -105,8 +112,11 @@ export interface PaymentProvider {
 
   refund(request: RefundRequest): Promise<RefundResult>;
 
-  /** Called ALWAYS, including for duplicates (WayForPay retries for hours otherwise). */
-  buildWebhookResponse(result: WebhookResult | { duplicate: true }): Response;
+  /**
+   * Called ALWAYS, including for duplicates (WayForPay retries for hours otherwise). A duplicate
+   * still carries the verified message: the signed answer names its order reference.
+   */
+  buildWebhookResponse(result: WebhookResult | { duplicate: true; of: WebhookResult }): Response;
 }
 
 /**

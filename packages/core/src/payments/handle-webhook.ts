@@ -103,7 +103,7 @@ export async function handlePaymentWebhook(
   // A duplicate still gets the provider's own answer, or it retries for hours.
   const response =
     outcome.kind === 'duplicate'
-      ? deps.provider.buildWebhookResponse({ duplicate: true })
+      ? deps.provider.buildWebhookResponse({ duplicate: true, of: verified })
       : deps.provider.buildWebhookResponse(verified);
   return { response, outcome };
 }

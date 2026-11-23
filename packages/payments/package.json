@@ -6,7 +6,12 @@
   "exports": {
     "./types": "./src/types.ts",
     "./mono": "./src/mono/mono-provider.ts",
-    "./test/fake-mono": "./test/fake-mono.ts"
+    "./test/fake-mono": "./test/fake-mono.ts",
+    "./wayforpay": "./src/wayforpay/wayforpay-provider.ts",
+    "./test/fake-wayforpay": "./test/fake-wayforpay.ts",
+    "./fiscal": "./src/fiscal/types.ts",
+    "./checkbox": "./src/fiscal/checkbox.ts",
+    "./test/fake-checkbox": "./test/fake-checkbox.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"
