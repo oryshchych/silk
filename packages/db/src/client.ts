@@ -25,10 +25,27 @@ export interface DbHandle {
 export interface CreateDbOptions {
   /** Максимум з'єднань у пулі. */
   max?: number;
+  /** Per-statement timeout in milliseconds (default 30 s): a hung query must not hold a connection forever. */
+  statementTimeoutMs?: number;
 }
 
 export function createDb(connectionString: string, options: CreateDbOptions = {}): DbHandle {
-  const pool = new pg.Pool({ connectionString, max: options.max ?? 10 });
+  const pool = new pg.Pool({
+    connectionString,
+    max: options.max ?? 10,
+    // Without these a dead database hangs every request instead of failing fast.
+    connectionTimeoutMillis: 5_000,
+    idleTimeoutMillis: 30_000,
+    statement_timeout: options.statementTimeoutMs ?? 30_000,
+  });
+  // The server can terminate an idle connection (restart, failover, admin
+  // action: 57P01). The pool emits `error` for it, and without a listener Node
+  // treats that as an uncaught exception and the whole process dies. One log
+  // line, no query text; the pool drops the client and opens a new one.
+  pool.on('error', (error: Error & { code?: string }) => {
+    const reason = `${error.name}${error.code === undefined ? '' : ` ${error.code}`}`;
+    process.stderr.write(`${JSON.stringify({ level: 'error', scope: 'db-pool', reason })}\n`);
+  });
   const db = drizzle({ client: pool, schema });
   return { db, close: () => pool.end() };
 }
