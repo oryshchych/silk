@@ -15,6 +15,8 @@ interface Context {
   /** Directory that holds apps/web/.next (the throwaway copy of the standalone build). */
   buildRoot: string;
   check: (name: string, ok: boolean) => void;
+  /** Files under the build's page and data caches. */
+  storedFiles: () => number;
 }
 
 type Jar = Map<string, string>;
@@ -41,7 +43,12 @@ function absorb(jar: Jar, response: Response): void {
 const cookieHeader = (jar: Jar): string =>
   [...jar].map(([name, value]) => `${name}=${value}`).join('; ');
 
-export async function runCheckoutSmoke({ base, buildRoot, check }: Context): Promise<void> {
+export async function runCheckoutSmoke({
+  base,
+  buildRoot,
+  check,
+  storedFiles,
+}: Context): Promise<void> {
   const ids = actionIds(buildRoot);
   let clientCounter = 0;
   const newClient = (): string => `198.51.100.${String(++clientCounter)}`;
@@ -86,20 +93,31 @@ export async function runCheckoutSmoke({ base, buildRoot, check }: Context): Pro
     return await response.text();
   }
 
-  // Variants from a product page: one with plenty of stock, one with only a few units.
+  // Variants from the first product pages: one with plenty of stock, one with few or none.
+  // A re-used local database may have run low on one product, so look across several.
   const home = await (await fetch(base + '/')).text();
-  const slug = /href="(\/product\/[^"]+)"/.exec(home)?.[1] ?? '';
-  const productHtml = await (await fetch(base + slug)).text();
-  const variants = [
-    ...productHtml.matchAll(
-      new RegExp(
-        `\\\\"id\\\\":\\\\"(${UUID})\\\\",\\\\"sizeLabel\\\\":[^}]*?\\\\"available\\\\":true,\\\\"lastUnits\\\\":(true|false)`,
-        'g',
-      ),
-    ),
-  ].map((match) => ({ id: match[1] ?? '', last: match[2] === 'true' }));
-  const plenty = variants.find((variant) => !variant.last)?.id ?? '';
-  const scarce = variants.find((variant) => variant.last)?.id ?? '';
+  const slugs = [
+    ...new Set([...home.matchAll(/href="(\/product\/[^"]+)"/g)].map((m) => m[1] ?? '')),
+  ];
+  const variants: { id: string; plenty: boolean }[] = [];
+  const variantPattern = new RegExp(
+    `\\\\"id\\\\":\\\\"(${UUID})\\\\",\\\\"sizeLabel\\\\":[^}]*?\\\\"available\\\\":(true|false),\\\\"lastUnits\\\\":(true|false)`,
+    'g',
+  );
+  for (const path of slugs.slice(0, 8)) {
+    const html = await (await fetch(base + path)).text();
+    for (const match of html.matchAll(variantPattern)) {
+      variants.push({ id: match[1] ?? '', plenty: match[2] === 'true' && match[3] === 'false' });
+    }
+  }
+  const slug = slugs[0] ?? '';
+  // Product pages are ISR and cache on first read; everything after this point is dynamic.
+  const storedBefore = storedFiles();
+  const plentyList = variants.filter((variant) => variant.plenty).map((variant) => variant.id);
+  const plenty = plentyList[0] ?? '';
+  // Spread the series over several variants so a re-used database does not run one dry.
+  const spread = (i: number): string => plentyList[i % Math.max(plentyList.length, 1)] ?? '';
+  const scarce = variants.find((variant) => !variant.plenty)?.id ?? '';
   check(
     'checkout smoke: found a well-stocked and a scarce variant',
     plenty !== '' && scarce !== '',
@@ -305,7 +323,13 @@ export async function runCheckoutSmoke({ base, buildRoot, check }: Context): Pro
   for (let i = 0; i < 20; i += 1) {
     const buyerJar: Jar = new Map();
     const buyerClient = newClient();
-    await call('addToCartAction', { variantId: plenty, quantity: 1 }, buyerJar, buyerClient, slug);
+    await call(
+      'addToCartAction',
+      { variantId: spread(i), quantity: 1 },
+      buyerJar,
+      buyerClient,
+      slug,
+    );
     await call(
       'quoteAction',
       { locale: 'uk', delivery: 'pickup', promoCode: '' },
@@ -331,7 +355,13 @@ export async function runCheckoutSmoke({ base, buildRoot, check }: Context): Pro
   const repeats: string[] = [];
   for (let i = 0; i < 8; i += 1) {
     const repeatJar: Jar = new Map();
-    await call('addToCartAction', { variantId: plenty, quantity: 1 }, repeatJar, sameClient, slug);
+    await call(
+      'addToCartAction',
+      { variantId: spread(i), quantity: 1 },
+      repeatJar,
+      sameClient,
+      slug,
+    );
     await call(
       'quoteAction',
       { locale: 'uk', delivery: 'pickup', promoCode: '' },
@@ -375,4 +405,6 @@ export async function runCheckoutSmoke({ base, buildRoot, check }: Context): Pro
   // 8. Checkout page for an empty and a filled cart is noindex.
   const checkoutHtml = await page('/checkout', jar);
   check('the checkout page is noindex', checkoutHtml.includes('name="robots" content="noindex'));
+
+  check('the shopper path adds nothing to the page or data caches', storedFiles() === storedBefore);
 }

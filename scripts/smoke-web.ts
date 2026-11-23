@@ -376,7 +376,7 @@ try {
         page.html.includes('Сторінку не знайдено'),
     );
   }
-  await runCheckoutSmoke({ base, buildRoot: copy, check });
+  await runCheckoutSmoke({ base, buildRoot: copy, check, storedFiles });
 } finally {
   server.kill();
   rmSync(copy, { recursive: true, force: true });
