@@ -28,6 +28,12 @@ export interface WebhookDeps {
    * still answered 400 but no longer stored (the cleanup job frees room by age).
    */
   quarantineCap?: number;
+  /**
+   * Asked before an UNVERIFIED body is stored. The web edge answers false once too many refused
+   * messages arrived in a window, so a flood of garbage costs the database nothing; a genuine
+   * message never depends on it (it is verified, applied and answered whatever this says).
+   */
+  mayStoreUnverified?: () => boolean;
 }
 
 const DEFAULT_QUARANTINE_CAP = 5000;
@@ -69,7 +75,9 @@ async function quarantine(
   req: WebhookRequest,
   reason: string,
   stored: string,
+  untrusted: boolean,
 ): Promise<void> {
+  if (untrusted && deps.mayStoreUnverified?.() === false) return;
   const headers: Record<string, string> = {};
   for (const name of KEPT_HEADERS) {
     const value = req.headers.get(name);
@@ -108,6 +116,7 @@ export async function handlePaymentWebhook(
       req,
       'signature or structure did not verify',
       describeUnverified(req.rawBody),
+      true,
     );
     // Non-2xx on purpose: a genuine message refused during a key outage is redelivered.
     return { response: new Response(null, { status: 400 }), outcome: { kind: 'unverified' } };
@@ -125,6 +134,7 @@ export async function handlePaymentWebhook(
       req,
       'authentic message names no known payment attempt',
       JSON.stringify(verified.rawPayload),
+      false,
     );
   }
   // A duplicate still gets the provider's own answer, or it retries for hours.

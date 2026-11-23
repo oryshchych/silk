@@ -45,7 +45,12 @@ let attempt: { attemptId: string; localReference: string; amount: number };
 
 beforeAll(async () => {
   fake = await startFakeMono();
-  mono = new MonoProvider({ baseUrl: fake.baseUrl, token: 't', timeoutMs: 500 });
+  mono = new MonoProvider({
+    pageHosts: ['pay.example'],
+    baseUrl: fake.baseUrl,
+    token: 't',
+    timeoutMs: 500,
+  });
 });
 
 afterAll(async () => {
@@ -806,6 +811,7 @@ describe('WayForPay through the same pipeline (database, quarantine, signed acce
   beforeAll(async () => {
     wfpFake = await startFakeWayForPay();
     wfp = new WayForPayProvider({
+      pageHosts: ['secure.example'],
       baseUrl: wfpFake.baseUrl,
       merchantAccount: FAKE_ACCOUNT,
       secretKey: FAKE_SECRET,

@@ -26,9 +26,12 @@ export const limiters = {
   /** Starting a card payment from the order page: a person retries a few times. */
   pay: createRateLimiter({ limit: 10, windowMs: 10 * 60_000 }),
   /** Provider callbacks per client: a provider sends a handful, retries included. */
-  webhook: createRateLimiter({ limit: 120, windowMs: 60_000 }),
-  /** A cap over ALL clients of the webhook routes: the safety net for the database. */
-  webhookGlobal: createRateLimiter({ limit: 1_200, windowMs: 60_000, maxKeys: 1 }),
+  webhook: createRateLimiter({ limit: 600, windowMs: 60_000 }),
+  /**
+   * Refused (unverified) bodies STORED per minute over all clients: past it a refused message is
+   * still answered 400 but not written to the quarantine. Genuine callbacks never touch it.
+   */
+  webhookRefused: createRateLimiter({ limit: 300, windowMs: 60_000, maxKeys: 1 }),
 } as const satisfies Record<string, RateLimiter>;
 
 /** The client key of the current request, from the trusted proxy hop. */

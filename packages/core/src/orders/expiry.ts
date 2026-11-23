@@ -41,7 +41,7 @@ const describeFailure = (orderId: string, error: unknown): ExpiryFailure => ({
 
 /**
  * Candidates: pending, unpaid, past their TTL, and WITHOUT an attempt whose result is unknown
- * (`in_flight` or `unknown` wait for the reconciliation job, Q27). Paged by id after the last
+ * (`pending`, `in_flight` or `unknown` wait for the reconciliation job, Q27). Paged by id after the last
  * one seen, so a run of failing orders cannot hide newer expired ones behind them.
  */
 export async function releaseExpiredOrders(
@@ -62,7 +62,7 @@ export async function releaseExpiredOrders(
                             WHERE r.order_id = o.id AND r.released_at IS NULL
                               AND r.expires_at IS NOT NULL AND r.expires_at <= now())
                AND NOT EXISTS (SELECT 1 FROM payment_attempts a
-                                WHERE a.order_id = o.id AND a.state IN ('in_flight', 'unknown'))
+                                WHERE a.order_id = o.id AND a.state IN ('pending', 'in_flight', 'unknown'))
              ORDER BY o.id
              LIMIT ${batchSize}`,
       );

@@ -1,7 +1,6 @@
 'use server';
 
 import { redirect } from 'next/navigation';
-import { z } from 'zod';
 
 import { DomainError } from '@store/core/errors';
 import { resolveOrderForPayment } from '@store/core/order-lookup';
@@ -11,12 +10,8 @@ import { readOrderAccess } from '@/lib/cart-cookie';
 import { getDb } from '@/lib/db';
 import { errorReason } from '@/lib/error-reason';
 import { beginCardPayment } from '@/lib/pay';
+import { payInputSchema } from '@/lib/pay-schema';
 import { checkLimit, limiters } from '@/lib/request-limits';
-
-const schema = z.object({
-  locale: z.enum(['uk', 'en']),
-  provider: z.enum(['mono', 'wayforpay']),
-});
 
 const CARD_PROVIDERS: ReadonlySet<string | null> = new Set(['mono', 'wayforpay']);
 const PAYABLE: ReadonlySet<string> = new Set(['pending', 'failed', 'expired']);
@@ -29,7 +24,7 @@ const PAYABLE: ReadonlySet<string> = new Set(['pending', 'failed', 'expired']);
  * the reconciliation job.
  */
 export async function payOrderAction(input: unknown): Promise<ActionFailure> {
-  const parsed = schema.safeParse(input);
+  const parsed = payInputSchema.safeParse(input);
   if (!parsed.success) return { ok: false, code: 'INVALID_FIELDS' };
   const verdict = await checkLimit(limiters.pay);
   if (!verdict.allowed) {

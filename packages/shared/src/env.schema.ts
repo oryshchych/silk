@@ -61,6 +61,9 @@ export const envSchema = z
     MONO_API_BASE_URL: z.url({ protocol: /^https?$/ }).optional(),
     WAYFORPAY_API_BASE_URL: z.url({ protocol: /^https?$/ }).optional(),
     WAYFORPAY_MERCHANT_DOMAIN: z.string().min(1).max(253).optional(),
+    // Extra hosts accepted as payment pages, comma separated (a sandbox or a local fake). The
+    // providers' own domains are always accepted; nothing else is ever redirected to.
+    PAYMENT_PAGE_HOSTS: z.string().max(500).optional(),
 
     NOVA_POSHTA_API_KEY: secret,
     UKRPOSHTA_API_KEY: secret,

@@ -66,6 +66,7 @@ const server = spawn(process.execPath, [join(copy, 'apps/web/server.js')], {
     WAYFORPAY_SECRET_KEY: FAKE_SECRET,
     WAYFORPAY_API_BASE_URL: fakeWfp.baseUrl,
     WAYFORPAY_MERCHANT_DOMAIN: 'smoke.example',
+    PAYMENT_PAGE_HOSTS: 'secure.example,pay.example',
   },
   stdio: 'ignore',
 });

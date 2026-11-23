@@ -13,7 +13,7 @@
  */
 import { and, desc, eq, sql } from 'drizzle-orm';
 
-import { orders, paymentAttempts } from '@store/db/schema';
+import { paymentAttempts } from '@store/db/schema';
 import type { Tx } from '@store/db/types';
 import { PaymentProviderError } from '@store/payments/types';
 
@@ -50,10 +50,14 @@ export type StartPaymentResult =
   /** The provider's answer was lost: wait for the webhook or the reconciliation job. */
   | { kind: 'unresolved'; attemptId: string };
 
-async function openInvoiceUrl(deps: StartPaymentDeps, orderId: string): Promise<string | null> {
+/** The live invoice of an order and the attempt that owns it, read in one statement. */
+async function openInvoice(
+  deps: StartPaymentDeps,
+  orderId: string,
+): Promise<{ attemptId: string; url: string } | null> {
   return await deps.runInTransaction(async (tx) => {
     const [row] = await tx
-      .select({ url: paymentAttempts.redirectUrl })
+      .select({ id: paymentAttempts.id, url: paymentAttempts.redirectUrl })
       .from(paymentAttempts)
       .where(
         and(
@@ -64,15 +68,20 @@ async function openInvoiceUrl(deps: StartPaymentDeps, orderId: string): Promise<
       )
       .orderBy(desc(paymentAttempts.attemptNumber))
       .limit(1);
-    return row?.url ?? null;
+    return row?.url === null || row === undefined ? null : { attemptId: row.id, url: row.url };
   });
 }
+
+const lost = { ok: false, externalIdUnknown: true } as const;
 
 export async function startPayment(
   deps: StartPaymentDeps,
   input: { orderId: string; provider: ProviderCode },
 ): Promise<StartPaymentResult> {
-  const adapter = deps.providers[input.provider];
+  // An own property only: a provider name that came from outside must not reach the prototype chain.
+  const adapter = Object.hasOwn(deps.providers, input.provider)
+    ? deps.providers[input.provider]
+    : undefined;
   if (adapter === undefined) throw new PaymentMethodUnavailableError();
 
   let attempt: NewAttempt;
@@ -84,16 +93,10 @@ export async function startPayment(
     });
   } catch (error) {
     if (error instanceof AttemptStillOpenError) {
-      const url = await openInvoiceUrl(deps, input.orderId);
-      if (url !== null) {
-        const [open] = await deps.runInTransaction(
-          async (tx) =>
-            await tx
-              .select({ id: orders.currentPaymentAttemptId })
-              .from(orders)
-              .where(eq(orders.id, input.orderId)),
-        );
-        return { kind: 'redirect', url, attemptId: open?.id ?? '', reused: true };
+      const open = await openInvoice(deps, input.orderId);
+      // The stored URL is replayed to a buyer: it must still be the provider's own page.
+      if (open !== null && adapter.isPaymentPage(open.url)) {
+        return { kind: 'redirect', url: open.url, attemptId: open.attemptId, reused: true };
       }
     }
     throw error;
@@ -122,13 +125,16 @@ export async function startPayment(
       throw new PaymentProviderRefusedError();
     }
     // Anything else says nothing about whether the invoice exists: treat it as a lost answer.
-    result = { ok: false, externalIdUnknown: true } as const;
+    result = lost;
   }
 
+  // The adapter already refuses a foreign URL; the check is repeated here because this is where a
+  // buyer is sent, and a URL that is not the provider's page is a lost answer, never a redirect.
+  const usable = result.ok && !adapter.isPaymentPage(result.redirectUrl) ? lost : result;
   await deps.runInTransaction(async (tx) => {
-    await recordAttemptResult(tx, { attemptId: attempt.attemptId, result });
+    await recordAttemptResult(tx, { attemptId: attempt.attemptId, result: usable });
   });
-  return result.ok
-    ? { kind: 'redirect', url: result.redirectUrl, attemptId: attempt.attemptId, reused: false }
+  return usable.ok
+    ? { kind: 'redirect', url: usable.redirectUrl, attemptId: attempt.attemptId, reused: false }
     : { kind: 'unresolved', attemptId: attempt.attemptId };
 }

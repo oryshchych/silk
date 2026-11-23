@@ -40,6 +40,17 @@ export async function createPaymentAttempt(
   const [order] = await tx.select().from(orders).where(eq(orders.id, input.orderId));
   if (order === undefined) throw new OrderNotPayableError('no such order');
   if (order.status === 'cancelled') throw new OrderNotPayableError('the order is cancelled');
+  // Under the lock: a card attempt belongs to a card order that is still waiting for its money.
+  // A COD order the manager confirmed, or a transfer order, would otherwise be switched to a card
+  // provider and then never ship and never expire.
+  if (order.status !== 'pending') throw new OrderNotPayableError(`the order is ${order.status}`);
+  if (
+    order.paymentProvider === 'cod' ||
+    order.paymentProvider === 'bank_transfer' ||
+    order.paymentProvider === 'gift_card'
+  ) {
+    throw new OrderNotPayableError('the order is not a card order');
+  }
   if (order.paymentStatus === 'paid' || order.capturedTotal > 0) {
     throw new OrderNotPayableError('the order is already paid');
   }

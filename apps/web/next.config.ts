@@ -21,7 +21,11 @@ const nextConfig: NextConfig = {
   outputFileTracingRoot: resolve(import.meta.dirname, '../..'),
   poweredByHeader: false,
   // Server-rendered 404 for a dynamic root layout (app/global-not-found.tsx).
-  experimental: { globalNotFound: true },
+  // `proxy.ts` runs on every path, so Next buffers each request body in memory for it (default
+  // 10 MB, kept per request until the route reads it): 30 parallel 60 MB streams took the process
+  // from 119 MB to 513 MB. No route here takes more than a few KB (the largest is a checkout
+  // form), so the buffer is small. This is the FIRST defence; the webhook cap is the second.
+  experimental: { globalNotFound: true, proxyClientMaxBodySize: '64kb' },
   // Пакети монорепо — TypeScript-джерела, їх компілює Next.
   transpilePackages: ['@store/shared', '@store/db', '@store/core', '@store/payments'],
   headers: () =>

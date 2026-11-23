@@ -23,6 +23,7 @@ import {
   stockReservations,
 } from '@store/db/schema';
 import type { Tx } from '@store/db/types';
+import type { Money } from '@store/shared/money';
 
 import { OrderNotConfirmableError, TransferAmountMismatchError } from '../errors.ts';
 import { acquireLocks } from '../locks/acquire-locks.ts';
@@ -106,7 +107,7 @@ export async function confirmCodOrder(
 
 export async function confirmTransferReceived(
   tx: Tx,
-  input: { orderId: string; actor: string; bankReference: string; receivedAmount: number },
+  input: { orderId: string; actor: string; bankReference: string; receivedAmount: Money },
 ): Promise<ConfirmResult> {
   if (input.bankReference.trim() === '' || input.bankReference.length > 128) {
     throw new OrderNotConfirmableError('a bank reference is required');
@@ -130,30 +131,49 @@ export async function confirmTransferReceived(
     throw new OrderNotConfirmableError('this bank reference already credited another order');
   }
   if (order.paymentStatus === 'paid') return { orderId: order.id, changed: false };
-  if (order.status === 'cancelled' || order.status === 'shipped' || order.status === 'delivered') {
+  if (order.status === 'shipped' || order.status === 'delivered') {
     throw new OrderNotConfirmableError(`the order is ${order.status}`);
   }
-  if (input.receivedAmount !== order.total) throw new TransferAmountMismatchError();
+  // A CANCELLED or expired order is NOT refused: the money arrived, so it is recorded as a fact
+  // (attempt and captured_total) with a late-payment alert, exactly like a late card payment;
+  // its status is not touched and nothing ships. Refusing would lose the record of real money.
+  if (!Number.isSafeInteger(input.receivedAmount) || input.receivedAmount !== order.total) {
+    throw new TransferAmountMismatchError();
+  }
 
   const [last] = await tx
     .select({ n: sql<number>`coalesce(max(${paymentAttempts.attemptNumber}), 0)::int` })
     .from(paymentAttempts)
     .where(eq(paymentAttempts.orderId, order.id));
-  const inserted = await tx
-    .insert(paymentAttempts)
-    .values({
-      orderId: order.id,
-      attemptNumber: (last?.n ?? 0) + 1,
-      provider: 'bank_transfer',
-      externalId: input.bankReference,
-      state: 'succeeded',
-      status: 'paid',
-      amount: order.total,
-      capturedAmount: order.total,
-      completedAt: sql`now()`,
-    })
-    .returning({ id: paymentAttempts.id });
-  const attemptId = inserted[0]?.id;
+  let attemptId: string | undefined;
+  try {
+    const inserted = await tx
+      .insert(paymentAttempts)
+      .values({
+        orderId: order.id,
+        attemptNumber: (last?.n ?? 0) + 1,
+        provider: 'bank_transfer',
+        externalId: input.bankReference,
+        state: 'succeeded',
+        status: 'paid',
+        amount: order.total,
+        capturedAmount: order.total,
+        completedAt: sql`now()`,
+      })
+      .returning({ id: paymentAttempts.id });
+    attemptId = inserted[0]?.id;
+  } catch (error) {
+    // Two managers confirming one bank line on two orders at once: the unique key decides, and
+    // the loser gets the same typed refusal as a sequential repeat.
+    const code =
+      error instanceof Error && error.cause instanceof Error && 'code' in error.cause
+        ? error.cause.code
+        : null;
+    if (code === '23505') {
+      throw new OrderNotConfirmableError('this bank reference already credited another order');
+    }
+    throw error;
+  }
   if (attemptId === undefined) throw new Error('transfer attempt insert returned no row');
 
   const reserved = await liftReservationExpiry(tx, order.id);

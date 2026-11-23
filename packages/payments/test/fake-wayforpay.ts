@@ -56,9 +56,11 @@ const readBody = async (req: IncomingMessage): Promise<string> => {
 export async function startFakeWayForPay(): Promise<FakeWayForPay> {
   const requests: FakeWayForPay['requests'] = [];
   const payments: FakeWayForPay['payments'] = new Map();
+  // Like the real service (to be confirmed in the sandbox, Q32): creating an invoice does NOT
+  // register a payment. CHECK_STATUS answers "order not found" until a payment is tried, which a
+  // test does by setting `payments` itself. An invoice can be payable while status says not found.
   const defaultCreate: Parameters<FakeWayForPay['onCreate']>[0] = (body) => {
     const ref = String(body['orderReference']);
-    payments.set(ref, { amount: Number(body['amount']), status: 'Created', reasonCode: 1100 });
     return {
       status: 200,
       json: { reason: 'Ok', reasonCode: 1100, invoiceUrl: `https://secure.example/invoice/${ref}` },

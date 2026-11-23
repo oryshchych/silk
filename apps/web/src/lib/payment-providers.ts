@@ -17,11 +17,16 @@ declare global {
 export async function getPaymentProviders(): Promise<ProviderMap> {
   if (globalThis.silkPaymentProviders !== undefined) return globalThis.silkPaymentProviders;
   const env = await runtimeEnv();
+  const pageHosts = (env.PAYMENT_PAGE_HOSTS ?? '')
+    .split(',')
+    .map((host) => host.trim().toLowerCase())
+    .filter((host) => host !== '');
   const providers: ProviderMap = {};
   if (env.MONO_PLATA_TOKEN !== undefined) {
     providers.mono = new MonoProvider({
       baseUrl: env.MONO_API_BASE_URL ?? 'https://api.monobank.ua',
       token: env.MONO_PLATA_TOKEN,
+      pageHosts,
     });
   }
   if (env.WAYFORPAY_MERCHANT_ACCOUNT !== undefined && env.WAYFORPAY_SECRET_KEY !== undefined) {
@@ -33,6 +38,7 @@ export async function getPaymentProviders(): Promise<ProviderMap> {
         merchantAccount: env.WAYFORPAY_MERCHANT_ACCOUNT,
         secretKey: env.WAYFORPAY_SECRET_KEY,
         merchantDomainName: domain,
+        pageHosts,
       });
     }
   }

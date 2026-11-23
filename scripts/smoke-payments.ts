@@ -42,7 +42,11 @@ export async function runPaymentSmoke(ctx: Context): Promise<void> {
     Number((await query(text, params))[0]?.['n'] ?? -1);
 
   let clientCounter = 0;
-  const newClient = (): string => `203.0.113.${String(++clientCounter)}`;
+  // A valid address every time (198.18.0.0/15): an invalid one would share the one bucket of unknown clients.
+  const newClient = (): string => {
+    clientCounter += 1;
+    return `198.18.${String(Math.floor(clientCounter / 250))}.${String((clientCounter % 250) + 1)}`;
+  };
   const previous = (await query(`SELECT value FROM settings WHERE key = 'payment_providers'`))[0];
   await query(
     `INSERT INTO settings (key, value) VALUES ('payment_providers', $1::jsonb)
@@ -355,32 +359,78 @@ export async function runPaymentSmoke(ctx: Context): Promise<void> {
       good.status === 200 && (await paymentStatus(m1.orderId)) === 'paid',
     );
 
-    // ── Route guards ───────────────────────────────────────────────────────
-    for (const method of ['GET', 'PUT', 'DELETE', 'PATCH']) {
-      const response = await fetch(base + '/api/webhooks/mono', {
-        method,
-        headers: { 'X-Forwarded-For': newClient() },
-      });
-      check(`${method} on the webhook route is a 405`, response.status === 405);
+    // ── Route guards, on BOTH routes ───────────────────────────────────────
+    for (const route of ['/api/webhooks/mono', '/api/webhooks/wayforpay']) {
+      for (const method of ['GET', 'PUT', 'DELETE', 'PATCH', 'HEAD']) {
+        const response = await fetch(base + route, {
+          method,
+          headers: { 'X-Forwarded-For': newClient() },
+        });
+        check(`${method} ${route} is a 405`, response.status === 405);
+      }
+      check(
+        `an oversized body on ${route} is a 413 before it is read or stored`,
+        (await post(route, 'x'.repeat(20_000))).status === 413,
+      );
     }
-    check(
-      'an oversized body is a 413 before it is read or stored',
-      (await post('/api/webhooks/wayforpay', 'x'.repeat(20_000))).status === 413,
-    );
-    const flooder = newClient();
-    let limited = false;
-    for (let i = 0; i < 130 && !limited; i++) {
-      limited =
-        (await post('/api/webhooks/mono', 'junk', { 'X-Forwarded-For': flooder })).status === 429;
-    }
-    check('a client flooding the webhook route is rate limited', limited);
-    const getLimited = await fetch(base + '/api/webhooks/mono', {
-      method: 'GET',
-      headers: { 'X-Forwarded-For': flooder },
+    // The browser return page takes no callback parameters: nothing in the URL changes a status.
+    const before = await paymentStatus(w2.orderId);
+    await fetch(base + '/order/success?status=paid&transactionStatus=Approved&orderReference=x', {
+      headers: { Cookie: cookieHeader(w2.jar) },
     });
-    check('the limit counts every method, not only POST', getLimited.status === 429);
-    const heldQuarantine = await scalar(`SELECT count(*)::int AS n FROM webhook_quarantine`);
-    check('the quarantine stays far below its cap after a flood', heldQuarantine < 1_000);
+    check(
+      'GET /order/success with callback-style parameters changes nothing',
+      (await paymentStatus(w2.orderId)) === before && before !== 'paid',
+    );
+
+    const quarantineBeforeFloods = await scalar(
+      `SELECT count(*)::int AS n FROM webhook_quarantine`,
+    );
+    // A client flooding a route is limited on THAT route, for every method.
+    const flood = async (route: string, label: string): Promise<void> => {
+      const flooder = newClient();
+      let limited = false;
+      for (let batch = 0; batch < 30 && !limited; batch++) {
+        const answers = await Promise.all(
+          Array.from({ length: 25 }, () => post(route, 'junk', { 'X-Forwarded-For': flooder })),
+        );
+        limited = answers.some((answer) => answer.status === 429);
+      }
+      check(`a client flooding ${label} is rate limited`, limited);
+      const other = await fetch(base + route, {
+        method: 'GET',
+        headers: { 'X-Forwarded-For': flooder },
+      });
+      check(`the limit on ${label} counts every method, not only POST`, other.status === 429);
+    };
+    await flood('/api/webhooks/mono', 'the Mono route');
+    await flood('/api/webhooks/wayforpay', 'the WayForPay route');
+
+    // Garbage from many addresses must not make a GENUINE callback fail: the shared bucket only
+    // decides whether a refused body is stored, and never refuses a verified one.
+    for (let batch = 0; batch < 16; batch++) {
+      await Promise.all(
+        Array.from({ length: 25 }, () => post('/api/webhooks/wayforpay', 'garbage')),
+      );
+    }
+    const w3 = await placeCardOrder('wayforpay');
+    const a3 = await attemptOf(w3.orderId);
+    const afterFlood = await post(
+      '/api/webhooks/wayforpay',
+      wfp.callback({
+        orderReference: String(a3['local_reference']),
+        amount: Number(a3['amount']) / 100,
+        transactionStatus: 'Approved',
+      }),
+    );
+    check(
+      'a genuine callback is applied right after a flood of garbage from 400 addresses',
+      afterFlood.status === 200 && (await paymentStatus(w3.orderId)) === 'paid',
+    );
+    const storedByFloods =
+      (await scalar(`SELECT count(*)::int AS n FROM webhook_quarantine`)) - quarantineBeforeFloods;
+    // 1600+ refused bodies were sent; the shared bucket stores at most ~300 a minute.
+    check('the floods stored a bounded number of refused bodies', storedByFloods < 1_000);
 
     // ── Secrets ────────────────────────────────────────────────────────────
     const leaks: string[] = [];

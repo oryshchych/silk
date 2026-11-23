@@ -9,6 +9,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 
 import type { DbHandle } from '@store/db/client';
 import { orders, paymentAttempts } from '@store/db/schema';
+import { money } from '@store/shared/money';
 import { MonoProvider } from '@store/payments/mono';
 import { startFakeMono, type FakeMono } from '@store/payments/test/fake-mono';
 import { WayForPayProvider } from '@store/payments/wayforpay';
@@ -49,8 +50,14 @@ let seq = 0;
 beforeAll(async () => {
   mono = await startFakeMono();
   wfp = await startFakeWayForPay();
-  monoProvider = new MonoProvider({ baseUrl: mono.baseUrl, token: 't', timeoutMs: 400 });
+  monoProvider = new MonoProvider({
+    pageHosts: ['pay.example'],
+    baseUrl: mono.baseUrl,
+    token: 't',
+    timeoutMs: 400,
+  });
   wfpProvider = new WayForPayProvider({
+    pageHosts: ['secure.example'],
     baseUrl: wfp.baseUrl,
     merchantAccount: FAKE_ACCOUNT,
     secretKey: FAKE_SECRET,
@@ -293,13 +300,15 @@ describe('reconcileOpenAttempts: ask the provider before anything is cancelled',
     ).toBe(1);
   });
 
-  it('"no such payment" at the provider closes the attempt, so the order may be retried or expire', async () => {
+  it('an attempt that never had an invoice is closed on "no such payment" once its validity and margin passed, so the order may be retried', async () => {
     const orderId = await place('wayforpay');
     wfp.onCreate(() => ({ status: 200, hang: true }));
     await startPayment(depsFor(), { orderId, provider: 'wayforpay' });
     const [attempt] = await attemptsOf(orderId);
     await age(attempt?.id ?? '', 10);
     wfp.payments.delete(attempt?.localReference ?? '');
+    expect(await run()).toMatchObject({ closed: 0, providerErrors: 1 });
+    await age(attempt?.id ?? '', 90);
     expect(await run()).toMatchObject({ closed: 1 });
     expect((await attemptsOf(orderId))[0]).toMatchObject({ state: 'failed' });
     wfp.reset();
@@ -350,6 +359,7 @@ describe('reconcileOpenAttempts: ask the provider before anything is cancelled',
     const [attempt] = await attemptsOf(orderId);
     await age(attempt?.id ?? '', 10);
     const dead = new WayForPayProvider({
+      pageHosts: ['secure.example'],
       baseUrl: 'http://127.0.0.1:1',
       merchantAccount: FAKE_ACCOUNT,
       secretKey: FAKE_SECRET,
@@ -446,7 +456,7 @@ describe('bank transfer: a confirmed receipt of funds is the source (ADR-4 sourc
           orderId,
           actor: 'm',
           bankReference: reference,
-          receivedAmount: amount,
+          receivedAmount: money(amount),
         }),
     );
 
@@ -502,7 +512,7 @@ describe('bank transfer: a confirmed receipt of funds is the source (ADR-4 sourc
             orderId,
             actor: 'm',
             bankReference: 'BANK-RACE',
-            receivedAmount: total,
+            receivedAmount: money(total),
           }),
       );
     };

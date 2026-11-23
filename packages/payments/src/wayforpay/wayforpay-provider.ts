@@ -25,6 +25,7 @@ import {
   type WebhookResult,
 } from '../types.ts';
 import { readJsonCapped, readTextCapped } from '../http.ts';
+import { isPaymentPageUrl } from '../page-url.ts';
 import {
   amountTokens,
   fromWayForPayAmount,
@@ -51,6 +52,8 @@ export interface WayForPayConfig {
   merchantDomainName: string;
   timeoutMs?: number;
   fetch?: typeof fetch;
+  /** Extra payment page domains (a sandbox or a local fake); wayforpay.com is always accepted. */
+  pageHosts?: readonly string[];
   /** Unix seconds; a parameter so tests control the signed `time`. */
   now?: () => number;
 }
@@ -75,6 +78,10 @@ const reasonCodeOf = (body: unknown): number | null => {
 export class WayForPayProvider implements PaymentProvider {
   readonly code = 'wayforpay';
   readonly statusLookupKey = 'localReference';
+
+  isPaymentPage(url: string): boolean {
+    return isPaymentPageUrl(url, ['wayforpay.com', ...(this.config.pageHosts ?? [])]);
+  }
 
   private readonly config: WayForPayConfig;
   private readonly http: typeof fetch;
@@ -162,6 +169,7 @@ export class WayForPayProvider implements PaymentProvider {
     ) {
       return { ok: false, externalIdUnknown: true };
     }
+    if (!this.isPaymentPage(body.invoiceUrl)) return { ok: false, externalIdUnknown: true };
     return { ok: true, redirectUrl: body.invoiceUrl, externalId: attempt.localReference };
   }
 

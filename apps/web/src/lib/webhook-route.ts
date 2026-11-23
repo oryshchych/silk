@@ -12,8 +12,9 @@ const plain = (status: number, headers: Record<string, string> = {}): Response =
 
 /**
  * The public edge of a payment webhook (ADR-4, `new-webhook` skill order):
- *  1. rate limit, per client AND over all clients, for EVERY method but OPTIONS, before anything
- *     is read (the limit is on the route, not on the verb);
+ *  1. rate limit per client for EVERY method but OPTIONS, before anything is read (the limit is on
+ *     the route, not on the verb). The memory a request can cost is bounded earlier still, by
+ *     `experimental.proxyClientMaxBodySize` in next.config.ts (Next buffers the body for the proxy);
  *  2. only POST; a size cap before the body is buffered;
  *  3. the raw BYTES go to core: signature before parsing, an unverified message to
  *     `webhook_quarantine` (bounded), the provider's own answer on every verified one.
@@ -26,9 +27,11 @@ export async function handleWebhookRoute(
 ): Promise<Response> {
   if (request.method === 'OPTIONS') return plain(405, { Allow: 'POST' });
 
+  // Per client, for every method, before anything is read. There is deliberately NO bucket shared
+  // by all clients here: it would be spent by garbage and refuse genuine callbacks. The shared
+  // bucket below only decides whether a refused body is STORED.
   const perClient = await checkRequestLimit(limiters.webhook, request);
-  const global = perClient.allowed ? limiters.webhookGlobal.check('all') : perClient;
-  if (!global.allowed) return plain(429, { 'Retry-After': String(global.retryAfterSeconds) });
+  if (!perClient.allowed) return plain(429, { 'Retry-After': String(perClient.retryAfterSeconds) });
 
   if (request.method !== 'POST') return plain(405, { Allow: 'POST' });
 
@@ -43,6 +46,7 @@ export async function handleWebhookRoute(
     const handled = await handlePaymentWebhook(
       {
         provider: adapter,
+        mayStoreUnverified: () => limiters.webhookRefused.check('all').allowed,
         runInTransaction: async (fn) => await db.transaction(async (tx) => await fn(tx)),
       },
       { rawBody: body.bytes, headers: request.headers, sourceIp: await requestClient(request) },

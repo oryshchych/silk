@@ -223,7 +223,7 @@ export async function cancelOrder(
     // provider first (AGENTS.md 2.5, owner queue Q27): cancelling now could cancel a paid order.
     const open = await tx.execute<{ n: number }>(
       sql`SELECT count(*)::int AS n FROM payment_attempts
-           WHERE order_id = ${order.id} AND state IN ('in_flight', 'unknown')`,
+           WHERE order_id = ${order.id} AND state IN ('pending', 'in_flight', 'unknown')`,
     );
     if ((open.rows[0]?.n ?? 0) > 0) return { orderId: order.id, changed: false };
   }
