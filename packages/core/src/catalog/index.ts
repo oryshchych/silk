@@ -20,5 +20,6 @@ export type {
   RawSearchParams,
   SortKey,
 } from './listing-params.ts';
-export { getProductBySlug, getProductRef } from './product.ts';
+export { getProductBySlug, getProductRef, listVisibleProductSlugs } from './product.ts';
 export { MIN_QUERY_LENGTH, normalizeSearchQuery, searchProducts } from './search.ts';
+export { isProductSlug } from './slug.ts';

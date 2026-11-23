@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { Reader } from '@store/db/types';
 import type { ImageDto } from '@store/shared/dto/catalog';
 
+import { safeMediaUrl } from './media-url.ts';
 import { localized, queryRows, type SiteLocale } from './sql.ts';
 
 const imageRow = z.object({
@@ -41,8 +42,10 @@ export async function fetchMainImages(
   );
   const names = new Map(products.map((product) => [product.id, product.name]));
   for (const row of rows) {
+    const url = safeMediaUrl(row.url);
+    if (url === null) continue;
     images.set(row.product_id, {
-      url: row.url,
+      url,
       alt: row.alt ?? names.get(row.product_id) ?? '',
       width: row.width,
       height: row.height,

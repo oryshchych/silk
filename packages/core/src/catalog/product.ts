@@ -13,6 +13,8 @@ import { productDetailDto, type ProductDetailDto } from '@store/shared/dto/catal
 import { serialize } from '@store/shared/dto/serialize';
 
 import { getCategoryTrail } from './categories.ts';
+import { safeMediaUrl } from './media-url.ts';
+import { isProductSlug } from './slug.ts';
 import { availableVariant, localized, queryRows, visibleProduct, type SiteLocale } from './sql.ts';
 
 /** At or below this many unreserved units a variant is flagged `lastUnits`. */
@@ -106,6 +108,7 @@ export async function getProductRef(
   reader: Reader,
   slug: string,
 ): Promise<{ id: string; categoryId: string } | null> {
+  if (!isProductSlug(slug)) return null;
   const [row] = await queryRows(
     reader,
     z.object({ id: z.uuid(), category_id: z.uuid() }),
@@ -119,6 +122,7 @@ export async function getProductBySlug(
   slug: string,
   locale: SiteLocale,
 ): Promise<ProductDetailDto | null> {
+  if (!isProductSlug(slug)) return null;
   const [product] = await queryRows(
     reader,
     productRow,
@@ -193,17 +197,24 @@ export async function getProductBySlug(
     reviewsCount: product.reviews_count,
     metaTitle: product.meta_title,
     metaDescription: product.meta_description,
-    ogImageUrl: product.og_image_url,
+    ogImageUrl: safeMediaUrl(product.og_image_url),
     noindex: product.noindex,
     category,
     breadcrumbs: trail,
-    images: images.map((image) => ({
-      url: image.url,
-      alt: image.alt ?? product.name,
-      width: image.width,
-      height: image.height,
-      colorSlug: image.color_slug,
-    })),
+    images: images.flatMap((image) => {
+      const url = safeMediaUrl(image.url);
+      return url === null
+        ? []
+        : [
+            {
+              url,
+              alt: image.alt ?? product.name,
+              width: image.width,
+              height: image.height,
+              colorSlug: image.color_slug,
+            },
+          ];
+    }),
     colors: distinctColors(variants),
     variants: variants.map((variant) => ({
       id: variant.id,
@@ -218,4 +229,14 @@ export async function getProductBySlug(
     })),
     attributes: groupAttributes(attributes),
   });
+}
+
+/** Slugs of every product the storefront shows: the proxy answers an unknown product URL with a 404 before any page (and any cache entry) exists. */
+export async function listVisibleProductSlugs(reader: Reader): Promise<string[]> {
+  const rows = await queryRows(
+    reader,
+    z.object({ slug: z.string() }),
+    sql`SELECT p.slug FROM products p WHERE ${visibleProduct} ORDER BY p.slug LIMIT 200000`,
+  );
+  return rows.map((row) => row.slug);
 }

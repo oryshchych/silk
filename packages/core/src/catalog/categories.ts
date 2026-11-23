@@ -16,6 +16,7 @@ import {
 } from '@store/shared/dto/catalog';
 import { serialize } from '@store/shared/dto/serialize';
 
+import { safeMediaUrl } from './media-url.ts';
 import { localized, queryRows, type SiteLocale } from './sql.ts';
 
 const sizeSystem = z.enum(['bra', 'panty', 'apparel', 'onesize']);
@@ -69,7 +70,7 @@ export async function getCategories(reader: Reader, locale: SiteLocale): Promise
       slug: row.slug,
       name: row.name,
       depth: row.depth,
-      imageUrl: row.image_url,
+      imageUrl: safeMediaUrl(row.image_url),
     }),
   );
 }
@@ -136,7 +137,7 @@ export async function getCategoryPage(
     metaDescription: row.meta_description,
     noindex: row.noindex,
     sizeSystem: row.size_system,
-    imageUrl: row.image_url,
+    imageUrl: safeMediaUrl(row.image_url),
     breadcrumbs: ancestry(rows, row.id),
   });
   const flat = rows.map((r) => ({ id: r.id, parentId: r.parent_id }));
