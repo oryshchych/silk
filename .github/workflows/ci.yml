@@ -148,6 +148,27 @@ jobs:
       - uses: ./.github/actions/setup
       - run: pnpm --filter web build
 
+  # The built web app on a real server and a seeded database: lang, runtime
+  # canonical, hreflang, facet rules, redirects, server-rendered 404s and the
+  # absence of cost or stock fields in the HTML (scripts/smoke-web.ts).
+  smoke-web:
+    runs-on: ubuntu-latest
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+      APP_ENV: local
+      EMAIL_TO_OVERRIDE: ci@example.com
+      DATABASE_URL: postgres://store_app:store_app@localhost:54322/store
+      DATABASE_MIGRATE_URL: postgres://store_migrate:store_migrate@localhost:54322/store
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - name: Start Postgres with the project image
+        run: docker compose -f docker-compose.local.yml up -d --wait --build postgres
+      - run: pnpm db:migrate
+      - run: pnpm db:seed
+      - run: pnpm --filter web build
+      - run: pnpm smoke:web --database-url="$DATABASE_URL"
+
   # Правила для AI-інструментів генеруються з ai/ (docs/AI_SETUP.md §2).
   # Розійшлися — три різні версії правил, і Cursor радить заборонене.
   ai-sync:
