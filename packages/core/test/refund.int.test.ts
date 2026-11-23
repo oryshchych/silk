@@ -81,6 +81,7 @@ beforeEach(async () => {
         promoCode: null,
         locale: 'uk',
         allowUnquoted: true,
+        termsAccepted: true,
       }),
   );
   orderId = placed.orderId;

@@ -9,6 +9,8 @@ import { cpSync, mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { runCheckoutSmoke } from './smoke-checkout.ts';
+
 const root = join(import.meta.dirname, '..');
 const port = 3917;
 const base = `http://localhost:${String(port)}`;
@@ -374,6 +376,7 @@ try {
         page.html.includes('Сторінку не знайдено'),
     );
   }
+  await runCheckoutSmoke({ base, buildRoot: copy, check, storedFiles });
 } finally {
   server.kill();
   rmSync(copy, { recursive: true, force: true });

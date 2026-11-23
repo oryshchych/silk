@@ -34,6 +34,10 @@ describe('directory query handling', () => {
     expect(escapeLike('100%_\\')).toBe('100\\%\\_\\\\');
   });
 
+  it('treats text with a NUL byte as no search at all', () => {
+    expect(normalizeCityQuery('Ки\u0000ів')).toBeNull();
+  });
+
   it('normalises whitespace and refuses too short or too long text', () => {
     expect(normalizeCityQuery('  Київ   обл ')).toBe('Київ обл');
     expect(normalizeCityQuery('к')).toBeNull();

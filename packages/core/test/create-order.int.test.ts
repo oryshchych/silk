@@ -57,6 +57,7 @@ const details = (intentId: string, name: string, over: Partial<CreateOrderInput>
     promoCode: null,
     locale: 'uk',
     allowUnquoted: true,
+    termsAccepted: true,
     ...over,
   }) satisfies CreateOrderInput;
 

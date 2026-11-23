@@ -19,6 +19,12 @@ export interface CreateOrderInput {
   promoCode: string | null;
   locale: 'uk' | 'en';
   /**
+   * The buyer accepted the terms and the privacy policy. Required: an order without it is refused,
+   * and the acceptance is recorded in the order's audit entry (the texts themselves arrive with
+   * phase 8, so no version is stored yet).
+   */
+  termsAccepted: boolean;
+  /**
    * Q12: by default an order whose total was never quoted is refused. Only code that creates
    * orders without a buyer looking at a total (tests, a future admin tool) opts out.
    */

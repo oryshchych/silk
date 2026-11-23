@@ -171,7 +171,7 @@ export async function persistOrder(
     action: 'create',
     entity: 'order',
     entityId: order.id,
-    diff: { source: 'checkout', actor: 'guest', total: pricing.total },
+    diff: { source: 'checkout', actor: 'guest', total: pricing.total, termsAccepted: true },
   });
   // Mail goes through the outbox, never straight from the request (AGENTS.md 5b).
   await tx.insert(outbox).values({

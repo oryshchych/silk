@@ -33,7 +33,16 @@ export default async function LocaleLayout({ children, params }: LayoutProps<'/[
     <html lang={locale}>
       <body className="min-h-dvh bg-surface text-text-primary antialiased">
         {/* Only the namespaces client components use: not the whole bundle on every page. */}
-        <NextIntlClientProvider messages={{ errors: messages.errors, product: messages.product }}>
+        <NextIntlClientProvider
+          messages={{
+            errors: messages.errors,
+            product: messages.product,
+            nav: messages.nav,
+            cart: messages.cart,
+            checkout: messages.checkout,
+            order: messages.order,
+          }}
+        >
           {children}
         </NextIntlClientProvider>
       </body>

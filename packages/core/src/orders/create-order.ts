@@ -29,6 +29,7 @@ import {
   PromoRejectedError,
   QuoteRequiredError,
   StaleCartError,
+  TermsNotAcceptedError,
   UnsupportedPurchaseError,
 } from '../errors.ts';
 import { acquireLocks } from '../locks/acquire-locks.ts';
@@ -86,6 +87,7 @@ async function existingOrder(tx: Tx, orderId: string) {
 export async function createOrder(tx: Tx, input: CreateOrderInput): Promise<CreateOrderResult> {
   if (input.paymentProvider === 'gift_card')
     throw new UnsupportedPurchaseError('gift_card_provider');
+  if (!input.termsAccepted) throw new TermsNotAcceptedError();
   const fingerprint = payloadFingerprint(input);
 
   // Unlocked read, only to learn which cart to lock first.

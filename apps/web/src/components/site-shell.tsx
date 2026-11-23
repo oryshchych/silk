@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 
 import type { SiteLocale } from '@store/shared/seo';
 
+import { CartLink } from '@/components/cart-link';
 import { loadCategoryTree } from '@/lib/navigation';
 import { href, paths } from '@/lib/paths';
 
@@ -88,6 +89,7 @@ export async function SiteShell({
               {t('searchSubmit')}
             </button>
           </form>
+          <CartLink href={href(locale, paths.cart)} />
           <Link
             href={href(other, path, search)}
             hrefLang={other}
