@@ -25,12 +25,17 @@ import {
   IntentExpiredError,
   IntentNotFoundError,
   IntentPayloadMismatchError,
+  PriceChangedError,
   PromoRejectedError,
+  QuoteRequiredError,
   StaleCartError,
   UnsupportedPurchaseError,
 } from '../errors.ts';
 import { acquireLocks } from '../locks/acquire-locks.ts';
 import { calculateCart } from '../pricing/calculate-cart.ts';
+import { loadShippingSettings } from '../shipping/rules.ts';
+import { assertPaymentAllowed, resolveDelivery } from './delivery.ts';
+import { priceCheckout } from './price-checkout.ts';
 import {
   cartVariantIds,
   loadCheckoutLines,
@@ -59,6 +64,8 @@ export function payloadFingerprint(input: CreateOrderInput): string {
     input.contact.phone,
     input.contact.name,
     input.delivery.method,
+    input.delivery.settlementRef ?? '',
+    input.delivery.warehouseRef ?? '',
     input.delivery.address ?? '',
     input.paymentProvider,
     input.promoCode?.toUpperCase() ?? '',
@@ -133,19 +140,23 @@ export async function createOrder(tx: Tx, input: CreateOrderInput): Promise<Crea
     throw new Error('cart lines and locked variants disagree');
   }
   const promo = await resolveOptionalPromo(tx, input.promoCode, promoId, lines);
-  const pricing = calculateCart(
-    lines.map((line) => ({
-      id: line.variantId,
-      unitPrice: line.unitPrice,
-      quantity: line.quantity,
-      eligible: promo?.eligibleVariantIds.has(line.variantId) ?? false,
-    })),
-    promo?.rule ?? null,
-  );
+  const config = await loadShippingSettings(tx);
+  const delivery = await resolveDelivery(tx, input.delivery);
+  const pricing = priceCheckout(lines, promo, delivery.method, config);
+
+  // Q12: the buyer confirms the total they were shown. A different total is refused before
+  // anything is reserved; the order itself always stores the database total.
+  if (intent.quotedTotal === null) {
+    if (input.requireQuote === true) throw new QuoteRequiredError();
+  } else if (intent.quotedTotal !== pricing.total) {
+    throw new PriceChangedError(pricing.total);
+  }
+  await assertPaymentAllowed(tx, input, pricing.total, config);
 
   await reserveStock(tx, lines);
   const persisted = await persistOrder(tx, {
     input,
+    delivery,
     intentId: intent.id,
     cartId: intent.cartId,
     fingerprint,

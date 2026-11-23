@@ -41,6 +41,12 @@ export const customerOrderItemDto = z.object({
 
 export const customerOrderDto = z.object({
   orderNumber: z.string(),
+  paymentProvider: z.string().nullable(),
+  deliveryMethod: z.string(),
+  /** Nova Poshta city, branch name and street address as the buyer chose them. */
+  deliveryCity: z.string().nullable(),
+  deliveryPoint: z.string().nullable(),
+  deliveryAddress: z.string().nullable(),
   status: z.enum(orderStatusValues),
   paymentStatus: z.enum(paymentStatusValues),
   createdAt: z.iso.datetime({ offset: true }),

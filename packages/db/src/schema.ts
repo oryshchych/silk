@@ -696,7 +696,7 @@ export const orderItems = pgTable('order_items', {
 
 export const orderStatusHistory = pgTable('order_status_history', {
   id: id(),
-  orderId: uuid('order_id').notNull().references(() => orders.id, { onDelete: 'cascade' }),
+  orderId: uuid('order_id').notNull().references(() => orders.id, { onDelete: 'restrict' }),
   fromStatus: varchar('from_status', { length: 40 }),
   toStatus: varchar('to_status', { length: 40 }).notNull(),
   field: varchar('field', { length: 20 }).notNull().default('status'), // 'status' | 'payment_status'
@@ -1409,6 +1409,13 @@ export const checkoutIntents = pgTable('checkout_intents', {
   /** Власник для гостя — токен кошика. Чужий intent використати не можна */
   ownerToken: varchar('owner_token', { length: 64 }).notNull(),
   payloadFingerprint: varchar('payload_fingerprint', { length: 64 }),
+  /**
+   * Total the buyer was shown (Q12). Set by quoteCheckout each time the page
+   * prices the cart; createOrder refuses with PriceChangedError when the
+   * freshly computed total differs. It never feeds a charge: the order total
+   * always comes from the database prices.
+   */
+  quotedTotal: integer('quoted_total'),
   orderId: uuid('order_id').references(() => orders.id, { onDelete: 'set null' }),
   completedAt: timestamp('completed_at', { withTimezone: true }),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
@@ -1417,6 +1424,7 @@ export const checkoutIntents = pgTable('checkout_intents', {
   uniqueIndex('checkout_intent_cart_uq').on(t.cartId, t.cartVersion)
     .where(sql`${t.completedAt} IS NULL`),
   index('checkout_intent_expiry_idx').on(t.expiresAt).where(sql`${t.completedAt} IS NULL`),
+  check('checkout_intent_quote_nonneg', sql`${t.quotedTotal} IS NULL OR ${t.quotedTotal} >= 0`),
 ]);
 
 /* ═══════════════════════ AUTH (ADR-19) ═══════════════════════ */

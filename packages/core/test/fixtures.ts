@@ -1,5 +1,6 @@
 import { seedMoneySkeleton, type MoneySkeletonFixture } from '@store/db/seed/money-skeleton';
 import { createDb, type DbHandle } from '@store/db/client';
+import { settings } from '@store/db/schema';
 import { createTestDatabase, type TestDatabase } from '@store/db/test/db';
 
 export interface TestWorld {
@@ -24,7 +25,14 @@ export async function createWorld(): Promise<TestWorld> {
     return handle;
   };
   const setup = connect(2);
-  const fixture = await setup.db.transaction(async (tx) => await seedMoneySkeleton(tx));
+  const fixture = await setup.db.transaction(async (tx) => {
+    // Every method is on in tests; the shipped default keeps cards off until phase 3.
+    await tx.insert(settings).values({
+      key: 'payment_providers',
+      value: { mono: true, wayforpay: true, cod: true, bank_transfer: true },
+    });
+    return await seedMoneySkeleton(tx);
+  });
   return {
     testDb,
     connect,

@@ -24,6 +24,7 @@ import type { Tx } from '@store/db/types';
 import { PromoRejectedError } from '../errors.ts';
 import type { CartPricing } from '../pricing/calculate-cart.ts';
 import type { CheckoutLine } from './checkout-lines.ts';
+import type { ResolvedDelivery } from './delivery.ts';
 import type { CreateOrderInput } from './types.ts';
 import type { ResolvedPromo } from './promo.ts';
 
@@ -74,6 +75,7 @@ export async function persistOrder(
   tx: Tx,
   args: {
     input: CreateOrderInput;
+    delivery: ResolvedDelivery;
     intentId: string;
     cartId: string;
     fingerprint: string;
@@ -82,7 +84,7 @@ export async function persistOrder(
     promo: ResolvedPromo | null;
   },
 ): Promise<PersistedOrder> {
-  const { input, intentId, cartId, fingerprint, lines, pricing, promo } = args;
+  const { input, delivery, intentId, cartId, fingerprint, lines, pricing, promo } = args;
   const accessToken = randomBytes(32).toString('base64url');
 
   const [order] = await tx
@@ -94,8 +96,14 @@ export async function persistOrder(
       customerEmail: input.contact.email,
       customerPhone: input.contact.phone,
       customerName: input.contact.name,
-      deliveryMethod: input.delivery.method,
-      deliveryAddress: input.delivery.address ?? null,
+      deliveryMethod: delivery.method,
+      deliverySettlementRef: delivery.settlementRef,
+      deliverySettlementName: delivery.settlementName,
+      deliveryWarehouseRef: delivery.warehouseRef,
+      deliveryWarehouseName: delivery.warehouseName,
+      deliveryAddress: delivery.address,
+      // The shop pays the carrier: the fee (if any) is part of the total, or waived.
+      shippingPaidBy: delivery.method === 'pickup' ? 'recipient' : 'sender',
       subtotal: pricing.subtotal,
       discountTotal: pricing.discountTotal,
       shippingTotal: pricing.shippingTotal,

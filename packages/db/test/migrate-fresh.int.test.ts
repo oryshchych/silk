@@ -325,6 +325,34 @@ describe('0005_touch_updated_at', () => {
   });
 });
 
+describe('0005/0007 touch_updated_at coverage', () => {
+  it('every table with an updated_at column has the touch trigger', async () => {
+    const { rows } = await root.query<{ table_name: string }>(
+      `SELECT c.table_name FROM information_schema.columns c
+        WHERE c.table_schema = 'public' AND c.column_name = 'updated_at'
+          AND NOT EXISTS (
+            SELECT 1 FROM pg_trigger t
+              JOIN pg_proc p ON p.oid = t.tgfoid
+             WHERE t.tgrelid = format('public.%I', c.table_name)::regclass
+               AND NOT t.tgisinternal AND p.proname = 'touch_updated_at')
+        ORDER BY 1`,
+    );
+    expect(rows.map((row) => row.table_name)).toEqual([]);
+  });
+
+  it('a plain UPDATE moves updated_at on a table 0005 had missed (settings)', async () => {
+    await app.query(
+      `INSERT INTO settings (key, value, updated_at) VALUES ('touch-probe', '{}', now() - interval '1 day')`,
+    );
+    await app.query(`UPDATE settings SET value = '{"a":1}' WHERE key = 'touch-probe'`);
+    const { fresh } = await one<{ fresh: boolean }>(
+      app,
+      `SELECT updated_at > now() - interval '1 minute' AS fresh FROM settings WHERE key = 'touch-probe'`,
+    );
+    expect(fresh).toBe(true);
+  });
+});
+
 describe('0006_cart_version_trigger', () => {
   let cartId: string;
   let variantId: string;
@@ -466,5 +494,153 @@ describe('0006_cart_version_trigger', () => {
       [intentId],
     );
     expect(stale).toBe(true);
+  });
+});
+
+/** ON DELETE RESTRICT reports 23001, not the 23503 of a missing parent. */
+const RESTRICT_VIOLATION = '23001';
+
+describe('0007_phase2_integrity', () => {
+  const ids = { orderA: '', orderB: '', attemptA: '', attemptB: '', returnA: '', giftCard: '' };
+
+  async function insertOrder(email: string): Promise<string> {
+    const { id } = await one<{ id: string }>(
+      app,
+      `INSERT INTO orders (order_number, customer_email, customer_phone, customer_name,
+                           delivery_method, subtotal, total)
+       VALUES (next_order_number(), $1, '+380000000000', 'Test', 'np_warehouse', 10000, 10000)
+       RETURNING id`,
+      [email],
+    );
+    return id;
+  }
+  const attempt = async (orderId: string): Promise<string> =>
+    (
+      await one<{ id: string }>(
+        app,
+        `INSERT INTO payment_attempts (order_id, attempt_number, provider, amount)
+         VALUES ($1, 1, 'mono', 10000) RETURNING id`,
+        [orderId],
+      )
+    ).id;
+  const violation = async (sql: string, params: unknown[]): Promise<void> => {
+    await expect(app.query(sql, params)).rejects.toMatchObject({ code: FK_VIOLATION });
+  };
+
+  beforeAll(async () => {
+    ids.orderA = await insertOrder('rr1a@example.com');
+    ids.orderB = await insertOrder('rr1b@example.com');
+    ids.attemptA = await attempt(ids.orderA);
+    ids.attemptB = await attempt(ids.orderB);
+    ids.returnA = (
+      await one<{ id: string }>(
+        app,
+        `INSERT INTO return_requests (request_number, order_id, reason, policy_version)
+         VALUES (next_return_number(), $1, 'wrong_size', 'v1') RETURNING id`,
+        [ids.orderA],
+      )
+    ).id;
+    ids.giftCard = (
+      await one<{ id: string }>(
+        app,
+        `INSERT INTO gift_cards (code_hash, last4, initial_amount, balance)
+         VALUES ('hash-rr1', '1234', 10000, 10000) RETURNING id`,
+      )
+    ).id;
+  });
+
+  it('checkout_intents.quoted_total is nullable and rejects a negative amount', async () => {
+    const { id: cart } = await one<{ id: string }>(
+      app,
+      `INSERT INTO carts (token) VALUES ('qt-cart') RETURNING id`,
+    );
+    const insert = async (version: number, quoted: number | null): Promise<void> => {
+      await app.query(
+        `INSERT INTO checkout_intents (cart_id, cart_version, owner_token, expires_at, quoted_total)
+         VALUES ($1, $2, 'qt-cart', now() + interval '1 hour', $3)`,
+        [cart, version, quoted],
+      );
+    };
+    await insert(1, null);
+    await insert(2, 0);
+    await expect(insert(3, -1)).rejects.toMatchObject({ code: '23514' });
+  });
+
+  it('a payment event cannot point to an attempt of another order', async () => {
+    await violation(
+      `INSERT INTO payment_events (order_id, payment_attempt_id, provider, message_key, raw_payload)
+       VALUES ($1, $2, 'mono', 'rr1-evt-bad', '{}')`,
+      [ids.orderA, ids.attemptB],
+    );
+    await app.query(
+      `INSERT INTO payment_events (order_id, payment_attempt_id, provider, message_key, raw_payload)
+       VALUES ($1, $2, 'mono', 'rr1-evt-ok', '{}')`,
+      [ids.orderA, ids.attemptA],
+    );
+  });
+
+  it('a refund cannot point to an attempt of another order', async () => {
+    await violation(
+      `INSERT INTO refund_operations (order_id, payment_attempt_id, amount) VALUES ($1, $2, 100)`,
+      [ids.orderA, ids.attemptB],
+    );
+    await app.query(
+      `INSERT INTO refund_operations (order_id, payment_attempt_id, amount) VALUES ($1, $2, 100)`,
+      [ids.orderA, ids.attemptA],
+    );
+  });
+
+  it('a refund must reference a real return request of the same order', async () => {
+    await violation(
+      `INSERT INTO refund_operations (order_id, return_request_id, amount) VALUES ($1, gen_random_uuid(), 100)`,
+      [ids.orderA],
+    );
+    await violation(
+      `INSERT INTO refund_operations (order_id, return_request_id, amount) VALUES ($1, $2, 100)`,
+      [ids.orderB, ids.returnA],
+    );
+    await app.query(
+      `INSERT INTO refund_operations (order_id, return_request_id, amount) VALUES ($1, $2, 100)`,
+      [ids.orderA, ids.returnA],
+    );
+  });
+
+  it('a gift card transaction cannot point to an attempt of another order', async () => {
+    await violation(
+      `INSERT INTO gift_card_transactions (gift_card_id, type, order_id, payment_attempt_id, amount, balance_after)
+       VALUES ($1, 'redeem', $2, $3, -100, 9900)`,
+      [ids.giftCard, ids.orderA, ids.attemptB],
+    );
+  });
+
+  it("orders.current_payment_attempt_id must be the order's own attempt", async () => {
+    await violation('UPDATE orders SET current_payment_attempt_id = $1 WHERE id = $2', [
+      ids.attemptB,
+      ids.orderA,
+    ]);
+    await app.query('UPDATE orders SET current_payment_attempt_id = $1 WHERE id = $2', [
+      ids.attemptA,
+      ids.orderA,
+    ]);
+  });
+
+  it("an attempt that is some order's current one cannot be deleted (RESTRICT, not SET NULL)", async () => {
+    await expect(
+      app.query('DELETE FROM payment_attempts WHERE id = $1', [ids.attemptA]),
+    ).rejects.toMatchObject({
+      code: RESTRICT_VIOLATION,
+    });
+  });
+
+  it('an order with status history cannot be deleted (RESTRICT, not CASCADE)', async () => {
+    await app.query(
+      `INSERT INTO order_status_history (order_id, to_status, source) VALUES ($1, 'pending', 'test')`,
+      [ids.orderB],
+    );
+    await expect(app.query('DELETE FROM orders WHERE id = $1', [ids.orderB])).rejects.toMatchObject(
+      {
+        code: RESTRICT_VIOLATION,
+      },
+    );
   });
 });

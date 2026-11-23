@@ -60,9 +60,21 @@ export class UnsupportedPurchaseError extends DomainError {
   }
 }
 
+/** Why a promo code was refused; the storefront maps each to a message key. */
+export type PromoRejectReason =
+  | 'unknown code'
+  | 'inactive or outside its dates'
+  | 'usage limit reached'
+  | 'requires an account'
+  | 'order total too low'
+  | 'no eligible items';
+
 export class PromoRejectedError extends DomainError {
-  constructor(reason: string) {
+  readonly reason: PromoRejectReason;
+
+  constructor(reason: PromoRejectReason) {
     super('PROMO_REJECTED', `Promo code rejected: ${reason}`);
+    this.reason = reason;
   }
 }
 
@@ -153,5 +165,47 @@ export class RefundRoutingError extends DomainError {
 export class RefundNotAllowedError extends DomainError {
   constructor(reason: string) {
     super('REFUND_NOT_ALLOWED', `Refund not allowed: ${reason}`);
+  }
+}
+
+/**
+ * The total the buyer was shown no longer matches what the database prices
+ * give (an admin edit between "see total" and "pay"), Q12. 409: show the new
+ * total and ask for confirmation again; nothing was charged or reserved.
+ */
+export class PriceChangedError extends DomainError {
+  readonly newTotal: number;
+
+  constructor(newTotal: number) {
+    super('CHECKOUT_PRICE_CHANGED', 'The total changed since it was shown; review and confirm');
+    this.newTotal = newTotal;
+  }
+}
+
+/** The checkout needs a quoted total first (the page quotes on every change). */
+export class QuoteRequiredError extends DomainError {
+  constructor() {
+    super('CHECKOUT_QUOTE_REQUIRED', 'The total must be shown before the order is placed');
+  }
+}
+
+/** Delivery fields do not fit the chosen method or point to an unknown or inactive branch. */
+export class DeliveryInvalidError extends DomainError {
+  constructor(reason: string) {
+    super('CHECKOUT_DELIVERY_INVALID', `Invalid delivery details: ${reason}`);
+  }
+}
+
+/** The payment method is switched off in settings (or does not exist yet, e.g. cards before phase 3). */
+export class PaymentMethodUnavailableError extends DomainError {
+  constructor() {
+    super('CHECKOUT_PAYMENT_UNAVAILABLE', 'This payment method is not available');
+  }
+}
+
+/** COD is refused: over the amount cap, or too many unconfirmed COD orders for this phone. */
+export class CodNotAllowedError extends DomainError {
+  constructor(reason: 'amount' | 'pending_limit') {
+    super('CHECKOUT_COD_NOT_ALLOWED', `Cash on delivery is not allowed: ${reason}`);
   }
 }

@@ -28,6 +28,11 @@ const productRow = {
 
 const orderRow = {
   orderNumber: 'LS-2026-000042',
+  paymentProvider: 'cod',
+  deliveryMethod: 'np_warehouse',
+  deliveryCity: 'Київ',
+  deliveryPoint: 'Відділення №1',
+  deliveryAddress: null,
   status: 'delivered',
   paymentStatus: 'paid',
   createdAt: '2026-10-26T10:00:00.000Z',
