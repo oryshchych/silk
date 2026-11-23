@@ -41,9 +41,14 @@ export function createResendSender(options: {
   from: string;
   /** Set outside production: replaces every recipient. */
   toOverride: string | null;
+  /** True only in production. Outside it an override is mandatory (staging never mails customers). */
+  production: boolean;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
 }): EmailSender {
+  if (!options.production && options.toOverride === null) {
+    throw new Error('EMAIL_TO_OVERRIDE is required outside production');
+  }
   const doFetch = options.fetchImpl ?? fetch;
   return {
     async send(message) {

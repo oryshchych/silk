@@ -39,8 +39,19 @@ export class NovaPoshtaError extends Error {
   }
 }
 
-const text = (value: unknown): string | null =>
-  typeof value === 'string' && value !== '' ? value : null;
+/** The column widths of np_settlements and np_warehouses. */
+const MAX_TEXT = 240;
+const MAX_REF = 64;
+const MAX_TYPE = 80;
+const MAX_NUMBER = 20;
+const MAX_DESCRIPTION = 2_000;
+
+/** Carrier text for the database: control characters (NUL included) removed, capped, never empty. */
+function text(value: unknown, max = MAX_TEXT): string | null {
+  if (typeof value !== 'string') return null;
+  const clean = value.replace(/[\u0000-\u001f\u007f]+/g, ' ').trim();
+  return clean === '' ? null : clean.slice(0, max);
+}
 const num = (value: unknown): number | null => {
   const parsed =
     typeof value === 'string' || typeof value === 'number' ? Number(value) : Number.NaN;
@@ -52,7 +63,7 @@ const record = (value: unknown): Record<string, unknown> =>
 export function parseCities(rows: unknown[]): NpCity[] {
   return rows.flatMap((row) => {
     const r = record(row);
-    const ref = text(r['Ref']);
+    const ref = text(r['Ref'], MAX_REF);
     const name = text(r['Description']);
     return ref === null || name === null
       ? []
@@ -61,7 +72,7 @@ export function parseCities(rows: unknown[]): NpCity[] {
             ref,
             name,
             area: text(r['AreaDescription']),
-            type: text(r['SettlementTypeDescription']),
+            type: text(r['SettlementTypeDescription'], MAX_TYPE),
           },
         ];
   });
@@ -70,16 +81,16 @@ export function parseCities(rows: unknown[]): NpCity[] {
 export function parseBranches(rows: unknown[]): NpBranch[] {
   return rows.flatMap((row) => {
     const r = record(row);
-    const ref = text(r['Ref']);
-    const cityRef = text(r['CityRef']);
-    const description = text(r['Description']);
+    const ref = text(r['Ref'], MAX_REF);
+    const cityRef = text(r['CityRef'], MAX_REF);
+    const description = text(r['Description'], MAX_DESCRIPTION);
     if (ref === null || cityRef === null || description === null) return [];
     const category = text(r['CategoryOfWarehouse']);
     return [
       {
         ref,
         cityRef,
-        number: text(r['Number']) ?? '0',
+        number: text(r['Number'], MAX_NUMBER) ?? '0',
         description,
         kind: category === 'Postomat' ? 'postomat' : category === 'Cargo' ? 'cargo' : 'branch',
         maxWeightKg: num(r['TotalMaxWeightAllowed']),
@@ -111,12 +122,18 @@ export function createNovaPoshtaDirectory(options: {
         calledMethod: method,
         methodProperties: { Page: String(page), Limit: String(limit) },
       }),
+      // A redirect would send the key (it is in the body) somewhere else: refuse it.
+      redirect: 'error',
       signal: AbortSignal.timeout(TIMEOUT_MS),
     }).catch(() => {
       throw new NovaPoshtaError('carrier API unreachable');
     });
     if (!response.ok) throw new NovaPoshtaError(`carrier API answered ${String(response.status)}`);
-    const body = record(await response.json());
+    const body = record(
+      await response.json().catch(() => {
+        throw new NovaPoshtaError('carrier API answered with unreadable data');
+      }),
+    );
     const data = body['data'];
     if (body['success'] !== true || !Array.isArray(data)) {
       throw new NovaPoshtaError('carrier API refused the request');

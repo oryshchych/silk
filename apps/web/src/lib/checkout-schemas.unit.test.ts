@@ -65,6 +65,8 @@ describe('placeOrderSchema', () => {
     ['an over-long promo code', { promoCode: 'x'.repeat(65) }],
     ['the terms not accepted', { terms: false }],
     ['the terms missing', { terms: undefined }],
+    ['a link in the name', { name: 'Іван https://evil.example/pay' }],
+    ['a link in the address', { delivery: 'ukrposhta', address: 'see www.evil.example' }],
     ['a NUL byte in the name', { name: 'Іван\u0000' }],
     ['a NUL byte in the promo code', { promoCode: 'A\u0000B' }],
   ])('refuses %s', (_label, over) => {

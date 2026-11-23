@@ -106,8 +106,10 @@ async function staffAddress(reader: Reader): Promise<string | null> {
   const [row] = await reader.select().from(settings).where(eq(settings.key, 'contacts'));
   const value: unknown = row?.value;
   if (typeof value !== 'object' || value === null || !('email' in value)) return null;
-  const email = value.email;
-  return typeof email === 'string' && email !== '' ? email : null;
+  // One plain address: a list, a display name or anything else is not a recipient (the setting is
+  // editable text, and whoever can edit it would otherwise choose who receives every order).
+  const parsed = z.email().safeParse(value.email);
+  return parsed.success ? parsed.data : null;
 }
 
 export async function handleOrderCreated(

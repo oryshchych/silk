@@ -32,6 +32,9 @@ export interface RenderedEmail {
   text: string;
 }
 
+/** Control characters (line breaks, tabs, NUL) become a space: a buyer's text stays on one line. */
+const oneLine = (value: string): string => value.replace(/[\u0000-\u001f\u007f]+/g, ' ').trim();
+
 const escapeHtml = (value: string): string =>
   value.replace(/[&<>"']/g, (char) => {
     switch (char) {
@@ -64,6 +67,7 @@ const COPY = {
     shipping: 'Доставка',
     total: 'Разом',
     track: 'Відстежити замовлення (потрібні номер і телефон)',
+    notYou: 'Якщо ви не оформлювали це замовлення, просто проігноруйте цей лист.',
     adminSubject: (n: string, total: string) => `Нове замовлення ${n} на ${total}`,
     customer: 'Покупець',
   },
@@ -83,6 +87,7 @@ const COPY = {
     shipping: 'Delivery',
     total: 'Total',
     track: 'Track your order (order number and phone needed)',
+    notYou: 'If you did not place this order, simply ignore this email.',
     adminSubject: (n: string, total: string) => `New order ${n} for ${total}`,
     customer: 'Customer',
   },
@@ -125,7 +130,7 @@ function body(order: EmailOrder, audience: 'customer' | 'admin'): { html: string
     ...(audience === 'customer' && next !== '' ? ['', next] : []),
     '',
     ...totals,
-    ...(audience === 'customer' ? ['', `${c.track}: ${order.trackUrl}`] : []),
+    ...(audience === 'customer' ? ['', `${c.track}: ${order.trackUrl}`, '', c.notYou] : []),
   ].join('\n');
 
   const li = (value: string): string => `<li>${escapeHtml(value)}</li>`;
@@ -143,19 +148,32 @@ function body(order: EmailOrder, audience: 'customer' | 'admin'): { html: string
     ...(audience === 'customer' && next !== '' ? [`<p>${escapeHtml(next)}</p>`] : []),
     `<ul>${totals.map(li).join('')}</ul>`,
     ...(audience === 'customer'
-      ? [`<p><a href="${escapeHtml(order.trackUrl)}">${escapeHtml(c.track)}</a></p>`]
+      ? [
+          `<p><a href="${escapeHtml(order.trackUrl)}">${escapeHtml(c.track)}</a></p>`,
+          `<p>${escapeHtml(c.notYou)}</p>`,
+        ]
       : []),
     '</body></html>',
   ].join('');
   return { html, text };
 }
 
-export function renderCustomerEmail(order: EmailOrder): RenderedEmail {
+function clean(order: EmailOrder): EmailOrder {
+  return {
+    ...order,
+    customerName: oneLine(order.customerName),
+    deliveryLine: oneLine(order.deliveryLine),
+  };
+}
+
+export function renderCustomerEmail(input: EmailOrder): RenderedEmail {
+  const order = clean(input);
   return { subject: COPY[order.locale].subject(order.orderNumber), ...body(order, 'customer') };
 }
 
 /** The shop's own notification is always in Ukrainian: the staff reads it, not the buyer. */
-export function renderAdminEmail(order: EmailOrder): RenderedEmail {
+export function renderAdminEmail(input: EmailOrder): RenderedEmail {
+  const order = clean(input);
   const staff: EmailOrder = { ...order, locale: 'uk' };
   const total = formatMoney(money(order.total), 'uk');
   return {

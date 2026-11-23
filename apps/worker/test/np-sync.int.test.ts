@@ -160,6 +160,44 @@ describe('np directory sync', () => {
     expect((await searchWarehouses(app.db, 'np-city-lviv', '')).length).toBe(1);
   });
 
+  it('hostile carrier text is cleaned, capped or skipped instead of failing the page', async () => {
+    const hostile = fakeFetch((name, rows) =>
+      name === 'getCities'
+        ? [
+            ...rows,
+            {
+              Ref: 'np-city-evil',
+              Description: `Evil\u0000<script>alert(1)</script>${'x'.repeat(10_000)}`,
+            },
+            { Ref: 'r'.repeat(500), Description: 'Too long a ref' },
+          ]
+        : rows,
+    );
+    await syncNpDirectory(app.db, directory(hostile.impl));
+    const [row] = (
+      await app.db.execute<{ name_uk: string }>(
+        sql`SELECT name_uk FROM np_settlements WHERE ref = 'np-city-evil'`,
+      )
+    ).rows;
+    expect(row?.name_uk).not.toContain('\u0000');
+    expect(row?.name_uk.length).toBe(240);
+    const [count] = (
+      await app.db.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM np_settlements`)
+    ).rows;
+    expect(count?.n).toBe(5);
+  });
+
+  it('the API key never appears in an error, and unreadable data is a NovaPoshtaError', async () => {
+    const garbage = (() =>
+      Promise.resolve(new Response('<html>not json</html>', { status: 200 }))) as typeof fetch;
+    const error = await createNovaPoshtaDirectory({ apiKey: 'SECRET-KEY-123', fetchImpl: garbage })
+      .cities(1, 10)
+      .catch((e: unknown) => e);
+    expect(error).toMatchObject({ name: 'NovaPoshtaError' });
+    expect(JSON.stringify(error)).not.toContain('SECRET-KEY-123');
+    expect(error).toHaveProperty('message', 'carrier API answered with unreadable data');
+  });
+
   it('an API refusal or an HTTP error is a NovaPoshtaError without the body', async () => {
     const refused = (() =>
       Promise.resolve(

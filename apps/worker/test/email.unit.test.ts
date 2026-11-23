@@ -55,6 +55,40 @@ describe('order emails', () => {
   });
 });
 
+describe('escaping in the shop notification and the link', () => {
+  const hostile: EmailOrder = {
+    ...order,
+    customerName: 'Eve <a href="//evil">x</a> \'q\'',
+    customerPhone: '+380501234567',
+    deliveryLine: 'Київ\r\nBcc: evil@example.com',
+    trackUrl: 'https://shop.example/order/track"><script>alert(1)</script>',
+  };
+
+  it('escapes the contact line of the shop email, quotes included', () => {
+    const { html } = renderAdminEmail(hostile);
+    expect(html).not.toContain('<a href="//evil">');
+    expect(html).toContain('&lt;a href=&quot;//evil&quot;&gt;');
+    expect(html).toContain('&#39;q&#39;');
+  });
+
+  it('escapes the tracking link attribute', () => {
+    const { html } = renderCustomerEmail(hostile);
+    expect(html).not.toContain('"><script>');
+    expect(html).toContain('track&quot;&gt;&lt;script&gt;');
+  });
+
+  it('keeps a buyer text on one line: line breaks and control characters become spaces', () => {
+    const { text } = renderCustomerEmail(hostile);
+    expect(text).not.toMatch(/\r|\n\s*Bcc:/);
+    expect(text).toContain('Київ Bcc: evil@example.com');
+  });
+
+  it('the customer email tells a wrongly addressed reader to ignore it', () => {
+    expect(renderCustomerEmail(order).text).toContain('просто проігноруйте');
+    expect(renderCustomerEmail({ ...order, locale: 'en' }).text).toContain('simply ignore');
+  });
+});
+
 describe('the Resend sender', () => {
   const message = {
     to: 'real.customer@example.com',
@@ -87,6 +121,7 @@ describe('the Resend sender', () => {
       apiKey: 'k',
       from: 'shop@example.com',
       toOverride: null,
+      production: true,
       fetchImpl: impl,
     }).send(message);
     expect(seen[0]?.url).toBe('https://api.resend.com/emails');
@@ -102,11 +137,23 @@ describe('the Resend sender', () => {
       apiKey: 'k',
       from: 'shop@example.com',
       toOverride: 'catch@example.com',
+      production: false,
       fetchImpl: impl,
     }).send(message);
     expect(seen[0]?.body['to']).toEqual(['catch@example.com']);
     expect(String(seen[0]?.body['subject'])).toBe('[staging] Тема');
     expect(JSON.stringify(seen[0]?.body)).not.toContain('real.customer');
+  });
+
+  it('refuses to be built outside production without an override', () => {
+    expect(() =>
+      createResendSender({
+        apiKey: 'k',
+        from: 'shop@example.com',
+        toOverride: null,
+        production: false,
+      }),
+    ).toThrow('EMAIL_TO_OVERRIDE');
   });
 
   it('a provider error or an unreachable provider fails the job without leaking the body or the address', async () => {
@@ -117,6 +164,7 @@ describe('the Resend sender', () => {
       apiKey: 'k',
       from: 'shop@example.com',
       toOverride: null,
+      production: true,
       fetchImpl: bad.impl,
     });
     await expect(sender.send(message)).rejects.toMatchObject({
@@ -129,6 +177,7 @@ describe('the Resend sender', () => {
       apiKey: 'k',
       from: 'shop@example.com',
       toOverride: null,
+      production: true,
       fetchImpl: down.impl,
     });
     const error = await failing.send(message).catch((e: unknown) => e);
