@@ -12,7 +12,8 @@
     "./payments": "./src/payments/handle-webhook.ts",
     "./payment-attempts": "./src/payments/attempts.ts",
     "./fulfilment": "./src/orders/fulfilment.ts",
-    "./refunds": "./src/payments/refunds.ts"
+    "./refunds": "./src/payments/refunds.ts",
+    "./bra-size": "./src/catalog/bra-size.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"
