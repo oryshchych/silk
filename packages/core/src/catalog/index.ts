@@ -8,6 +8,7 @@ export type { CategoryNode, CategoryPage } from './categories.ts';
 export { getFilterOptions, listProducts } from './listing.ts';
 export {
   PAGE_SIZE,
+  clampPage,
   defaultListingParams,
   normalizeListingParams,
   parseListingParams,
@@ -23,4 +24,9 @@ export type {
 export { getProductBySlug } from './product.ts';
 export { listShowcase, SHOWCASE_KINDS } from './showcase.ts';
 export type { ShowcaseKind } from './showcase.ts';
-export { MIN_QUERY_LENGTH, normalizeSearchQuery, searchProducts } from './search.ts';
+export {
+  MAX_QUERY_LENGTH,
+  MIN_QUERY_LENGTH,
+  normalizeSearchQuery,
+  searchProducts,
+} from './search.ts';
