@@ -305,3 +305,11 @@ Left as notes:
 - **Bestsellers are the products marked `bestseller` (badge) by the shop;** there is no sales ranking yet (orders exist only from phase 2). Both lists show the newest published first, eight items, and a section with no products is not rendered.
 - **The home page tolerates a failing showcase** (it is rendered per request and never cached): the section is skipped and one JSON line with the error name and code goes to stderr (`scope: showcase`), next to the `navigation` line. Included in the alert recommendation of Q21.
 - **Favicon** is a neutral placeholder monogram (`app/icon.svg`), a branding item for Q1.
+
+## Phase 1: storefront review nits (2026-11-23)
+
+- **The slug gate fails open until its first load:** `knownProductSlugs` answers "unknown" (`null`) until the first set has loaded, and the proxy then lets the request through to the page. After that a stale set is served immediately while a refresh runs in the background (a refresh failure keeps the last good set and logs `scope: slug-gate`). The set holds at most 200,000 slugs; a bigger catalog makes the load fail loudly (and log) instead of silently dropping products.
+- **The proxy's 404 carries Next's `x-nextjs-stale-time: 300`:** the header is appended by Next after the proxy's headers (setting it from the proxy produced two values, `0` and `300`), so it cannot be overridden there. Effect: the client router may keep a prefetched 404 for 5 minutes; the storefront never links to an unpublished product, so only a hand-typed URL is affected.
+- **The seed placeholder photo (`/placeholder.svg`) is allowed in `Product` JSON-LD and `og:image`:** SVG is an image format Google supports, and the placeholder exists only in seed data, which refuses production. A real product without any photo has no `image`, hence no `Product` markup and no `og:image`.
+- **`og:image` follows the opening colour** like the JSON-LD images.
+- **The home showcases keep the last good list per kind and locale** when the database flaps (empty only before the first success).
