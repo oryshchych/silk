@@ -19,6 +19,7 @@ const productRow = {
   ratingAvg: 4.5,
   reviewsCount: 2,
   inStock: true,
+  image: null,
   // Службове — не мусить вийти назовні:
   costPrice: 58455,
   isActive: false,
@@ -65,6 +66,7 @@ describe('productCardDto', () => {
       'brand',
       'compareAtPrice',
       'id',
+      'image',
       'inStock',
       'name',
       'price',
