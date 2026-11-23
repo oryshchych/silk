@@ -236,6 +236,11 @@ describe('listing pagination and query count', () => {
     };
   });
 
+  it('clamps a showcase to 24 products when more are visible', async () => {
+    const items = await listShowcase(db, { kind: 'new', limit: 10_000, locale: 'uk' });
+    expect(items).toHaveLength(24);
+  });
+
   it('paginates with a stable total', async () => {
     const page = await getCategoryPage(db, 'bras', 'uk');
     const input = { categoryIds: page?.categoryIds ?? [], locale: 'uk' as const };
@@ -449,6 +454,11 @@ describe('product input hardening', () => {
     for (const hidden of ['draft', 'unpublished', 'future', 'giftcard', 'archived', 'shelved']) {
       expect(slugs).not.toContain(hidden);
     }
+  });
+
+  it('fails loudly instead of truncating when there are more visible products than the limit', async () => {
+    await expect(listVisibleProductSlugs(db, 2)).rejects.toThrow(/more than 2 visible products/);
+    await expect(listVisibleProductSlugs(db, 10_000)).resolves.toBeInstanceOf(Array);
   });
 
   it('keeps only https and site-relative media URLs in images and the Open Graph image', async () => {

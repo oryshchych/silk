@@ -37,6 +37,10 @@ const gate =
 // route that is limited per client (per instance, in memory). Every method but
 // OPTIONS and every spelling of the path counts: the limit is on the route.
 const searchLimiter = createRateLimiter({ limit: 30, windowMs: 60_000 });
+// A cap over ALL clients: per-network limits cannot stop an attacker with many networks.
+// Generous for honest traffic (10 searches a second), a safety net for the database.
+const searchGlobalLimiter = createRateLimiter({ limit: 600, windowMs: 60_000, maxKeys: 1 });
+const GLOBAL_KEY = 'all';
 // Reverse proxies that append to X-Forwarded-For and are trusted (Traefik: 1).
 const trustedHops = env.TRUSTED_PROXY_HOPS ?? 1;
 let unknownClientLoggedAt = Number.NEGATIVE_INFINITY;
@@ -77,7 +81,9 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   if (request.method !== 'OPTIONS' && isSearchPath(pathname)) {
     const client = clientAddress(request.headers.get('x-forwarded-for'), trustedHops);
     if (client === UNKNOWN_CLIENT) noteUnknownClient();
-    const verdict = searchLimiter.check(client);
+    const clientVerdict = searchLimiter.check(client);
+    // Only a request the client's own limit let through counts against the shared cap.
+    const verdict = clientVerdict.allowed ? searchGlobalLimiter.check(GLOBAL_KEY) : clientVerdict;
     if (!verdict.allowed) {
       return withNoindex(
         new NextResponse('Too many requests', {

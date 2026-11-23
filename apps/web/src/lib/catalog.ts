@@ -27,6 +27,7 @@ import type { SiteLocale } from '@store/shared/seo';
 
 import { getDb } from './db';
 import { errorReason } from './error-reason';
+import { createLastGood } from './last-good';
 import { isCacheableListing } from './listing-cache-policy';
 
 const CATEGORY_TTL = 60 * 60;
@@ -150,18 +151,21 @@ const getCachedShowcase = (kind: ShowcaseKind, locale: SiteLocale) =>
     { tags: [SHOWCASE_TAG], revalidate: LISTING_TTL },
   )();
 
+const showcaseLastGood = createLastGood<Awaited<ReturnType<typeof getCachedShowcase>>>();
+
 /**
  * A home page showcase. The kind is a closed set, so its cache key is bounded.
  * The home page is rendered per request and must not fail because a showcase
- * could not load: it renders without that section and logs one safe line.
+ * could not load: on a failure it keeps showing the last good list for that
+ * kind and locale (empty only before the first success), and logs one safe line.
  */
 export async function loadShowcase(kind: ShowcaseKind, locale: SiteLocale) {
-  try {
-    return await getCachedShowcase(kind, locale);
-  } catch (error) {
-    process.stderr.write(
-      `${JSON.stringify({ level: 'error', scope: 'showcase', kind, reason: errorReason(error) })}\n`,
-    );
-    return [];
-  }
+  return await showcaseLastGood(`${kind}:${locale}`, () => getCachedShowcase(kind, locale), {
+    fallback: [],
+    onError: (error) => {
+      process.stderr.write(
+        `${JSON.stringify({ level: 'error', scope: 'showcase', kind, reason: errorReason(error) })}\n`,
+      );
+    },
+  });
 }
