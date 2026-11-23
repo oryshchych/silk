@@ -96,11 +96,11 @@ export async function loadEmailOrder(
       // Gross: the order total lists the discount once, so each line is shown before it.
       lineTotal: add(money(item.lineTotal), money(item.lineDiscount)),
     })),
-    subtotal: order.subtotal,
-    discountTotal: order.discountTotal,
-    shippingTotal: order.shippingTotal,
-    adjustmentTotal: order.adjustmentTotal,
-    total: order.total,
+    subtotal: money(order.subtotal),
+    discountTotal: money(order.discountTotal),
+    shippingTotal: money(order.shippingTotal),
+    adjustmentTotal: money(order.adjustmentTotal),
+    total: money(order.total),
     trackUrl: `${siteUrl.replace(/\/+$/, '')}${prefix}/order/track`,
   };
 }

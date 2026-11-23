@@ -253,3 +253,10 @@ export class PaymentProviderRefusedError extends DomainError {
     super('PAYMENT_PROVIDER_REFUSED', 'The payment provider did not accept the invoice');
   }
 }
+
+/** The receipt is not done yet (provider busy, result unknown, primary receipt not issued): retry later. */
+export class FiscalRetryError extends DomainError {
+  constructor(reason: string) {
+    super('FISCAL_RETRY', `The fiscal receipt is not done yet: ${reason}`);
+  }
+}

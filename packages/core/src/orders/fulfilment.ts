@@ -31,6 +31,7 @@ import {
 import type { Tx } from '@store/db/types';
 
 import { OrderNotCancellableError, OrderNotShippableError, StockDriftError } from '../errors.ts';
+import { enqueueSaleReceipt } from '../fiscal/receipts.ts';
 import { acquireLocks } from '../locks/acquire-locks.ts';
 import { canTransition } from './transitions.ts';
 
@@ -184,6 +185,9 @@ export async function shipOrder(
     .set({ status: 'shipped', shippedAt: sql`now()` })
     .where(eq(orders.id, order.id));
   await recordTransition(tx, order, 'shipped', input.source, null);
+  // Cash on delivery: the receipt for the goods is made when the parcel is handed to the post, as
+  // a queue job (ADR-16): a fiscal failure never blocks or undoes the shipment.
+  if (isCod) await enqueueSaleReceipt(tx, { orderId: order.id, paymentForm: 'cash_on_delivery' });
   return { orderId: order.id, changed: true };
 }
 

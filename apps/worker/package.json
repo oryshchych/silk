@@ -9,6 +9,7 @@
   "dependencies": {
     "@store/core": "workspace:*",
     "@store/db": "workspace:*",
+    "@store/payments": "workspace:*",
     "@store/shared": "workspace:*",
     "drizzle-orm": "0.45.2",
     "pg": "^8.23.1",

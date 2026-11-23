@@ -63,7 +63,20 @@ export const envSchema = z
     WAYFORPAY_MERCHANT_DOMAIN: z.string().min(1).max(253).optional(),
     // Extra hosts accepted as payment pages, comma separated (a sandbox or a local fake). The
     // providers' own domains are always accepted; nothing else is ever redirected to.
-    PAYMENT_PAGE_HOSTS: z.string().max(500).optional(),
+    PAYMENT_PAGE_HOSTS: z
+      .string()
+      .max(500)
+      .refine(
+        (value) =>
+          value
+            .split(',')
+            .map((host) => host.trim())
+            .filter((host) => host !== '')
+            .every((host) => /^[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(host)),
+        // A bare label (`com`) or a wildcard would accept every host under it.
+        { message: 'each host needs at least two labels (example.com): no bare TLD, no wildcard' },
+      )
+      .optional(),
 
     NOVA_POSHTA_API_KEY: secret,
     UKRPOSHTA_API_KEY: secret,

@@ -3,7 +3,7 @@
  * value that came from a person (name, address, branch) is HTML-escaped. Amounts are
  * formatted from integer kopiykas by `formatMoney`.
  */
-import { formatMoney, money } from '@store/shared/money';
+import { formatMoney, money, type Money } from '@store/shared/money';
 
 export type EmailLocale = 'uk' | 'en';
 
@@ -16,13 +16,13 @@ export interface EmailOrder {
   /** Human-readable delivery line, already composed (method, city, branch or address). */
   deliveryLine: string;
   paymentLabel: string;
-  items: { name: string; size: string; color: string; quantity: number; lineTotal: number }[];
-  subtotal: number;
-  discountTotal: number;
-  shippingTotal: number;
+  items: { name: string; size: string; color: string; quantity: number; lineTotal: Money }[];
+  subtotal: Money;
+  discountTotal: Money;
+  shippingTotal: Money;
   /** Manual correction from the admin (can be negative). */
-  adjustmentTotal: number;
-  total: number;
+  adjustmentTotal: Money;
+  total: Money;
   /** Absolute address of the tracking page. */
   trackUrl: string;
   paymentProvider: string | null;
@@ -37,9 +37,10 @@ export interface RenderedEmail {
 }
 
 /** Control characters (line breaks, tabs, NUL) become a space: a buyer's text stays on one line. */
-const oneLine = (value: string): string => value.replace(/[\u0000-\u001f\u007f]+/g, ' ').trim();
+export const oneLine = (value: string): string =>
+  value.replace(/[\u0000-\u001f\u007f]+/g, ' ').trim();
 
-const escapeHtml = (value: string): string =>
+export const escapeHtml = (value: string): string =>
   value.replace(/[&<>"']/g, (char) => {
     switch (char) {
       case '&':
@@ -54,6 +55,58 @@ const escapeHtml = (value: string): string =>
         return '&#39;';
     }
   });
+
+/**
+ * Colours of the email, light and dark. Text on a coloured ground, never an image that could
+ * vanish: the wordmark is TEXT, so it stays readable when a client inverts or darkens the page.
+ * The pairs are checked for contrast in the unit tests (WCAG AA, 4.5:1).
+ */
+export const PALETTE = {
+  light: { page: '#f6f4f1', card: '#ffffff', text: '#1a1a1a', muted: '#555555', link: '#7a2e4a' },
+  dark: { page: '#121212', card: '#1e1e1e', text: '#ececec', muted: '#b5b5b5', link: '#f0a3c0' },
+} as const;
+
+/** The shop name is a placeholder until the owner decides (OWNER_QUEUE Q1). */
+const WORDMARK = 'LACE & SILK';
+
+/**
+ * The common frame of every email. It declares both colour schemes (`color-scheme` meta and CSS,
+ * so a client that honours them does not invert our colours), gives the light colours inline (the
+ * safe default for clients that strip `<style>`), and overrides them in a dark media query. The
+ * Outlook.com dark mode attributes (`data-ogsc`, `data-ogsb`) get the same overrides.
+ */
+export function shell(options: { lang: EmailLocale; title: string; content: string }): string {
+  const { light, dark } = PALETTE;
+  return [
+    `<!doctype html><html lang="${options.lang}"><head>`,
+    '<meta charset="utf-8">',
+    '<meta name="viewport" content="width=device-width,initial-scale=1">',
+    '<meta name="color-scheme" content="light dark">',
+    '<meta name="supported-color-schemes" content="light dark">',
+    `<title>${escapeHtml(options.title)}</title>`,
+    '<style>',
+    ':root{color-scheme:light dark;supported-color-schemes:light dark}',
+    `body{margin:0;padding:0;background:${light.page};color:${light.text}}`,
+    `a{color:${light.link}}`,
+    '@media (prefers-color-scheme: dark){',
+    `body,.page{background:${dark.page}!important;color:${dark.text}!important}`,
+    `.card{background:${dark.card}!important;color:${dark.text}!important}`,
+    `.brand,a{color:${dark.link}!important}`,
+    `.muted{color:${dark.muted}!important}`,
+    '}',
+    `[data-ogsc] .card,[data-ogsc] body{color:${dark.text}!important}`,
+    `[data-ogsb] .card{background:${dark.card}!important}`,
+    `[data-ogsb] .page{background:${dark.page}!important}`,
+    `[data-ogsc] .brand,[data-ogsc] a{color:${dark.link}!important}`,
+    `[data-ogsc] .muted{color:${dark.muted}!important}`,
+    '</style></head>',
+    `<body class="page" style="margin:0;padding:16px;background:${light.page};color:${light.text};font-family:sans-serif">`,
+    `<div class="card" style="max-width:600px;margin:0 auto;padding:24px;background:${light.card};color:${light.text}">`,
+    `<p class="brand" style="margin:0 0 16px;font-size:20px;font-weight:bold;letter-spacing:2px;color:${light.link}">${escapeHtml(WORDMARK)}</p>`,
+    options.content,
+    '</div></body></html>',
+  ].join('');
+}
 
 const COPY = {
   uk: {
@@ -101,7 +154,7 @@ const COPY = {
 
 function body(order: EmailOrder, audience: 'customer' | 'admin'): { html: string; text: string } {
   const c = COPY[order.locale];
-  const fmt = (kopiykas: number): string => formatMoney(money(kopiykas), order.locale);
+  const fmt = (amount: Money): string => formatMoney(amount, order.locale);
   const next =
     order.paymentProvider === 'cod'
       ? c.cod
@@ -141,8 +194,7 @@ function body(order: EmailOrder, audience: 'customer' | 'admin'): { html: string
   ].join('\n');
 
   const li = (value: string): string => `<li>${escapeHtml(value)}</li>`;
-  const html = [
-    '<!doctype html><html><body style="font-family:sans-serif;color:#1a1a1a">',
+  const content = [
     ...(audience === 'customer'
       ? [`<h1>${escapeHtml(c.hello(order.customerName))}</h1>`, `<p>${escapeHtml(c.thanks)}</p>`]
       : []),
@@ -160,8 +212,12 @@ function body(order: EmailOrder, audience: 'customer' | 'admin'): { html: string
           `<p>${escapeHtml(c.notYou)}</p>`,
         ]
       : []),
-    '</body></html>',
   ].join('');
+  const html = shell({
+    lang: order.locale,
+    title: c.subject(order.orderNumber),
+    content,
+  });
   return { html, text };
 }
 

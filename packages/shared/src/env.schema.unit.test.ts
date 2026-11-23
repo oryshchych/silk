@@ -34,6 +34,28 @@ describe('parseEnv', () => {
     expect(env.NODE_ENV).toBe('development');
   });
 
+  it('PAYMENT_PAGE_HOSTS: every entry needs two labels, so no bare TLD or wildcard is accepted', () => {
+    const base = {
+      APP_ENV: 'local',
+      DATABASE_URL: 'postgres://u:p@localhost:5432/db',
+      EMAIL_TO_OVERRIDE: 'a@b.co',
+    };
+    expect(
+      parseEnv({ ...base, PAYMENT_PAGE_HOSTS: 'pay.example, secure.example.com' })
+        .PAYMENT_PAGE_HOSTS,
+    ).toBeDefined();
+    for (const bad of [
+      'com',
+      'pay.example,ua',
+      '*.example.com',
+      'https://pay.example',
+      'pay.example/x',
+      'a b.example',
+    ]) {
+      expect(() => parseEnv({ ...base, PAYMENT_PAGE_HOSTS: bad }), bad).toThrow();
+    }
+  });
+
   it('падає поза production без EMAIL_TO_OVERRIDE', () => {
     expect(() => parseEnv(withoutOverride)).toThrow(/EMAIL_TO_OVERRIDE/);
   });
