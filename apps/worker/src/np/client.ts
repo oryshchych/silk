@@ -1,0 +1,175 @@
+/**
+ * Nova Poshta API 2.0 reads for the directory sync. NOT verified against the real API yet
+ * (owner queue Q2: no key): the request and response shapes follow the public documentation
+ * and are exercised through recorded fixtures only. The key stays in the request body, as the
+ * API requires, and is never logged.
+ */
+export interface NpCity {
+  ref: string;
+  name: string;
+  area: string | null;
+  type: string | null;
+}
+
+export interface NpBranch {
+  ref: string;
+  cityRef: string;
+  number: string;
+  description: string;
+  kind: 'branch' | 'postomat' | 'cargo';
+  maxWeightKg: number | null;
+  latitude: number | null;
+  longitude: number | null;
+  isActive: boolean;
+}
+
+/** Parsed rows plus how many rows the API sent: paging stops on the RAW count, never on the parsed one. */
+export interface NpPage<T> {
+  rows: T[];
+  raw: number;
+}
+
+export interface NovaPoshtaDirectory {
+  /** A page of cities; fewer raw rows than `limit` means the last page. */
+  cities(page: number, limit: number): Promise<NpPage<NpCity>>;
+  branches(page: number, limit: number): Promise<NpPage<NpBranch>>;
+}
+
+const ENDPOINT = 'https://api.novaposhta.ua/v2.0/json/';
+const TIMEOUT_MS = 30_000;
+/** A page of 500 branches is about a megabyte; far more is not the answer we asked for. */
+const MAX_BODY_BYTES = 16 * 1024 * 1024;
+
+export class NovaPoshtaError extends Error {
+  constructor(reason: string) {
+    super(reason);
+    this.name = 'NovaPoshtaError';
+  }
+}
+
+/** The column widths of np_settlements and np_warehouses. */
+const MAX_TEXT = 240;
+const MAX_REF = 64;
+const MAX_TYPE = 80;
+const MAX_NUMBER = 20;
+const MAX_DESCRIPTION = 2_000;
+
+/** Carrier text for the database: control characters (NUL included) removed, capped, never empty. */
+function text(value: unknown, max = MAX_TEXT): string | null {
+  if (typeof value !== 'string') return null;
+  const clean = value.replace(/[\u0000-\u001f\u007f]+/g, ' ').trim();
+  return clean === '' ? null : clean.slice(0, max);
+}
+const num = (value: unknown): number | null => {
+  const parsed =
+    typeof value === 'string' || typeof value === 'number' ? Number(value) : Number.NaN;
+  return Number.isFinite(parsed) && parsed !== 0 ? parsed : null;
+};
+const record = (value: unknown): Record<string, unknown> =>
+  typeof value === 'object' && value !== null ? Object.fromEntries(Object.entries(value)) : {};
+
+export function parseCities(rows: unknown[]): NpCity[] {
+  return rows.flatMap((row) => {
+    const r = record(row);
+    const ref = text(r['Ref'], MAX_REF);
+    const name = text(r['Description']);
+    return ref === null || name === null
+      ? []
+      : [
+          {
+            ref,
+            name,
+            area: text(r['AreaDescription']),
+            type: text(r['SettlementTypeDescription'], MAX_TYPE),
+          },
+        ];
+  });
+}
+
+export function parseBranches(rows: unknown[]): NpBranch[] {
+  return rows.flatMap((row) => {
+    const r = record(row);
+    const ref = text(r['Ref'], MAX_REF);
+    const cityRef = text(r['CityRef'], MAX_REF);
+    const description = text(r['Description'], MAX_DESCRIPTION);
+    if (ref === null || cityRef === null || description === null) return [];
+    const category = text(r['CategoryOfWarehouse']);
+    return [
+      {
+        ref,
+        cityRef,
+        number: text(r['Number'], MAX_NUMBER) ?? '0',
+        description,
+        kind: category === 'Postomat' ? 'postomat' : category === 'Cargo' ? 'cargo' : 'branch',
+        maxWeightKg: num(r['TotalMaxWeightAllowed']),
+        latitude: num(r['Latitude']),
+        longitude: num(r['Longitude']),
+        isActive: text(r['WarehouseStatus']) === 'Working',
+      },
+    ];
+  });
+}
+
+export function createNovaPoshtaDirectory(options: {
+  apiKey: string;
+  fetchImpl?: typeof fetch;
+}): NovaPoshtaDirectory {
+  const doFetch = options.fetchImpl ?? fetch;
+  async function call(
+    model: string,
+    method: string,
+    page: number,
+    limit: number,
+  ): Promise<unknown[]> {
+    const response = await doFetch(ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        apiKey: options.apiKey,
+        modelName: model,
+        calledMethod: method,
+        methodProperties: { Page: String(page), Limit: String(limit) },
+      }),
+      // A redirect would send the key (it is in the body) somewhere else: refuse it.
+      redirect: 'error',
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    }).catch(() => {
+      throw new NovaPoshtaError('carrier API unreachable');
+    });
+    if (!response.ok) throw new NovaPoshtaError(`carrier API answered ${String(response.status)}`);
+    if (!(response.headers.get('content-type') ?? '').includes('json')) {
+      throw new NovaPoshtaError('carrier API answered with an unexpected content type');
+    }
+    const length = Number(response.headers.get('content-length') ?? 0);
+    if (length > MAX_BODY_BYTES) throw new NovaPoshtaError('carrier API answer is too large');
+    const raw = await response.text();
+    if (raw.length > MAX_BODY_BYTES) throw new NovaPoshtaError('carrier API answer is too large');
+    const body = record(
+      (() => {
+        try {
+          return JSON.parse(raw) as unknown;
+        } catch {
+          throw new NovaPoshtaError('carrier API answered with unreadable data');
+        }
+      })(),
+    );
+    const data = body['data'];
+    if (body['success'] !== true || !Array.isArray(data)) {
+      throw new NovaPoshtaError('carrier API refused the request');
+    }
+    // A page never holds more rows than were asked for; more means the paging is not honoured.
+    if (data.length > limit) throw new NovaPoshtaError('carrier API returned more rows than asked');
+    const rows: unknown[] = data;
+    return rows;
+  }
+  return {
+    cities: async (page, limit) => {
+      const raw = await call('Address', 'getCities', page, limit);
+      return { rows: parseCities(raw), raw: raw.length };
+    },
+    branches: async (page, limit) => {
+      const raw = await call('AddressGeneral', 'getWarehouses', page, limit);
+      return { rows: parseBranches(raw), raw: raw.length };
+    },
+  };
+}
