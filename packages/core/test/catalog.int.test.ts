@@ -282,7 +282,15 @@ describe('product page', () => {
   });
 
   it('is not found for drafts, unpublished, future, gift cards, archived and unknown slugs', async () => {
-    for (const slug of ['draft', 'unpublished', 'future', 'giftcard', 'archived', 'nope']) {
+    for (const slug of [
+      'draft',
+      'unpublished',
+      'future',
+      'giftcard',
+      'archived',
+      'shelved',
+      'nope',
+    ]) {
       expect(await getProductBySlug(db, slug, 'uk')).toBeNull();
     }
   });
@@ -317,7 +325,7 @@ describe('search', () => {
 
   it('never returns hidden products', async () => {
     const all = await find('бюстгальтер');
-    for (const hidden of ['draft', 'unpublished', 'future', 'giftcard', 'archived']) {
+    for (const hidden of ['draft', 'unpublished', 'future', 'giftcard', 'archived', 'shelved']) {
       expect(all).not.toContain(hidden);
     }
   });
@@ -341,6 +349,9 @@ describe('search', () => {
     expect(await find('   ')).toEqual([]);
     expect(await find('qzxwvk')).toEqual([]);
     expect(await find(`"'; DROP TABLE products; -- &|!():*`)).toEqual([]);
+    expect(await find('\\')).toEqual([]);
+    expect(await find('😀😀 😀')).toEqual([]);
+    expect(await find('бюстгальтер '.repeat(30))).toEqual(expect.any(Array));
     const [row] = await db.select({ n: sql<number>`count(*)::int` }).from(products);
     expect(row?.n ?? 0).toBeGreaterThan(0);
   });

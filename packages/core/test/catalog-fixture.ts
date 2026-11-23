@@ -251,6 +251,16 @@ export async function seedCatalogFixture(tx: Tx): Promise<CatalogFixture> {
     kind: 'gift_card',
     variants: [['75B', 'black', 5]],
   });
+  // Active and published, but its OWN category is inactive: only the c0 check of the
+  // ancestor chain hides it (the product above sits in an active child of an inactive parent).
+  await product('shelved', {
+    category: 'archive',
+    brand: 'Aurelia',
+    nameUk: 'Знятий бюстгальтер',
+    nameEn: 'Shelved bra',
+    price: 10_000,
+    variants: [['75B', 'black', 5]],
+  });
   await product('archived', {
     category: 'archive-old',
     brand: 'Aurelia',

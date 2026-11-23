@@ -16,6 +16,11 @@ const MAX_VALUES = 20;
 export const MAX_PAGE = 1000;
 const MAX_PRICE_KOPIYKAS = 100_000_000;
 
+/**
+ * Bounds (value counts, lengths, band range, price cap) are enforced ONLY in
+ * `parseListingParams`. Anything that builds a `ListingParams` by hand must
+ * respect them; `listProducts` clamps just the page number.
+ */
 export interface ListingParams {
   bands: number[];
   cups: string[];

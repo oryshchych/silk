@@ -47,6 +47,10 @@ export async function searchProducts(
   const empty = { items: [], page, limit: PAGE_SIZE, total: 0, totalPages: 0 };
   if (query.length < MIN_QUERY_LENGTH) return serialize(listingDto, empty);
 
+  // Phase 6 (search): every candidate is ranked with ts_rank and word_similarity before
+  // LIMIT, so a short, common query ranks the whole match set. Cap the candidates or
+  // rate-limit the route if the catalog grows well past a few thousand products.
+  //
   // `<%` is word similarity (threshold 0.6), served by the GIN trigram index
   // on `search_norm`; it catches a missing or swapped letter.
   const rows = await queryRows(
