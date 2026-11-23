@@ -36,6 +36,7 @@ import type { PaymentProvider, RefundResult } from '@store/payments/types';
 import { add, money, subtract, type Money } from '@store/shared/money';
 
 import { RefundBudgetError, RefundNotAllowedError, RefundRoutingError } from '../errors.ts';
+import { enqueueReturnReceipt } from '../fiscal/receipts.ts';
 import { acquireLocks } from '../locks/acquire-locks.ts';
 
 /** States that hold budget: an `unknown` or in-flight refund may already have moved money. */
@@ -409,6 +410,8 @@ async function applySucceeded(
     entityId: orderId,
     diff: { operationId, amount, state: 'succeeded', refundedTotal: refunded },
   });
+  // The return receipt points at the primary one; a queue job issues it (ADR-16).
+  await enqueueReturnReceipt(tx, { orderId, refundOperationId: operationId, amount });
   // Event, state, history and outbox commit together (AGENTS.md 5b); the buyer's mail leaves
   // through the outbox, once per operation.
   await tx

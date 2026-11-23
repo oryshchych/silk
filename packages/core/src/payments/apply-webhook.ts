@@ -26,6 +26,7 @@ import {
 import type { Tx } from '@store/db/types';
 import type { PaymentStatus, WebhookResult } from '@store/payments/types';
 
+import { enqueueSaleReceipt } from '../fiscal/receipts.ts';
 import { acquireLocks } from '../locks/acquire-locks.ts';
 
 export type WebhookOutcome =
@@ -234,7 +235,7 @@ export async function applyPaymentWebhook(
     })
     .where(eq(paymentAttempts.id, attempt.id));
 
-  await settleOrder(tx, source, order, to);
+  await settleOrder(tx, source, order, to, attempt.id);
   await markApplied(null);
   return { kind: 'applied', orderId: order.id };
 }
@@ -252,6 +253,7 @@ async function settleOrder(
   source: string,
   order: Order,
   attemptStatus: PaymentStatus,
+  attemptId: string,
 ): Promise<void> {
   const next = await derivePaymentStatus(tx, order);
   let isLate = order.status === 'cancelled' || order.paymentStatus === 'expired';
@@ -305,7 +307,26 @@ async function settleOrder(
     });
   }
 
+  if (attemptStatus === 'failed' || attemptStatus === 'expired') {
+    // The buyer hears that this payment failed (once per attempt) while the order can still be
+    // paid; a cancelled order cannot, so it gets no "try again".
+    if (order.status !== 'cancelled' && (next === 'failed' || next === 'expired')) {
+      await tx
+        .insert(outbox)
+        .values({
+          topic: 'email.payment-failed',
+          payload: { orderId: order.id },
+          dedupKey: `payment-failed:${attemptId}`,
+        })
+        .onConflictDoNothing();
+    }
+    return;
+  }
   if (attemptStatus !== 'paid') return;
+
+  // ADR-16: the receipt is a SEPARATE queue job written in this transaction, never a call made
+  // from here. A late payment is money received too, so it gets its receipt as well.
+  await enqueueSaleReceipt(tx, { orderId: order.id, paymentForm: 'card' });
 
   // Mail and manager alerts leave through the outbox, never from the request. The buyer
   // gets ONE confirmation per order, however many attempts end up paid.

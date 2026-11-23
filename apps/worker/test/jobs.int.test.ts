@@ -200,12 +200,15 @@ describe('the message router', () => {
       reader: app.db,
       email: new Recorder(),
       siteUrl: 'https://shop.example',
+      fiscal: null,
       log: () => undefined,
     });
-    // Topics whose consumer arrives with a later phase; they must fail (and reach the dead-letter queue).
+    // Topics that must fail visibly (and reach the dead-letter queue): money alerts have no channel
+    // yet (Q15), and the fiscal job has no provider until the Checkbox account exists (Q3).
     const failing = new Set([
-      'email.payment-received',
-      'email.refund-issued',
+      'fiscal.issue-receipt',
+      'alert.fiscal-failed',
+      'alert.attempt-unresolved',
       'alert.late-payment',
       'alert.double-payment',
       'alert.payment-mismatch',
@@ -239,6 +242,7 @@ describe('the message router', () => {
       reader: app.db,
       email,
       siteUrl: 'https://shop.example',
+      fiscal: null,
       log: (l) => logs.push(l),
     });
     await sender.send({
@@ -258,7 +262,7 @@ describe('the message router', () => {
     expect(logs[0]).toContain(placed.orderId);
     expect(logs[0]).not.toContain('x@example.com');
     await expect(
-      sender.send({ idempotencyKey: 'c', topic: 'email.payment-received', payload: {} }),
+      sender.send({ idempotencyKey: 'c', topic: 'email.no-such-topic', payload: {} }),
     ).rejects.toBeInstanceOf(UnhandledTopicError);
   });
 });
@@ -276,6 +280,7 @@ describe('an alert on a real pg-boss', () => {
         reader: app.db,
         email: new Recorder(),
         siteUrl: 'https://shop.example',
+        fiscal: null,
         log: (l) => logs.push(l),
       });
       await registerWorkers(boss, sender, 1);
@@ -320,7 +325,7 @@ describe('scheduled jobs', () => {
     const logs: string[] = [];
     await registerJobs(
       boss,
-      createJobHandlers({ db: app.db, directory: null, log: (l) => logs.push(l) }),
+      createJobHandlers({ db: app.db, directory: null, providers: {}, log: (l) => logs.push(l) }),
       { expiry: true },
     );
     await boss.send(JOB_NAMES.releaseExpired, {});
@@ -346,7 +351,12 @@ describe('scheduled jobs', () => {
     );
     await app.db.execute(sql`UPDATE product_variants SET reserved_quantity = 0`);
     const logs: string[] = [];
-    const handlers = createJobHandlers({ db: app.db, directory: null, log: (l) => logs.push(l) });
+    const handlers = createJobHandlers({
+      db: app.db,
+      directory: null,
+      providers: {},
+      log: (l) => logs.push(l),
+    });
     await expect(handlers[JOB_NAMES.releaseExpired]()).rejects.toThrow('stock counter drift');
     expect(JSON.parse(logs[0] ?? '{}')).toMatchObject({ level: 'error', failed: 1 });
   });
@@ -354,12 +364,19 @@ describe('scheduled jobs', () => {
   it('the schedules exist with the Kyiv timezone, one per job', async () => {
     await registerJobs(
       boss,
-      createJobHandlers({ db: app.db, directory: null, log: () => undefined }),
+      createJobHandlers({ db: app.db, directory: null, providers: {}, log: () => undefined }),
     );
     const schedules = await boss.getSchedules();
-    // Expiry is opt-in (Q27): without the flag it is neither scheduled nor consumed.
+    // Since phase 3 the expiry job ships with the reconciliation it depends on (Q27).
     expect(schedules.map((s) => s.name).sort()).toEqual(
-      [JOB_NAMES.reconcileStock, JOB_NAMES.syncNp].sort(),
+      [
+        JOB_NAMES.releaseExpired,
+        JOB_NAMES.reconcileStock,
+        JOB_NAMES.syncNp,
+        JOB_NAMES.reconcileOpen,
+        JOB_NAMES.cleanQuarantine,
+        JOB_NAMES.reconcileFiscal,
+      ].sort(),
     );
     expect(schedules.every((s) => s.timezone === 'Europe/Kyiv')).toBe(true);
   });
@@ -370,7 +387,12 @@ describe('scheduled jobs', () => {
       sql`UPDATE product_variants SET reserved_quantity = reserved_quantity + 3`,
     );
     const logs: string[] = [];
-    const handlers = createJobHandlers({ db: app.db, directory: null, log: (l) => logs.push(l) });
+    const handlers = createJobHandlers({
+      db: app.db,
+      directory: null,
+      providers: {},
+      log: (l) => logs.push(l),
+    });
     await expect(handlers[JOB_NAMES.reconcileStock]()).rejects.toThrow('drifted');
     const line = JSON.parse(logs[0] ?? '{}') as Record<string, unknown>;
     expect(line).toMatchObject({ level: 'error', scope: JOB_NAMES.reconcileStock, drifted: 2 });
@@ -378,7 +400,12 @@ describe('scheduled jobs', () => {
 
   it('the sync job without a carrier key skips with a warning instead of failing', async () => {
     const logs: string[] = [];
-    const handlers = createJobHandlers({ db: app.db, directory: null, log: (l) => logs.push(l) });
+    const handlers = createJobHandlers({
+      db: app.db,
+      directory: null,
+      providers: {},
+      log: (l) => logs.push(l),
+    });
     await handlers[JOB_NAMES.syncNp]();
     expect(JSON.parse(logs[0] ?? '{}')).toMatchObject({
       level: 'warn',

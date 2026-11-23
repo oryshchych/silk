@@ -25,7 +25,11 @@
     "./np-directory": "./src/shipping/np-directory.ts",
     "./start-payment": "./src/payments/start-payment.ts",
     "./reconcile": "./src/payments/reconcile.ts",
-    "./offline": "./src/payments/offline.ts"
+    "./offline": "./src/payments/offline.ts",
+    "./fiscal": "./src/fiscal/issue.ts",
+    "./fiscal-receipts": "./src/fiscal/receipts.ts",
+    "./quarantine": "./src/payments/quarantine.ts",
+    "./fiscal-gaps": "./src/fiscal/gaps.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"

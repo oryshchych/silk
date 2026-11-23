@@ -12,6 +12,10 @@ export const OUTBOX_TOPICS = [
   'alert.payment-mismatch',
   'alert.refund-due',
   'email.refund-issued',
+  'email.payment-failed',
+  'fiscal.issue-receipt',
+  'alert.fiscal-failed',
+  'alert.attempt-unresolved',
 ] as const;
 
 /** Jobs that exhausted their retries land here. Someone must watch this queue. */

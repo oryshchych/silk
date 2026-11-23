@@ -12,6 +12,10 @@ import type { PgBoss } from 'pg-boss';
 import { DomainError } from '@store/core/errors';
 
 import { findReservedDrift, releaseExpiredOrders } from '@store/core/expiry';
+import { findReceiptGaps } from '@store/core/fiscal-gaps';
+import { purgeQuarantine } from '@store/core/quarantine';
+import { reconcileOpenAttempts } from '@store/core/reconcile';
+import type { ProviderMap } from '@store/core/refunds';
 import type { Reader, Tx } from '@store/db/types';
 
 import type { NovaPoshtaDirectory } from './np/client.ts';
@@ -22,6 +26,10 @@ export const JOB_NAMES = {
   releaseExpired: 'stock.release-expired',
   reconcileStock: 'stock.reconcile',
   syncNp: 'np.sync-settlements',
+  /** ADR-4 source 2: ask the provider before anything is cancelled (Q17, Q27). */
+  reconcileOpen: 'payments.reconcile-open',
+  cleanQuarantine: 'quarantine.cleanup',
+  reconcileFiscal: 'fiscal.reconcile',
 } as const;
 
 /** Cron expressions and their timezone (ADR-17): the timezone moves the schedule, nothing else. */
@@ -30,6 +38,11 @@ const SCHEDULES = {
   [JOB_NAMES.releaseExpired]: '*/10 * * * *',
   [JOB_NAMES.reconcileStock]: '35 * * * *',
   [JOB_NAMES.syncNp]: '0 3 * * *',
+  // Every ten minutes, not hourly: it is what lets the expiry job (also every ten minutes) skip
+  // an order only briefly, so stock is not held for an hour behind an unknown attempt.
+  [JOB_NAMES.reconcileOpen]: '*/10 * * * *',
+  [JOB_NAMES.cleanQuarantine]: '0 5 * * *',
+  [JOB_NAMES.reconcileFiscal]: '0 6 * * *',
 } as const;
 const CRON_TZ = 'Europe/Kyiv';
 
@@ -37,6 +50,8 @@ export interface JobDeps {
   db: Reader & { transaction: <T>(fn: (tx: Tx) => Promise<T>) => Promise<T> };
   /** Null until the carrier key exists (Q2): the sync job then skips with a log line. */
   directory: NovaPoshtaDirectory | null;
+  /** The configured payment adapters; an absent one is simply not asked. */
+  providers: ProviderMap;
   log?: (line: string) => void;
 }
 
@@ -76,6 +91,30 @@ export function createJobHandlers(deps: JobDeps): JobHandlers {
       // A drifted counter is a money alert: fail the job so it reaches the dead-letter queue.
       if (drift.length > 0) throw new Error('stock counters drifted from the live reservations');
     },
+    [JOB_NAMES.reconcileOpen]: async () => {
+      const result = await reconcileOpenAttempts({ db: deps.db, providers: deps.providers });
+      line({
+        level: result.providerErrors > 0 || result.alerts > 0 ? 'warn' : 'info',
+        scope: JOB_NAMES.reconcileOpen,
+        ...result,
+      });
+    },
+    [JOB_NAMES.cleanQuarantine]: async () => {
+      const removed = await deps.db.transaction(async (tx) => await purgeQuarantine(tx));
+      line({ level: 'info', scope: JOB_NAMES.cleanQuarantine, removed });
+    },
+    [JOB_NAMES.reconcileFiscal]: async () => {
+      const gaps = await findReceiptGaps(deps.db);
+      line({
+        level: gaps.missing > 0 ? 'error' : 'info',
+        scope: JOB_NAMES.reconcileFiscal,
+        missing: gaps.missing,
+        // Order ids only: they identify the rows to inspect, nothing personal.
+        orders: gaps.orderIds,
+      });
+      // Orders without a receipt are a money-side alert: fail the job so it reaches the dead-letter queue.
+      if (gaps.missing > 0) throw new Error('paid or shipped orders have no fiscal receipt');
+    },
     [JOB_NAMES.syncNp]: async () => {
       if (deps.directory === null) {
         line({ level: 'warn', scope: JOB_NAMES.syncNp, skipped: 'no carrier API key' });
@@ -99,9 +138,10 @@ function scrub(error: unknown): Error {
 /**
  * Creates the queues, schedules them, and starts one consumer each (concurrency 1).
  *
- * `expiry` is OFF unless asked for (owner queue Q27): the expiry job cancels unpaid orders at the
- * end of their reservation, and until `payments:reconcile-open` exists (phase 3) nothing settles
- * an attempt whose result is unknown. The wiring turns it on once that job exists.
+ * `expiry` is ON by default since phase 3 (owner queue Q27): `payments.reconcile-open` now asks the
+ * provider for every open attempt, and the expiry job skips orders with an attempt whose result is
+ * unknown, so it cannot cancel an order that was paid while its webhook never arrived. Pass
+ * `{ expiry: false }` only to run without it.
  */
 export async function registerJobs(
   boss: PgBoss,
@@ -109,7 +149,7 @@ export async function registerJobs(
   options: { expiry?: boolean } = {},
 ): Promise<void> {
   const enabled = Object.entries(SCHEDULES).filter(
-    ([name]) => name !== JOB_NAMES.releaseExpired || options.expiry === true,
+    ([name]) => name !== JOB_NAMES.releaseExpired || options.expiry !== false,
   );
   for (const [name, cron] of enabled) {
     // The directory sync makes many sequential calls: give it an hour before pg-boss re-runs it.
