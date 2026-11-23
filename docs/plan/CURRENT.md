@@ -5,49 +5,51 @@
 
 ## Current phase
 
-**Phase 1, "catalog and base SEO": 8 of 9 acceptance criteria verified by execution** (2026-11-23).
-The ninth (Google's Rich Results Test) needs a public URL: a structural JSON-LD check passed instead.
-Evidence per criterion: `docs/plan/phase-01-catalog.md`. Phase 2 (checkout) starts in a NEW session.
-Standing rules (`AGENTS.md` section 0): technical text in English; one phase per session.
+**Phase 2, "cart, checkout, delivery": 14 of 14 acceptance criteria verified by execution** (2026-11-23),
+three with caveats (below). Evidence per criterion: `docs/plan/phase-02-checkout.md`.
+Phase 3 (payments) starts in a NEW session. Standing rules (`AGENTS.md` section 0): technical text in
+English; one phase per session.
 
-Infra: staging `https://staging.damazla.com` (basic auth), Hetzner CAX11, Dokploy
-`https://dokploy.damazla.com`, daily dump to R2. Next 16.4.6 (PR #39).
+Infra: staging `https://staging.damazla.com` (basic auth), Hetzner CAX11, Dokploy. Next 16.4.6.
 
-## Done (phase 1, merged PRs)
+## Done (phase 2, merged PRs)
 
-- #34 SEO skeleton (runtime `SITE_URL`, one hreflang source, `/uk/*` 308, security headers, global 404)
-- #35 bra size calculator · #36 typed JSON-LD builders · #37 catalog read layer in `core` (DTOs, search)
-- #40 shell, home, category page with filters on cached reads · #42 product page (ISR, tags, JSON-LD)
-- #43 search page and per-client rate limit · #45 home showcases, favicon · #44 CI `smoke-web` job (owner)
-- #47, #48 limiter hardening (trusted proxy hop, route match, IPv6 /64, global cap) and review nits
-- Verified on `main` + #48: `pnpm verify` (505 unit), `pnpm test:int` (231), `pnpm smoke:web` (49 checks)
-- N+1 (`pg_stat_statements`, cache-miss requests): listing 2 statements for 38 and 338 products; product
-  page 8 cold / 0 warm; search 1; home 4 cold / 0 warm. Lighthouse mobile 100 across (see phase file)
+- #52 core: migrations 0007 (quoted total, RR1 composite FKs, RR2 triggers) and 0008, quote guard,
+  shipping fee, COD guards, expiry runner, cart merge, order lookup
+- #53 web: cookie cart, cart, checkout, order success/failed/track, city autocomplete, consent checkbox
+- #55 worker parts: Resend order emails, router, expiry/reconcile/Nova Poshta sync jobs (NOT deployed, Q31)
+- Verified on `main` + #55: `pnpm verify` (568 unit), `pnpm test:int` (315), `pnpm smoke:web` (96 checks
+  on the built app, including the shopper path), `db:check`, knip, boundaries, `ai:check`
 
 ## Next step
 
-1. Phase 2 (checkout) by the standing go-ahead, in a NEW session; read `phase-02-checkout.md`.
-2. Owner: answer the queue items below; run Google's Rich Results Test once staging is reachable.
+1. Phase 3 (payments) in a NEW session; read `phase-03-payments.md` and Q27 (reconciliation must exist
+   before the expiry job ships) and Q31 (the worker needs an entrypoint and a deploy).
+2. Owner: the items still open in `docs/plan/OWNER_QUEUE.md` (Q1, Q2, Q3, Q8, Q13, Q19, Q24, Q31).
 
 ## Open decisions for the owner (full list: `docs/plan/OWNER_QUEUE.md`)
 
-- Q19 bra size table (standard European one is a placeholder); Q1 shop name, palette, favicon
-- Q21 cold start in a database outage: alerts, readiness probe, warm pages, edge rate limit
-- Q22 `notFound()` from matched pages is answered with Next's empty `__next_error__` shell (framework-wide)
-- Q23 no `revalidateTag` caller yet: build the invalidation endpoint before any admin mutation
-- Q24 proxy trust (`TRUSTED_PROXY_HOPS`, Traefik `trustedIPs`, Cloudflare); Q25 global search cap fails
-  hard for availability (about 20 addresses exhaust it)
-- Still open from phase 0.5: Q13 to Q17 (Mono sandbox, outbox watcher, COD rules), Q2 and Q3 accounts
+- Q31 worker entrypoint and deploy (new env var for the pg-boss connection, `RESEND_API_KEY`, `EMAIL_FROM`):
+  until then nothing sends the order emails, releases expired reservations or syncs the directory
+- Q2 Nova Poshta key (the sync client is only tested against recorded-shape fixtures), Q3 Checkbox account
+- Q13 Mono sandbox token, Q24 proxy trust (`TRUSTED_PROXY_HOPS` 2 behind Cloudflare), Q19 bra size table
+- Q1 shop name and palette, Q8 backup check
+
+## Caveats on the criteria
+
+- Worker job (expiry): proven through a real pg-boss, but no worker process runs on staging (Q31)
+- Cart merge at login: proven at core level; login arrives with phase 7, nothing calls it yet
+- End-to-end in CI: HTTP level (server actions POSTed on the built app), not a browser (Playwright, Q6)
 
 ## Deviations from the plan
 
-- Home page is rendered per request (not ISR): its navigation can be missing when the database is down on a
-  cold start, and ISR would keep that. The product page is ISR; category pages are dynamic (`searchParams`)
-  behind the data cache. Search is deliberately uncached (free-text key space)
-- Not built: attribute filters (no data), add to cart (phase 2), reviews and ratings markup, category SEO
-  text (needs a sanitiser), real photos (seed has a placeholder; `packages/media` is later), cache purge
-- A product without a photo has no `Product` markup; no `aggregateRating` until ratings are visible
-- Search is limited in process memory per /64 or IPv4 address plus a global cap; shared limiter is phase 12
-- `notFound()` from a matched page is a real 404 with `noindex` but an empty server body (Q22)
+- `quoted_total` is set by `quoteCheckout` (not `startCheckout`): delivery and promo are unknown earlier
+- Delivery fee is a flat tariff from `settings` (placeholder numbers); cards are off until phase 3
+- Orders created from the storefront refuse without a quote and without accepted terms (audit entry,
+  no column); the legal texts and their versions arrive with phase 8
+- Promo answer is one public message; per-customer and first-order codes are refused for guests (Q28)
+- Rate limits are in process memory (a full table refuses new clients, Q29); shared limiter is phase 12
+- Not built: payment providers (phase 3), emails for payment and refunds, login merge (phase 7),
+  worker deployment (Q31), real Nova Poshta calls (Q2)
 - Earlier: TS 6.0.3; Tailwind v4 tokens in CSS; staging basic auth in `proxy.ts`; hooks are Node scripts;
-  phase 0.5 deviations (core-level money skeleton, no worker deploy) stand until their phases
+  phase 0.5 and phase 1 deviations stand (see their phase files)
