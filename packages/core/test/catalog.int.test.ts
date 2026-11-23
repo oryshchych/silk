@@ -20,6 +20,7 @@ import {
   getFilterOptions,
   getProductBySlug,
   listProducts,
+  listShowcase,
   PAGE_SIZE,
   parseListingParams,
   searchProducts,
@@ -157,6 +158,31 @@ describe('listing', () => {
     expect(options.colors.map((c) => c.slug)).toEqual(['black', 'white', 'nude']);
     expect(options.brands).toEqual(['Aurelia', 'Nord Lace']);
     expect(options.price).toEqual({ min: 59_900, max: 129_900 });
+  });
+});
+
+describe('home showcases', () => {
+  it('lists the newest visible products first, never hidden ones, with the cost price absent', async () => {
+    const items = await listShowcase(db, { kind: 'new', limit: 4, locale: 'uk' });
+    expect(items.map((item) => item.slug)).toEqual(['aurora', 'lavanda', 'breeze', 'robe']);
+    expect(JSON.stringify(items)).not.toContain(String(SECRET_COST));
+    expect(items[0]).toMatchObject({ inStock: true, name: 'Бюстгальтер «Аврора»' });
+  });
+
+  it('lists only products the shop marked bestseller', async () => {
+    const items = await listShowcase(db, { kind: 'bestseller', limit: 8, locale: 'en' });
+    expect(items.map((item) => item.slug)).toEqual(['lavanda']);
+    expect(items[0]?.name).toBe('Push-up bra "Lavender"');
+  });
+
+  it('clamps the limit and survives odd values', async () => {
+    expect(await listShowcase(db, { kind: 'new', limit: 0, locale: 'uk' })).toHaveLength(1);
+    expect(
+      (await listShowcase(db, { kind: 'new', limit: 10_000, locale: 'uk' })).length,
+    ).toBeLessThanOrEqual(24);
+    expect(
+      (await listShowcase(db, { kind: 'new', limit: Number.NaN, locale: 'uk' })).length,
+    ).toBeGreaterThan(0);
   });
 });
 
