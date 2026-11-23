@@ -51,7 +51,6 @@ Infra: staging `https://staging.damazla.com` (basic auth), Hetzner CAX11, Dokplo
 - Cards are off in `payment_providers` and no provider credentials exist on staging, so no card is offered
 
 ## Deviations from the plan
-
 - `payments.reconcile-open` every 10 minutes (plan: hourly), so the expiry job holds stock briefly
 - A live invoice is reused, never cancelled at the provider; "another card" works after a failed or
   expired attempt (Q34). Reconcile closes a not-found attempt only if it never had an invoice (Q36)
