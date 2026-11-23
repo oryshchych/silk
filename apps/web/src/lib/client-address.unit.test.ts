@@ -65,6 +65,20 @@ describe('clientAddress', () => {
     expect(clientAddress('fe80::1%eth0', 1)).toBe('fe80:0:0:0::/64');
   });
 
+  it('rejects an IPv4 entry with a zone id instead of keeping the suffix in the key', () => {
+    expect(clientAddress('1.2.3.4%eth0', 1)).toBe(UNKNOWN_CLIENT);
+    expect(clientAddress('1.2.3.4%', 1)).toBe(UNKNOWN_CLIENT);
+    expect(clientAddress('9.9.9.9, 1.2.3.4%x', 1)).toBe(UNKNOWN_CLIENT);
+    // The same address without the suffix is a normal key.
+    expect(clientAddress('1.2.3.4', 1)).toBe('1.2.3.4');
+  });
+
+  it('shares one bucket per loopback or link-local /64, as documented', () => {
+    expect(clientAddress('::1', 1)).toBe(clientAddress('::2', 1));
+    expect(clientAddress('fe80::1', 1)).toBe(clientAddress('fe80::abcd', 1));
+    expect(clientAddress('fe80::1', 1)).not.toBe(clientAddress('::1', 1));
+  });
+
   it('keeps every key short', () => {
     expect(clientAddress('1.1.1.1, 2001:db8:1:2:3:4:5:6', 1).length).toBeLessThanOrEqual(30);
   });

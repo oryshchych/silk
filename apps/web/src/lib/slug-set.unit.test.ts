@@ -21,6 +21,41 @@ describe('createSlugSet', () => {
     expect(load).toHaveBeenCalledTimes(2);
   });
 
+  it('backs off after repeated failures and starts over after a success', async () => {
+    let clock = 0;
+    const load = vi
+      .fn<() => Promise<string[]>>()
+      .mockRejectedValueOnce(new Error('down'))
+      .mockRejectedValueOnce(new Error('down'))
+      .mockRejectedValueOnce(new Error('down'))
+      .mockResolvedValueOnce(['a'])
+      .mockRejectedValue(new Error('down'));
+    const set = createSlugSet(load, { ttlMs: 60_000, now: () => clock });
+    await set.has('a'); // failure 1: next try in 5 s
+    clock = 4_999;
+    await set.has('a');
+    expect(load).toHaveBeenCalledTimes(1);
+    clock = 5_000;
+    await set.has('a'); // failure 2: next try in 10 s
+    clock = 14_999;
+    await set.has('a');
+    expect(load).toHaveBeenCalledTimes(2);
+    clock = 15_000;
+    await set.has('a'); // failure 3: next try in 20 s
+    clock = 34_999;
+    await set.has('a');
+    expect(load).toHaveBeenCalledTimes(3);
+    clock = 35_000;
+    expect(await set.has('a')).toBe(true); // success resets the back-off
+    clock = 95_000;
+    await set.has('a'); // stale set served at once, refresh fails: back to 5 s
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    clock = 100_001;
+    await set.has('a');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(load).toHaveBeenCalledTimes(6);
+  });
+
   it('shares one load between concurrent callers', async () => {
     let release: (value: string[]) => void = () => undefined;
     const load = vi.fn(

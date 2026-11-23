@@ -225,6 +225,18 @@ describe('proxy: search rate limit', () => {
     );
   });
 
+  it('does not count a request its own client limit refused toward the global cap', async () => {
+    const proxy = await loadProxy('local');
+    // One client far over its own limit: 30 allowed, 500 refused. Only the 30 may use the shared cap.
+    expect(await blockedOf(proxy, 530, () => search('192.0.2.50'))).toBe(500);
+    // 19 other clients x 30 = 570; with the 30 above that is exactly the 600 of the cap.
+    for (let client = 0; client < 19; client++) {
+      expect(await blockedOf(proxy, 30, () => search(`10.0.0.${String(client)}`))).toBe(0);
+    }
+    // The cap is now spent, so the next new client is refused.
+    expect((await proxy(search('10.0.1.1'))).status).toBe(429);
+  });
+
   it('counts hops from the right as configured (Cloudflare then Traefik is two)', async () => {
     vi.stubEnv('TRUSTED_PROXY_HOPS', '2');
     const proxy = await loadProxy('local');

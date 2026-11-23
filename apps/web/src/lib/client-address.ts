@@ -40,13 +40,17 @@ function ipv6Groups(address: string): number[] | null {
  * is reduced to its /64 prefix: a household or a host gets a whole /64, so
  * rotating the lower 64 bits would otherwise mint unlimited keys. An
  * IPv4-mapped IPv6 address (`::ffff:203.0.113.7`) is the same client as the
- * IPv4 address and shares its key.
+ * IPv4 address and shares its key. Loopback (`::1`) and link-local (`fe80::/64`)
+ * clients each fall into their own /64 bucket, shared by everything on it: a
+ * proxy-less or misconfigured deployment sees all its clients as one.
  */
 function networkKey(address: string): string | null {
-  const version = isIP(address.split('%')[0] ?? '');
-  if (version === 4) return address;
+  const bare = address.split('%')[0] ?? '';
+  const version = isIP(bare);
+  // A zone id (`%eth0`) only exists on IPv6; on an IPv4 entry it is not an address at all.
+  if (version === 4) return bare === address ? bare : null;
   if (version !== 6) return null;
-  const groups = ipv6Groups(address);
+  const groups = ipv6Groups(bare);
   if (groups === null) return null;
   const [g0 = 0, g1 = 0, g2 = 0, g3 = 0, g4 = 0, g5 = 0, g6 = 0, g7 = 0] = groups;
   if (g0 === 0 && g1 === 0 && g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0xffff) {
