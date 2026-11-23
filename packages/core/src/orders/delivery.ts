@@ -7,14 +7,22 @@ import { sql } from 'drizzle-orm';
 import type { Tx } from '@store/db/types';
 import type { Money } from '@store/shared/money';
 
+import { isCanonicalUaPhone } from '@store/shared/phone';
+
 import {
   CodNotAllowedError,
+  ContactInvalidError,
   DeliveryInvalidError,
   PaymentMethodUnavailableError,
 } from '../errors.ts';
 import { resolveNpPoint } from '../shipping/np-directory.ts';
 import type { ShippingSettings } from '../shipping/rules.ts';
 import type { CreateOrderInput } from './types.ts';
+
+/** The per-phone COD limit compares exact strings, so only the canonical form gets in. */
+export function assertContact(contact: CreateOrderInput['contact']): void {
+  if (!isCanonicalUaPhone(contact.phone)) throw new ContactInvalidError('phone');
+}
 
 const MIN_ADDRESS = 5;
 const MAX_ADDRESS = 300;

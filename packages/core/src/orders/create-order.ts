@@ -34,7 +34,7 @@ import {
 import { acquireLocks } from '../locks/acquire-locks.ts';
 import { calculateCart } from '../pricing/calculate-cart.ts';
 import { loadShippingSettings } from '../shipping/rules.ts';
-import { assertPaymentAllowed, resolveDelivery } from './delivery.ts';
+import { assertContact, assertPaymentAllowed, resolveDelivery } from './delivery.ts';
 import { priceCheckout } from './price-checkout.ts';
 import {
   cartVariantIds,
@@ -140,6 +140,7 @@ export async function createOrder(tx: Tx, input: CreateOrderInput): Promise<Crea
     throw new Error('cart lines and locked variants disagree');
   }
   const promo = await resolveOptionalPromo(tx, input.promoCode, promoId, lines);
+  assertContact(input.contact);
   const config = await loadShippingSettings(tx);
   const delivery = await resolveDelivery(tx, input.delivery);
   const pricing = priceCheckout(lines, promo, delivery.method, config);
@@ -147,7 +148,7 @@ export async function createOrder(tx: Tx, input: CreateOrderInput): Promise<Crea
   // Q12: the buyer confirms the total they were shown. A different total is refused before
   // anything is reserved; the order itself always stores the database total.
   if (intent.quotedTotal === null) {
-    if (input.requireQuote === true) throw new QuoteRequiredError();
+    if (input.allowUnquoted !== true) throw new QuoteRequiredError();
   } else if (intent.quotedTotal !== pricing.total) {
     throw new PriceChangedError(pricing.total);
   }

@@ -39,7 +39,9 @@ export async function mergeGuestCart(
     .select({ convertedAt: carts.convertedAt })
     .from(carts)
     .where(eq(carts.id, target.id));
-  if (state?.convertedAt !== null) throw new CartConvertedError();
+  if (state === undefined) throw new Error('customer cart disappeared after lock');
+  // The storefront rotates the cart token after an order, so a converted target means a stale token.
+  if (state.convertedAt !== null) throw new CartConvertedError();
   const [guestState] = await tx
     .select({ convertedAt: carts.convertedAt })
     .from(carts)

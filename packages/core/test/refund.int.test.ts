@@ -80,6 +80,7 @@ beforeEach(async () => {
         paymentProvider: 'mono',
         promoCode: null,
         locale: 'uk',
+        allowUnquoted: true,
       }),
   );
   orderId = placed.orderId;

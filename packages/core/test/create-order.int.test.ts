@@ -56,6 +56,7 @@ const details = (intentId: string, name: string, over: Partial<CreateOrderInput>
     paymentProvider: 'mono',
     promoCode: null,
     locale: 'uk',
+    allowUnquoted: true,
     ...over,
   }) satisfies CreateOrderInput;
 

@@ -644,3 +644,51 @@ describe('0007_phase2_integrity', () => {
     );
   });
 });
+
+describe('0008_attempt_needs_order', () => {
+  it('an event or gift card transaction naming an attempt must name the order', async () => {
+    const { id: order } = await one<{ id: string }>(
+      app,
+      `INSERT INTO orders (order_number, customer_email, customer_phone, customer_name,
+                           delivery_method, subtotal, total)
+       VALUES (next_order_number(), 'n8@example.com', '+380000000000', 'Test', 'np_warehouse', 100, 100)
+       RETURNING id`,
+    );
+    const { id: attempt } = await one<{ id: string }>(
+      app,
+      `INSERT INTO payment_attempts (order_id, attempt_number, provider, amount)
+       VALUES ($1, 1, 'mono', 100) RETURNING id`,
+      [order],
+    );
+    await expect(
+      app.query(
+        `INSERT INTO payment_events (order_id, payment_attempt_id, provider, message_key, raw_payload)
+         VALUES (NULL, $1, 'mono', 'n8-bad', '{}')`,
+        [attempt],
+      ),
+    ).rejects.toMatchObject({ code: '23514' });
+    // Both NULL (a quarantine-like event) and both set stay legal.
+    await app.query(
+      `INSERT INTO payment_events (order_id, payment_attempt_id, provider, message_key, raw_payload)
+       VALUES (NULL, NULL, 'mono', 'n8-null', '{}'), ($1, $2, 'mono', 'n8-ok', '{}')`,
+      [order, attempt],
+    );
+    const { id: card } = await one<{ id: string }>(
+      app,
+      `INSERT INTO gift_cards (code_hash, last4, initial_amount, balance)
+       VALUES ('hash-n8', '4321', 100, 100) RETURNING id`,
+    );
+    await expect(
+      app.query(
+        `INSERT INTO gift_card_transactions (gift_card_id, type, order_id, payment_attempt_id, amount, balance_after)
+         VALUES ($1, 'redeem', NULL, $2, -10, 90)`,
+        [card, attempt],
+      ),
+    ).rejects.toMatchObject({ code: '23514' });
+    await app.query(
+      `INSERT INTO gift_card_transactions (gift_card_id, type, order_id, payment_attempt_id, amount, balance_after)
+       VALUES ($1, 'redeem', $2, $3, -10, 90)`,
+      [card, order, attempt],
+    );
+  });
+});

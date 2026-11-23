@@ -209,3 +209,10 @@ export class CodNotAllowedError extends DomainError {
     super('CHECKOUT_COD_NOT_ALLOWED', `Cash on delivery is not allowed: ${reason}`);
   }
 }
+
+/** Contact details the domain refuses (phone not in the canonical `+380XXXXXXXXX` form). */
+export class ContactInvalidError extends DomainError {
+  constructor(field: 'phone') {
+    super('CHECKOUT_CONTACT_INVALID', `Invalid contact details: ${field}`);
+  }
+}

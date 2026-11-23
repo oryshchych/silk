@@ -18,6 +18,9 @@ export interface CreateOrderInput {
   paymentProvider: PaymentProvider;
   promoCode: string | null;
   locale: 'uk' | 'en';
-  /** The storefront always sets it: refuse an order whose total was never shown (Q12). */
-  requireQuote?: boolean;
+  /**
+   * Q12: by default an order whose total was never quoted is refused. Only code that creates
+   * orders without a buyer looking at a total (tests, a future admin tool) opts out.
+   */
+  allowUnquoted?: boolean;
 }

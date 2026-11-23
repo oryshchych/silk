@@ -56,7 +56,6 @@ const order = (intentId: string, name: string, over: Partial<CreateOrderInput> =
     paymentProvider: 'bank_transfer',
     promoCode: null,
     locale: 'uk',
-    requireQuote: true,
     ...over,
   }) satisfies CreateOrderInput;
 
@@ -84,6 +83,39 @@ const quote = async (
 
 const place = async (input: CreateOrderInput, handle: DbHandle = world.connect()) =>
   await handle.db.transaction(async (tx) => await createOrder(tx, input));
+
+/**
+ * Runs `fn` in a transaction on its own connection and keeps that transaction OPEN until
+ * `release()`. A second operation started meanwhile that conflicts on a lock is observably
+ * blocked, which proves the protection instead of hoping two calls overlapped.
+ */
+async function holdTx<T>(
+  fn: (tx: Parameters<Parameters<DbHandle['db']['transaction']>[0]>[0]) => Promise<T>,
+) {
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let ready: () => void = () => undefined;
+  const started = new Promise<void>((resolve) => {
+    ready = resolve;
+  });
+  const done = world.connect().db.transaction(async (tx) => {
+    const value = await fn(tx);
+    ready();
+    await gate;
+    return value;
+  });
+  done.catch(() => {
+    ready();
+  });
+  await started;
+  return { release, done };
+}
+
+const settle = async (ms = 400): Promise<void> => {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+};
 
 async function seedDirectory(): Promise<void> {
   await admin.db.insert(npSettlements).values([
@@ -357,20 +389,40 @@ describe('payment methods and the COD guards', () => {
     expect(other.created).toBe(true);
   });
 
-  it('parallel COD checkouts from one phone cannot exceed the limit (advisory lock, separate connections)', async () => {
-    const names = Array.from({ length: 6 }, (_, i) => `par${String(i)}`);
-    const intents = await Promise.all(names.map(async (name) => await cart(name)));
-    for (const [i, name] of names.entries()) await quote(name, intents[i] ?? '');
-    const results = await Promise.allSettled(
-      names.map(
-        async (name, i) =>
-          await place(order(intents[i] ?? '', name, { paymentProvider: 'cod' }), world.connect()),
-      ),
+  it('the phone advisory lock serialises COD checkouts: the second waits, then sees the first', async () => {
+    await admin.db
+      .insert(settings)
+      .values({ key: 'cod_limits', value: { max_pending_per_phone: 1 } });
+    // Different variants: otherwise the variant row lock would serialise the two by itself.
+    const [i1, i2] = [await cart('lock1', [[v1, 1]]), await cart('lock2', [[v2, 1]])];
+    await quote('lock1', i1);
+    await quote('lock2', i2);
+    const first = await holdTx(
+      async (tx) => await createOrder(tx, order(i1, 'lock1', { paymentProvider: 'cod' })),
     );
-    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(3);
-    expect(
-      results.filter((r) => r.status === 'rejected' && r.reason instanceof CodNotAllowedError),
-    ).toHaveLength(3);
+    // Without the lock the second count would not see the uncommitted first order and succeed at once.
+    const second = place(order(i2, 'lock2', { paymentProvider: 'cod' }), world.connect());
+    const outcome = second.then(
+      () => 'created',
+      (error: unknown) => (error instanceof CodNotAllowedError ? 'refused' : 'other'),
+    );
+    await settle();
+    first.release();
+    await first.done;
+    expect(await outcome).toBe('refused');
+  });
+
+  it('refuses a phone that is not in the canonical +380XXXXXXXXX form (the limit keys on it)', async () => {
+    const intent = await cart('ph1');
+    await quote('ph1', intent);
+    await expect(
+      place(
+        order(intent, 'ph1', {
+          paymentProvider: 'cod',
+          contact: { email: 'a@example.com', phone: '0501112233', name: 'A' },
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'CHECKOUT_CONTACT_INVALID' });
   });
 
   it('reservation lifetime follows the method: card 30 min, transfer 24 h, COD 2 h', async () => {
@@ -477,7 +529,7 @@ describe('the expiry worker (ADR-3)', () => {
       sql`UPDATE stock_reservations SET expires_at = now() - interval '1 minute' WHERE order_id = ${stale.orderId}`,
     );
     const result = await releaseExpiredOrders(admin.db);
-    expect(result).toEqual({ expired: 1, skipped: 0, failed: 0 });
+    expect(result).toEqual({ expired: 1, skipped: 0, failed: 0, failedOrderIds: [] });
 
     const [released] = (
       await admin.db.execute<{ reason: string; status: string; payment: string }>(
@@ -494,7 +546,12 @@ describe('the expiry worker (ADR-3)', () => {
     expect(kept?.live).toBe(1);
     expect(await findReservedDrift(admin.db)).toEqual([]);
     // A second run changes nothing.
-    expect(await releaseExpiredOrders(admin.db)).toEqual({ expired: 0, skipped: 0, failed: 0 });
+    expect(await releaseExpiredOrders(admin.db)).toEqual({
+      expired: 0,
+      skipped: 0,
+      failed: 0,
+      failedOrderIds: [],
+    });
   });
 
   it('an order paid after the scan is left alone, and a confirmed one is not a candidate', async () => {
@@ -504,7 +561,12 @@ describe('the expiry worker (ADR-3)', () => {
     await admin.db.execute(
       sql`UPDATE orders SET payment_status = 'paid', captured_total = total WHERE id = ${paid.orderId}`,
     );
-    expect(await releaseExpiredOrders(admin.db)).toEqual({ expired: 0, skipped: 0, failed: 0 });
+    expect(await releaseExpiredOrders(admin.db)).toEqual({
+      expired: 0,
+      skipped: 0,
+      failed: 0,
+      failedOrderIds: [],
+    });
     const [row] = (
       await admin.db.execute<{ status: string }>(
         sql`SELECT status FROM orders WHERE id = ${paid.orderId}`,
@@ -577,7 +639,31 @@ describe('merging the guest cart at login', () => {
     expect((await getCartView(admin.db, tok('member2'), 'uk')).itemCount).toBe(1);
   });
 
-  it('two merges racing from separate connections do not deadlock and lose nothing', async () => {
+  it('an item added to the guest cart by a transaction still open is not lost by the merge', async () => {
+    await cart('gh', [[v1, 1]]);
+    await cart('mh', [[v1, 1]]);
+    // An open transaction holds the guest cart (and its new line) while the merge starts.
+    const holder = await holdTx(async (tx) => {
+      await setCartItem(tx, { cartToken: tok('gh'), variantId: v2, quantity: 2 });
+    });
+    const merge = world
+      .connect()
+      .db.transaction(
+        async (tx) =>
+          await mergeGuestCart(tx, { guestToken: tok('gh'), customerCartToken: tok('mh') }),
+      );
+    await settle();
+    holder.release();
+    await holder.done;
+    expect((await merge).merged).toBe(2);
+    const view = await getCartView(admin.db, tok('mh'), 'uk');
+    expect(Object.fromEntries(view.lines.map((l) => [l.variantId, l.quantity]))).toEqual({
+      [v1]: 2,
+      [v2]: 2,
+    });
+  });
+
+  it('two merges into one cart from separate connections do not deadlock and lose nothing', async () => {
     await cart('g1', [[v1, 1]]);
     await cart('g2', [[v2, 1]]);
     await cart('m', [[v1, 1]]);
@@ -596,8 +682,7 @@ describe('merging the guest cart at login', () => {
         ),
     ]);
     expect(results.map((r) => r.merged)).toEqual([1, 1]);
-    const view = await getCartView(admin.db, tok('m'), 'uk');
-    expect(view.itemCount).toBe(3);
+    expect((await getCartView(admin.db, tok('m'), 'uk')).itemCount).toBe(3);
   });
 });
 

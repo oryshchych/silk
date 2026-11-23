@@ -21,6 +21,8 @@ export interface ExpiryResult {
   /** Candidates that were paid or confirmed in the meantime. */
   skipped: number;
   failed: number;
+  /** Orders whose cancel threw: the caller logs them; they stay candidates for the next run. */
+  failedOrderIds: string[];
 }
 
 export async function releaseExpiredOrders(
@@ -41,7 +43,7 @@ export async function releaseExpiredOrders(
     return found.rows.map((row) => row.id);
   });
 
-  const result: ExpiryResult = { expired: 0, skipped: 0, failed: 0 };
+  const result: ExpiryResult = { expired: 0, skipped: 0, failed: 0, failedOrderIds: [] };
   for (const orderId of candidates) {
     try {
       const done = await runner.transaction(
@@ -58,6 +60,7 @@ export async function releaseExpiredOrders(
     } catch {
       // One bad order must not stop the batch; it stays a candidate for the next run.
       result.failed += 1;
+      result.failedOrderIds.push(orderId);
     }
   }
   return result;
