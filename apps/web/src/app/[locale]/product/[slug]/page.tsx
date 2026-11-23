@@ -15,6 +15,8 @@ import { resolveLocale } from '@/i18n/locale';
 import { loadProduct } from '@/lib/catalog';
 import { htmlToParagraphs, htmlToSnippet } from '@/lib/html-text';
 import { pageMetadata } from '@/lib/metadata';
+import { productImageUrls, uniqueOffers } from '@/lib/product-jsonld';
+import { initialSelection } from '@/lib/variant-selection';
 import { href, paths } from '@/lib/paths';
 import { getSiteUrl } from '@/lib/site-url';
 
@@ -51,7 +53,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       locale,
       path: paths.product(slug),
     }),
-    index: !product.noindex,
+    // A product with nothing to choose is a thin page: not indexed.
+    index: !product.noindex && product.variants.length > 0,
     image,
   });
 }
@@ -74,6 +77,12 @@ export default async function ProductPage({ params }: Props) {
     return `${siteUrl}${local === '/' ? '' : local}`;
   };
   const url = absolute(paths.product(slug));
+  // A Product without a photo is not eligible for rich results: no Product markup then.
+  const imageUrls = productImageUrls(
+    product.images,
+    initialSelection(product.variants).colorSlug,
+    siteUrl,
+  );
   const bands = [
     ...new Set(
       product.variants.flatMap((variant) => (variant.band === null ? [] : [variant.band])),
@@ -97,24 +106,19 @@ export default async function ProductPage({ params }: Props) {
           { name: product.name, url },
         ])}
       />
-      {product.variants.length === 0 ? null : (
+      {product.variants.length === 0 || imageUrls.length === 0 ? null : (
         <JsonLd
           data={buildProduct({
             name: product.name,
             description: htmlToSnippet(product.description, 5000),
             sku: product.sku,
             brand: product.brand,
-            images: product.images.map((image) => image.url),
+            images: imageUrls,
             url,
-            offers: product.variants.map((variant) => ({
-              price: variant.price,
-              availability: variant.available ? 'InStock' : 'OutOfStock',
-              url,
-            })),
-            rating:
-              product.ratingAvg === null
-                ? null
-                : { value: product.ratingAvg, count: product.reviewsCount },
+            offers: uniqueOffers(product.variants, url),
+            // No aggregateRating: ratings are not shown on the page yet, and
+            // markup must match what the visitor sees.
+            rating: null,
           })}
         />
       )}
@@ -139,7 +143,16 @@ export default async function ProductPage({ params }: Props) {
           name={product.name}
           images={product.images}
           colors={product.colors}
-          variants={product.variants}
+          variants={product.variants.map((variant) => ({
+            id: variant.id,
+            sizeLabel: variant.sizeLabel,
+            sizeSystem: variant.sizeSystem,
+            band: variant.band,
+            cup: variant.cup,
+            colorSlug: variant.colorSlug,
+            available: variant.available,
+            lastUnits: variant.lastUnits,
+          }))}
           prices={{
             base: formatMoney(product.price, locale),
             compareAt:
@@ -154,7 +167,7 @@ export default async function ProductPage({ params }: Props) {
         {sections.map(([key, paragraphs]) =>
           paragraphs.length === 0 ? null : (
             <details key={key} className="py-3" open={key === 'description'}>
-              <summary className="cursor-pointer font-medium">{t(key)}</summary>
+              <summary className="min-h-6 cursor-pointer font-medium">{t(key)}</summary>
               <div className="mt-2 flex flex-col gap-2 text-sm">
                 {paragraphs.map((paragraph) => (
                   <p key={paragraph}>{paragraph}</p>
@@ -165,7 +178,7 @@ export default async function ProductPage({ params }: Props) {
         )}
         {bands.length === 0 ? null : (
           <details className="py-3">
-            <summary className="cursor-pointer font-medium">{t('sizeGuide')}</summary>
+            <summary className="min-h-6 cursor-pointer font-medium">{t('sizeGuide')}</summary>
             <div className="mt-3">
               <SizeGuide bands={bands} />
             </div>

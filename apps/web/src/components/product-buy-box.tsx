@@ -5,7 +5,7 @@ import Image from 'next/image';
 import { useId, useState } from 'react';
 
 import { calculateBraSize } from '@store/core/bra-size';
-import type { ColorDto, ProductImageDto, VariantDto } from '@store/shared/dto/catalog';
+import type { ColorDto, ProductImageDto } from '@store/shared/dto/catalog';
 
 import {
   imagesForColor,
@@ -13,6 +13,7 @@ import {
   selectColor,
   selectVariant,
   variantsOfColor,
+  type SelectableVariant,
 } from '@/lib/variant-selection';
 
 const FIELD = { color: 'color', size: 'size' } as const;
@@ -23,7 +24,7 @@ interface Props {
   name: string;
   images: ProductImageDto[];
   colors: ColorDto[];
-  variants: VariantDto[];
+  variants: SelectableVariant[];
   /**
    * Prices are formatted on the server and passed as text: `Intl` currency
    * output differs between Node and browsers (spaces, symbol), which made the
@@ -93,7 +94,7 @@ function SizeCalculator({
   colorSlug,
   onPick,
 }: {
-  variants: VariantDto[];
+  variants: SelectableVariant[];
   colorSlug: string;
   onPick: (variantId: string) => void;
 }) {
@@ -273,11 +274,13 @@ export function ProductBuyBox({ name, images, colors, variants, prices }: Props)
         </fieldset>
 
         <p aria-live="polite" className="text-sm text-text-muted">
-          {selected === undefined
-            ? t('chooseSize')
-            : selected.lastUnits
-              ? t('lastUnits')
-              : t('inStock')}
+          {sizes.every((variant) => !variant.available)
+            ? t('outOfStock')
+            : selected === undefined
+              ? t('chooseSize')
+              : selected.lastUnits
+                ? t('lastUnits')
+                : t('inStock')}
         </p>
 
         {hasBras ? (

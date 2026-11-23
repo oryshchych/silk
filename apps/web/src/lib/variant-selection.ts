@@ -5,6 +5,9 @@
  */
 import type { ProductImageDto, VariantDto } from '@store/shared/dto/catalog';
 
+/** A variant as the browser needs it: the price stays on the server (it is formatted there). */
+export type SelectableVariant = Omit<VariantDto, 'price'>;
+
 export interface Selection {
   colorSlug: string;
   /** Selected variant (one size in the selected colour), or null. */
@@ -12,17 +15,19 @@ export interface Selection {
 }
 
 /** Starts on the first colour that has anything to buy, else on the first colour. */
-export function initialSelection(variants: readonly VariantDto[]): Selection {
+export function initialSelection(variants: readonly SelectableVariant[]): Selection {
   const preferred = variants.find((variant) => variant.available) ?? variants[0];
   return { colorSlug: preferred?.colorSlug ?? '', variantId: null };
 }
 
-export const variantsOfColor = (variants: readonly VariantDto[], colorSlug: string): VariantDto[] =>
-  variants.filter((variant) => variant.colorSlug === colorSlug);
+export const variantsOfColor = (
+  variants: readonly SelectableVariant[],
+  colorSlug: string,
+): SelectableVariant[] => variants.filter((variant) => variant.colorSlug === colorSlug);
 
 export function selectVariant(
   state: Selection,
-  variants: readonly VariantDto[],
+  variants: readonly SelectableVariant[],
   variantId: string,
 ): Selection {
   const variant = variants.find((candidate) => candidate.id === variantId);
@@ -34,7 +39,7 @@ export function selectVariant(
 
 export function selectColor(
   state: Selection,
-  variants: readonly VariantDto[],
+  variants: readonly SelectableVariant[],
   colorSlug: string,
 ): Selection {
   if (!variants.some((variant) => variant.colorSlug === colorSlug)) return state;

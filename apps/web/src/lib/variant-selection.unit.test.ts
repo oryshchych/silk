@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { money } from '@store/shared/money';
-import type { ProductImageDto, VariantDto } from '@store/shared/dto/catalog';
+import type { ProductImageDto } from '@store/shared/dto/catalog';
 
 import {
   imagesForColor,
@@ -9,16 +8,21 @@ import {
   selectColor,
   selectVariant,
   variantsOfColor,
+  type SelectableVariant,
 } from './variant-selection';
 
-const variant = (id: string, size: string, color: string, available: boolean): VariantDto => ({
+const variant = (
+  id: string,
+  size: string,
+  color: string,
+  available: boolean,
+): SelectableVariant => ({
   id,
   sizeLabel: size,
   sizeSystem: 'bra',
   band: 75,
   cup: 'B',
   colorSlug: color,
-  price: money(100_00),
   available,
   lastUnits: false,
 });

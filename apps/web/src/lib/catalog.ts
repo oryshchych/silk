@@ -5,6 +5,7 @@
  * and a TTL is the safety net for a missed invalidation.
  */
 import { unstable_cache } from 'next/cache';
+import { cache } from 'react';
 
 import {
   getCategories,
@@ -111,8 +112,9 @@ export async function loadListing(input: {
  * Product page data, tagged `product:{id}` and `category:{id}` (ADR-8). The
  * cheap slug lookup runs first only to learn the id: tags must be known when
  * the cache is created. It runs when a page is (re)generated, not per visit.
+ * `cache` shares the result between the metadata and the page of one render.
  */
-export async function loadProduct(slug: string, locale: SiteLocale) {
+export const loadProduct = cache(async (slug: string, locale: SiteLocale) => {
   const ref = await getProductRef(await getDb(), slug);
   if (ref === null) return null;
   return await unstable_cache(
@@ -123,4 +125,4 @@ export async function loadProduct(slug: string, locale: SiteLocale) {
       revalidate: CATEGORY_TTL,
     },
   )();
-}
+});
