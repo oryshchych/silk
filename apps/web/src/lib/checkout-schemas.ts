@@ -35,7 +35,6 @@ export const placeOrderSchema = z.object({
   payment: z.enum(['cod', 'bank_transfer', 'mono', 'wayforpay']),
   promoCode: z.string().trim().max(64).optional(),
 });
-export type PlaceOrderInput = z.output<typeof placeOrderSchema>;
 
 export const quoteSchema = z.object({
   locale,

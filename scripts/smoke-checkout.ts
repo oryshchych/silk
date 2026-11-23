@@ -93,6 +93,10 @@ export async function runCheckoutSmoke({
     return await response.text();
   }
 
+  /** The order page renders the order (a number in its details table), not the "no order" notice. */
+  const showsOrder = (html: string): boolean =>
+    /<dd class="font-medium">LS-\d{4}-\d{6}<\/dd>/.test(html);
+
   // Variants from the first product pages: one with plenty of stock, one with few or none.
   // A re-used local database may have run low on one product, so look across several.
   const home = await (await fetch(base + '/')).text();
@@ -150,9 +154,9 @@ export async function runCheckoutSmoke({
   );
   const cartCookie = added.response.headers
     .getSetCookie()
-    .find((line) => line.startsWith('silk_cart='));
+    .find((line) => line.startsWith('__Host-silk_cart='));
   check(
-    'the cart cookie is httpOnly, Secure, SameSite and path-wide',
+    'the cart cookie is __Host-prefixed, httpOnly, Secure, SameSite and path-wide',
     /HttpOnly/i.test(cartCookie ?? '') &&
       /Secure/i.test(cartCookie ?? '') &&
       /SameSite=lax/i.test(cartCookie ?? '') &&
@@ -203,7 +207,7 @@ export async function runCheckoutSmoke({
     first.redirect?.startsWith('/order/success') === true,
   );
   const success = await page('/order/success', jar);
-  const number = /LS-\d{4}-\d{6}/.exec(success)?.[0] ?? '';
+  const number = /<dd class="font-medium">(LS-\d{4}-\d{6})<\/dd>/.exec(success)?.[1] ?? '';
   check('the order page shows the order from the access cookie', number !== '');
   check(
     'a tampered price changes nothing: the order total is the quoted one',
@@ -211,7 +215,7 @@ export async function runCheckoutSmoke({
   );
   check(
     'the order page without the cookie opens nothing',
-    !/LS-\d{4}-\d{6}/.test(await page('/order/success', new Map())),
+    !showsOrder(await page('/order/success', new Map())),
   );
   check(
     'the cart is empty after the order and the count cookie is reset',
@@ -281,8 +285,8 @@ export async function runCheckoutSmoke({
     a.redirect?.startsWith('/order/success') === true &&
       b.redirect?.startsWith('/order/success') === true,
   );
-  const accessA = twinA.get('silk_order');
-  const accessB = twinB.get('silk_order');
+  const accessA = twinA.get('__Host-silk_order');
+  const accessB = twinB.get('__Host-silk_order');
   check(
     'only one of them created the order (one access cookie)',
     [accessA, accessB].filter((value) => value !== undefined).length === 1,
@@ -407,4 +411,62 @@ export async function runCheckoutSmoke({
   check('the checkout page is noindex', checkoutHtml.includes('name="robots" content="noindex'));
 
   check('the shopper path adds nothing to the page or data caches', storedFiles() === storedBefore);
+
+  // Messages: every namespace a client component uses must reach the browser.
+  for (const path of ['/', '/cart', '/checkout', '/order/track', '/en/order/track']) {
+    const html = await page(path, jar);
+    check(
+      `${path} shows no raw message keys`,
+      !/>(nav|order|cart|checkout|product|errors)\.[A-Za-z_.]+</.test(html),
+    );
+  }
+
+  // A forged or foreign order cookie opens nothing.
+  const forged: Jar = new Map([['__Host-silk_order', `${number}.not-the-token`]]);
+  check(
+    'an order cookie with a wrong token opens nothing',
+    !showsOrder(await page('/order/success', forged)),
+  );
+
+  // Directory routes are limited per client, HEAD included, and answer 429 without caching.
+  const npClient = newClient();
+  let npStatus = 0;
+  let npRetry: string | null = null;
+  let npCache: string | null = null;
+  for (let i = 0; i < 130; i += 1) {
+    const response = await fetch(`${base}/api/np/cities?q=%D0%9A%D0%B8`, {
+      headers: { 'X-Forwarded-For': npClient },
+    });
+    if (response.status === 429) {
+      npStatus = 429;
+      npRetry = response.headers.get('retry-after');
+      npCache = response.headers.get('cache-control');
+      break;
+    }
+  }
+  check(
+    'the directory is rate limited per client (429, Retry-After, no-store)',
+    npStatus === 429 && npRetry !== null && (npCache ?? '').includes('no-store'),
+  );
+  const head = await fetch(`${base}/api/np/cities?q=%D0%9A%D0%B8`, {
+    method: 'HEAD',
+    headers: { 'X-Forwarded-For': npClient },
+  });
+  check('HEAD counts against the same limit', head.status === 429);
+
+  // Promo guessing is limited harder than plain quotes.
+  const guessJar: Jar = new Map();
+  const guessClient = newClient();
+  await call('addToCartAction', { variantId: plenty, quantity: 1 }, guessJar, guessClient, slug);
+  let promoLimited = false;
+  for (let i = 0; i < 14; i += 1) {
+    const attempt = await call(
+      'quoteAction',
+      { locale: 'uk', delivery: 'pickup', promoCode: `GUESS${String(i)}` },
+      guessJar,
+      guessClient,
+    );
+    if (resultOf(attempt.body)['code'] === 'RATE_LIMITED') promoLimited = true;
+  }
+  check('quotes with a promo code are limited harder (a guessing guard)', promoLimited);
 }

@@ -15,6 +15,8 @@ const trustedHopsOf = async (): Promise<number> => (await runtimeEnv()).TRUSTED_
 export const limiters = {
   cart: createRateLimiter({ limit: 60, windowMs: 60_000 }),
   quote: createRateLimiter({ limit: 60, windowMs: 60_000 }),
+  /** Quotes that carry a promo code: a person tries a few, a script guesses codes. */
+  quotePromo: createRateLimiter({ limit: 10, windowMs: 10 * 60_000 }),
   /** Placing orders: a person needs a handful, a script needs hundreds. */
   place: createRateLimiter({ limit: 10, windowMs: 10 * 60_000 }),
   /** COD per (phone, client): the series of fake cash-on-delivery orders (ADR-3). */
@@ -24,7 +26,7 @@ export const limiters = {
 } as const satisfies Record<string, RateLimiter>;
 
 /** The client key of the current request, from the trusted proxy hop. */
-export async function currentClient(): Promise<string> {
+async function currentClient(): Promise<string> {
   return clientAddress((await headers()).get('x-forwarded-for'), await trustedHopsOf());
 }
 

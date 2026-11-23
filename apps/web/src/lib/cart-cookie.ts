@@ -14,6 +14,8 @@ import { runtimeEnv } from './runtime-env';
  */
 const CART = 'silk_cart';
 const ORDER = 'silk_order';
+/** Order page access: a day, not a month, so a shared computer does not keep showing the address. */
+const ONE_DAY = 24 * 60 * 60;
 const CART_TOKEN = /^[A-Za-z0-9_-]{16,64}$/;
 const THIRTY_DAYS = 30 * 24 * 60 * 60;
 
@@ -21,11 +23,19 @@ const COUNT = CART_COUNT_COOKIE;
 
 const secure = async (): Promise<boolean> => (await runtimeEnv()).APP_ENV !== 'local';
 
-const base = { httpOnly: true, sameSite: 'lax', path: '/', maxAge: THIRTY_DAYS } as const;
+const base = { httpOnly: true, sameSite: 'lax', path: '/' } as const;
+
+/**
+ * Over HTTPS the credential cookies carry the `__Host-` prefix: the browser then refuses to let a
+ * sibling subdomain set or overwrite them (cookie tossing / cart fixation), because the prefix
+ * demands Secure, Path=/ and no Domain. Over plain HTTP (local) the prefix would be rejected.
+ */
+const nameOf = async (name: string): Promise<string> =>
+  (await secure()) ? `__Host-${name}` : name;
 
 /** The token of the visitor's cart, or null for a visitor without one (or with a malformed value). */
 export async function readCartToken(): Promise<string | null> {
-  const value = (await cookies()).get(CART)?.value;
+  const value = (await cookies()).get(await nameOf(CART))?.value;
   return value !== undefined && CART_TOKEN.test(value) ? value : null;
 }
 
@@ -39,7 +49,11 @@ export async function ensureCartToken(): Promise<string> {
 /** Fresh token: after an order the old cart is converted and must not be reused. */
 export async function mintCartToken(): Promise<string> {
   const token = randomBytes(24).toString('base64url');
-  (await cookies()).set(CART, token, { ...base, secure: await secure() });
+  (await cookies()).set(await nameOf(CART), token, {
+    ...base,
+    maxAge: THIRTY_DAYS,
+    secure: await secure(),
+  });
   return token;
 }
 
@@ -55,15 +69,16 @@ export async function setCartCount(count: number): Promise<void> {
 }
 
 export async function setOrderAccess(orderNumber: string, accessToken: string): Promise<void> {
-  (await cookies()).set(ORDER, `${orderNumber}.${accessToken}`, {
+  (await cookies()).set(await nameOf(ORDER), `${orderNumber}.${accessToken}`, {
     ...base,
+    maxAge: ONE_DAY,
     secure: await secure(),
   });
 }
 
 /** Order number and access token of the last order placed in this browser, or null. */
 export async function readOrderAccess(): Promise<{ orderNumber: string; token: string } | null> {
-  const value = (await cookies()).get(ORDER)?.value;
+  const value = (await cookies()).get(await nameOf(ORDER))?.value;
   const dot = value?.indexOf('.') ?? -1;
   if (value === undefined || dot < 1) return null;
   return { orderNumber: value.slice(0, dot), token: value.slice(dot + 1) };

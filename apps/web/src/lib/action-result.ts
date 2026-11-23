@@ -9,7 +9,7 @@ import { ERROR_CODES } from './error-codes';
 /** Domain codes that have their own message; the rest are shown as the generic one. */
 const KNOWN: ReadonlySet<string> = new Set(ERROR_CODES);
 
-export const GENERIC_CODE = 'GENERIC';
+const GENERIC_CODE = 'GENERIC';
 
 /** The message key for an error: a known domain code, or the generic one. */
 export function codeFor(error: unknown): string {

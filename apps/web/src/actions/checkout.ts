@@ -42,9 +42,15 @@ export async function quoteAction(input: unknown): Promise<QuoteResult> {
   if (!verdict.allowed) {
     return { ok: false, code: RATE_LIMITED, retryAfterSeconds: verdict.retryAfterSeconds };
   }
+  const { locale, delivery, promoCode } = parsed.data;
+  if (promoCode !== undefined && promoCode !== '') {
+    const promoVerdict = await checkLimit(limiters.quotePromo);
+    if (!promoVerdict.allowed) {
+      return { ok: false, code: RATE_LIMITED, retryAfterSeconds: promoVerdict.retryAfterSeconds };
+    }
+  }
   const token = await readCartToken();
   if (token === null) return { ok: false, code: 'CHECKOUT_EMPTY_CART' };
-  const { locale, delivery, promoCode } = parsed.data;
   try {
     const db = await getDb();
     const intent = await db.transaction(
@@ -83,7 +89,7 @@ export async function quoteAction(input: unknown): Promise<QuoteResult> {
   }
 }
 
-export interface StockProblemView {
+interface StockProblemView {
   name: string;
   size: string;
   requested: number;
