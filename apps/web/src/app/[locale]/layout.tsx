@@ -4,12 +4,13 @@ import { getTranslations } from 'next-intl/server';
 import { notFound } from 'next/navigation';
 
 import { routing } from '@/i18n/routing';
+import { getSiteUrl } from '@/lib/site-url';
 
 import '../globals.css';
 
-export function generateStaticParams(): { locale: string }[] {
-  return routing.locales.map((locale) => ({ locale }));
-}
+// No generateStaticParams on purpose: nothing under [locale] is prerendered at
+// build time, so getSiteUrl() reads the RUNTIME SITE_URL (ADR-10). Pages are
+// rendered on first request and cached by ISR.
 
 export async function generateMetadata({ params }: LayoutProps<'/[locale]'>): Promise<Metadata> {
   const { locale } = await params;
@@ -18,7 +19,7 @@ export async function generateMetadata({ params }: LayoutProps<'/[locale]'>): Pr
   return {
     title: t('title'),
     description: t('description'),
-    alternates: { languages: { uk: '/', en: '/en' } },
+    metadataBase: new URL(getSiteUrl()),
   };
 }
 

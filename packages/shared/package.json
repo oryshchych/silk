@@ -7,6 +7,7 @@
     "./env": "./src/env.server.ts",
     "./env-schema": "./src/env.schema.ts",
     "./money": "./src/money.ts",
+    "./seo": "./src/seo.ts",
     "./dto/serialize": "./src/dto/serialize.ts",
     "./dto/catalog": "./src/dto/catalog.ts",
     "./dto/order": "./src/dto/order.ts"

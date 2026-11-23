@@ -3,6 +3,7 @@ import createMiddleware from 'next-intl/middleware';
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { routing } from './i18n/routing';
+import { stripDefaultLocalePrefix } from './lib/locale-redirect';
 import { isAuthorized, parseExcludeList, requiresAuth } from './lib/staging-gate';
 
 /**
@@ -41,6 +42,17 @@ export function proxy(request: NextRequest): NextResponse {
         'X-Robots-Tag': 'noindex, nofollow',
       },
     });
+  }
+
+  // `/uk/...` -> `/...` permanently (308 keeps the method, search engines
+  // treat it as a 301). Query string is preserved.
+  const unprefixed = stripDefaultLocalePrefix(pathname);
+  if (unprefixed !== null) {
+    const target = request.nextUrl.clone();
+    target.pathname = unprefixed;
+    const redirect = NextResponse.redirect(target, 308);
+    if (env.APP_ENV !== 'production') redirect.headers.set('X-Robots-Tag', 'noindex, nofollow');
+    return redirect;
   }
 
   // Мовна маршрутизація — лише для сторінок: не для API і не для файлів

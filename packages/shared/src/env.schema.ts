@@ -72,6 +72,11 @@ export const envSchema = z
     // не може відрізнятися між staging і production на одному образі.
     NEXT_PUBLIC_SITE_URL: z.url({ protocol: /^https?$/ }).optional(),
 
+    // Runtime public origin (ADR-10, RR6): canonical, hreflang, sitemap.
+    // Optional on purpose so an image deployed before the variable is set
+    // keeps booting; it then falls back to NEXT_PUBLIC_SITE_URL.
+    SITE_URL: z.url({ protocol: /^https?$/ }).optional(),
+
     STAGING_BASIC_AUTH_USER: z.string().optional(),
     STAGING_BASIC_AUTH_PASSWORD: z.string().optional(),
     // Точні POST-маршрути вебхуків, які виключені з basic auth. Не префікс

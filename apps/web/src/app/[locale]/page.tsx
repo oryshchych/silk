@@ -1,9 +1,18 @@
+import type { Metadata } from 'next';
 import { hasLocale } from 'next-intl';
 import { getTranslations } from 'next-intl/server';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
 import { routing, type Locale } from '@/i18n/routing';
+import { getSiteUrl } from '@/lib/site-url';
+import { buildAlternates } from '@store/shared/seo';
+
+export async function generateMetadata({ params }: PageProps<'/[locale]'>): Promise<Metadata> {
+  const { locale } = await params;
+  if (!hasLocale(routing.locales, locale)) return {};
+  return { alternates: buildAlternates({ siteUrl: getSiteUrl(), locale, path: '/' }) };
+}
 
 export default async function HomePage({ params }: PageProps<'/[locale]'>) {
   const { locale } = await params;
