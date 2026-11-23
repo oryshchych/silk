@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
   defaultListingParams,
   parseListingParams,
+  restrictListingParams,
   serializeListingParams,
+  type ListingParams,
   type RawSearchParams,
 } from './listing-params';
 
@@ -84,5 +86,66 @@ describe('serializeListingParams', () => {
     const once = roundTrip('brand=Нова лінія');
     expect(once).toBe(`brand=${encodeURIComponent('Нова лінія')}`);
     expect(roundTrip(once)).toBe(once);
+  });
+});
+
+describe('restrictListingParams', () => {
+  const known = {
+    bands: [70, 75],
+    cups: ['A', 'B'],
+    sizes: [{ label: 'M' }],
+    colors: [{ slug: 'black' }],
+    brands: ['Aurelia'],
+  };
+
+  it('keeps values the category offers and drops invented ones', () => {
+    const params = parseListingParams({
+      band: ['75', '80'],
+      cup: 'B,C',
+      size: 'M,XL',
+      color: 'black,made-up',
+      brand: ['Aurelia', 'x'.repeat(100)],
+      sort: 'price_asc',
+      price_min: '100',
+      page: '3',
+    });
+    const restricted = restrictListingParams(params, known);
+    expect(restricted).toMatchObject({
+      bands: [75],
+      cups: ['B'],
+      sizes: ['M'],
+      colors: ['black'],
+      brands: ['Aurelia'],
+      sort: 'price_asc',
+      priceMin: 10_000,
+      page: 3,
+    });
+  });
+
+  it('turns a query of invented values into the clean category', () => {
+    const params = parseListingParams({ brand: 'nobody', color: 'nothing' });
+    expect(serializeListingParams(restrictListingParams(params, known))).toBe('');
+  });
+});
+
+describe('ListingParams brand', () => {
+  it('cannot be built by hand, only by the parser', () => {
+    const { bands, cups, sizes, colors, brands, priceMin, priceMax, inStock, onSale, sort, page } =
+      defaultListingParams;
+    // @ts-expect-error: a hand-built object lacks the brand, so it cannot reach cache keys or SQL
+    const byHand: ListingParams = {
+      bands,
+      cups,
+      sizes,
+      colors,
+      brands,
+      priceMin,
+      priceMax,
+      inStock,
+      onSale,
+      sort,
+      page,
+    };
+    expect(byHand.page).toBe(1);
   });
 });

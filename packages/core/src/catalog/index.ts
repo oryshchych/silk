@@ -10,8 +10,14 @@ export {
   PAGE_SIZE,
   defaultListingParams,
   parseListingParams,
+  restrictListingParams,
   serializeListingParams,
 } from './listing-params.ts';
-export type { ListingParams, RawSearchParams, SortKey } from './listing-params.ts';
+export type {
+  KnownFilterValues,
+  ListingParams,
+  RawSearchParams,
+  SortKey,
+} from './listing-params.ts';
 export { getProductBySlug } from './product.ts';
 export { MIN_QUERY_LENGTH, normalizeSearchQuery, searchProducts } from './search.ts';
