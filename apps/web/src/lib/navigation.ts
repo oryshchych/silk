@@ -2,6 +2,7 @@ import { buildCategoryTree, type CategoryNode } from '@store/core/catalog';
 import type { SiteLocale } from '@store/shared/seo';
 
 import { getCachedCategories } from './catalog';
+import { errorReason } from './error-reason';
 
 /** Last tree that loaded, per locale: served when the database is unreachable (stale-on-error, as ADR-14). */
 const lastGood = new Map<SiteLocale, CategoryNode[]>();
@@ -29,10 +30,7 @@ export async function loadCategoryTree(
   } catch (error) {
     const stale = lastGood.get(locale);
     if (stale === undefined && options.degrade !== true) throw error;
-    // Drizzle wraps the driver error: the code (ECONNREFUSED, 57P01) is on the cause.
-    const source = error instanceof Error && error.cause instanceof Error ? error.cause : error;
-    const code = source instanceof Error && 'code' in source ? String(source.code) : undefined;
-    const reason = `${source instanceof Error ? source.name : 'Error'}${code === undefined ? '' : ` ${code}`}`;
+    const reason = errorReason(error);
     process.stderr.write(`${JSON.stringify({ level: 'error', scope: 'navigation', reason })}\n`);
     return stale ?? [];
   }

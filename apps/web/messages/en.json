@@ -15,7 +15,9 @@
     "usp2Text": "We ship orders all over the country.",
     "usp3Title": "Help with your size",
     "usp3Text": "We help you find band and cup for a perfect fit.",
-    "tagline": "Lingerie and homewear. Original products only."
+    "tagline": "Lingerie and homewear. Original products only.",
+    "newTitle": "New arrivals",
+    "bestsellersTitle": "Bestsellers"
   },
   "errors": {
     "notFoundTitle": "Page not found",

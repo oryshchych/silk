@@ -284,3 +284,9 @@ Left as notes:
 - **Search is limited per client in `proxy.ts`** (30 GET requests a minute to `/search` and `/en/search`, 429 with `Retry-After`), because the query ranks the whole match set (`ts_rank` plus trigram similarity). The counter lives in process memory: per instance, reset on deploy, keyed by the first `x-forwarded-for` address (set by Traefik; spoofable if the app were exposed without the proxy). A shared limiter (Redis or Postgres) is a phase 12 item.
 - **Search results are not cached:** the query is free text, so a cache key per query would be unbounded and cannot be checked against a known list (the rule from the cache-key review). Every search is one database query, limited by the per-client rate limit above; the query is cut at 100 characters and needs at least 2.
 - **Search results are `noindex, follow`** with the canonical on the bare `/search` page; a WebSite `SearchAction` is phase 6.
+
+## Phase 1: home showcases and favicon (2026-11-23)
+
+- **Bestsellers are the products marked `bestseller` (badge) by the shop;** there is no sales ranking yet (orders exist only from phase 2). Both lists show the newest published first, eight items, and a section with no products is not rendered.
+- **The home page tolerates a failing showcase** (it is rendered per request and never cached): the section is skipped and one JSON line with the error name and code goes to stderr (`scope: showcase`), next to the `navigation` line. Included in the alert recommendation of Q21.
+- **Favicon** is a neutral placeholder monogram (`app/icon.svg`), a branding item for Q1.
