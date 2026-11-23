@@ -3,7 +3,7 @@ import { getTranslations } from 'next-intl/server';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
-import { MIN_QUERY_LENGTH, normalizeSearchQuery } from '@store/core/catalog';
+import { MAX_QUERY_LENGTH, MIN_QUERY_LENGTH } from '@store/core/catalog';
 import { buildAlternates } from '@store/shared/seo';
 
 import { Pagination } from '@/components/pagination';
@@ -12,33 +12,18 @@ import { SiteShell } from '@/components/site-shell';
 import { resolveLocale } from '@/i18n/locale';
 import { searchCatalog } from '@/lib/catalog';
 import { pageMetadata } from '@/lib/metadata';
+import { readSearchQuery } from '@/lib/search-query';
 import { href, paths } from '@/lib/paths';
 import { getSiteUrl } from '@/lib/site-url';
 
 type Props = PageProps<'/[locale]/search'>;
-
-const MAX_PAGE = 100;
-
-/** `q` and `page` from the raw query: first value only, junk becomes the empty query / page 1. */
-function readQuery(raw: Record<string, string | string[] | undefined>): {
-  query: string;
-  page: number;
-} {
-  const first = (value: string | string[] | undefined): string =>
-    (Array.isArray(value) ? value[0] : value) ?? '';
-  const page = /^\d{1,3}$/.test(first(raw['page'])) ? Number(first(raw['page'])) : 1;
-  return {
-    query: normalizeSearchQuery(first(raw['q'])),
-    page: Math.min(Math.max(page, 1), MAX_PAGE),
-  };
-}
 
 export async function generateMetadata({ params, searchParams }: Props): Promise<Metadata> {
   const { locale, known } = resolveLocale((await params).locale);
   if (!known) return {};
   const t = await getTranslations({ locale, namespace: 'search' });
   const tm = await getTranslations({ locale, namespace: 'meta' });
-  const { query } = readQuery(await searchParams);
+  const { query } = readSearchQuery(await searchParams);
   // Search results are not indexed; the canonical is the bare search page.
   return pageMetadata({
     title: `${query === '' ? t('title') : t('metaTitle', { query })} | ${tm('siteName')}`,
@@ -55,7 +40,7 @@ export default async function SearchPage({ params, searchParams }: Props) {
   if (!known) notFound();
 
   const t = await getTranslations('search');
-  const { query, page } = readQuery(await searchParams);
+  const { query, page } = readSearchQuery(await searchParams);
   const searched = query.length >= MIN_QUERY_LENGTH;
   const results = searched ? await searchCatalog({ query, locale, page }) : null;
   // A page past the end is a real 404, decided before anything streams.
@@ -77,6 +62,7 @@ export default async function SearchPage({ params, searchParams }: Props) {
         action={href(locale, paths.search)}
         method="get"
         role="search"
+        aria-label={t('label')}
         className="mt-4 flex max-w-xl gap-2"
       >
         <label className="sr-only" htmlFor="search-page-input">
@@ -88,7 +74,7 @@ export default async function SearchPage({ params, searchParams }: Props) {
           name="q"
           defaultValue={query}
           minLength={MIN_QUERY_LENGTH}
-          maxLength={100}
+          maxLength={MAX_QUERY_LENGTH}
           className="min-h-10 flex-1 rounded-sm border border-border bg-surface px-3"
         />
         <button type="submit" className="min-h-10 rounded-full bg-accent px-5 text-accent-contrast">
@@ -103,11 +89,12 @@ export default async function SearchPage({ params, searchParams }: Props) {
         </p>
       ) : null}
 
+      {/* Always in the document, so a change of its text is announced. */}
+      <p aria-live="polite" className="mt-4 text-sm text-text-muted">
+        {results === null ? null : t('results', { count: results.total })}
+      </p>
       {results === null ? null : (
-        <section aria-label={t('heading')} className="mt-6 flex flex-col gap-6">
-          <p aria-live="polite" className="text-sm text-text-muted">
-            {t('results', { count: results.total })}
-          </p>
+        <section aria-label={t('heading')} className="mt-2 flex flex-col gap-6">
           {results.items.length === 0 ? (
             <div className="flex flex-col items-start gap-3 py-6">
               <h2 className="font-display text-2xl">{t('emptyTitle')}</h2>
