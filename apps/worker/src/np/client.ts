@@ -37,6 +37,8 @@ export interface NovaPoshtaDirectory {
 
 const ENDPOINT = 'https://api.novaposhta.ua/v2.0/json/';
 const TIMEOUT_MS = 30_000;
+/** A page of 500 branches is about a megabyte; far more is not the answer we asked for. */
+const MAX_BODY_BYTES = 16 * 1024 * 1024;
 
 export class NovaPoshtaError extends Error {
   constructor(reason: string) {
@@ -135,15 +137,28 @@ export function createNovaPoshtaDirectory(options: {
       throw new NovaPoshtaError('carrier API unreachable');
     });
     if (!response.ok) throw new NovaPoshtaError(`carrier API answered ${String(response.status)}`);
+    if (!(response.headers.get('content-type') ?? '').includes('json')) {
+      throw new NovaPoshtaError('carrier API answered with an unexpected content type');
+    }
+    const length = Number(response.headers.get('content-length') ?? 0);
+    if (length > MAX_BODY_BYTES) throw new NovaPoshtaError('carrier API answer is too large');
+    const raw = await response.text();
+    if (raw.length > MAX_BODY_BYTES) throw new NovaPoshtaError('carrier API answer is too large');
     const body = record(
-      await response.json().catch(() => {
-        throw new NovaPoshtaError('carrier API answered with unreadable data');
-      }),
+      (() => {
+        try {
+          return JSON.parse(raw) as unknown;
+        } catch {
+          throw new NovaPoshtaError('carrier API answered with unreadable data');
+        }
+      })(),
     );
     const data = body['data'];
     if (body['success'] !== true || !Array.isArray(data)) {
       throw new NovaPoshtaError('carrier API refused the request');
     }
+    // A page never holds more rows than were asked for; more means the paging is not honoured.
+    if (data.length > limit) throw new NovaPoshtaError('carrier API returned more rows than asked');
     const rows: unknown[] = data;
     return rows;
   }

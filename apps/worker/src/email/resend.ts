@@ -41,15 +41,17 @@ export function createResendSender(options: {
   from: string;
   /** Set outside production: replaces every recipient. */
   toOverride: string | null;
-  /** True only in production. Outside it an override is mandatory (staging never mails customers). */
-  production: boolean;
+  /** The validated APP_ENV: outside production an override is mandatory (staging never mails customers). */
+  appEnv: 'local' | 'staging' | 'production';
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
 }): EmailSender {
-  if (!options.production && options.toOverride === null) {
+  if (options.apiKey.trim() === '') throw new Error('RESEND_API_KEY must not be empty');
+  const production = options.appEnv === 'production';
+  if (!production && options.toOverride === null) {
     throw new Error('EMAIL_TO_OVERRIDE is required outside production');
   }
-  if (options.production && options.toOverride !== null) {
+  if (production && options.toOverride !== null) {
     throw new Error('EMAIL_TO_OVERRIDE must not be set in production');
   }
   const doFetch = options.fetchImpl ?? fetch;
@@ -76,6 +78,9 @@ export function createResendSender(options: {
       });
       // 2xx is sent; 4xx other than 429 will never succeed, but a retry is harmless and the
       // dead-letter queue keeps it visible, so every non-2xx is a failure of the job.
+      // 409 is the provider's answer to a key it has already accepted (a retried job whose text
+      // changed in between): the mail went out, so the job is done.
+      if (response.status === 409) return;
       if (!response.ok) throw new EmailSendError(response.status);
     },
   };

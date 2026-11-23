@@ -4,6 +4,8 @@
  * someone sees it. Money alerts are logged (one JSON line, ids only) AND fail the same way until
  * the alert channel exists (Q15).
  */
+import { z } from 'zod';
+
 import type { Reader } from '@store/db/types';
 
 import type { MessageSender, OutboundMessage } from './deliver.ts';
@@ -27,7 +29,9 @@ export class UnhandledTopicError extends Error {
 
 const orderIdOf = (payload: unknown): string | null => {
   if (typeof payload !== 'object' || payload === null || !('orderId' in payload)) return null;
-  return typeof payload.orderId === 'string' ? payload.orderId : null;
+  // Only a well-formed id is logged: the payload is data, and a log line is not a place for it.
+  const parsed = z.uuid().safeParse(payload.orderId);
+  return parsed.success ? parsed.data : null;
 };
 
 export function createMessageSender(deps: {

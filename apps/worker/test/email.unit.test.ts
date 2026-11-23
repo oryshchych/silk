@@ -13,11 +13,13 @@ const order: EmailOrder = {
   paymentLabel: 'Післяплата',
   paymentProvider: 'cod',
   status: 'pending',
+  // Gross lines: 1299.00 x 2 = 2598.00; discount 100.00; shipping 70.00; adjustment 5.00.
   items: [{ name: 'Бюстгальтер', size: '75B', color: 'Чорний', quantity: 2, lineTotal: 259800 }],
   subtotal: 259800,
   discountTotal: 10000,
-  shippingTotal: 0,
-  total: 249800,
+  shippingTotal: 7000,
+  adjustmentTotal: 500,
+  total: 257300,
   trackUrl: 'https://shop.example/order/track',
 };
 
@@ -36,7 +38,13 @@ describe('order emails', () => {
     expect(subject).toBe('Замовлення LS-2026-000042 оформлено');
     expect(text).toContain('Бюстгальтер, Чорний, 75B x 2');
     expect(text).toContain('Разом');
-    expect(text).toMatch(/2\s?498,00/);
+    const rows = text.replace(/\s/g, ' ');
+    expect(rows).toContain('x 2: 2 598,00');
+    expect(rows).toContain('Товари: 2 598,00');
+    expect(rows).toContain('Знижка: -100,00');
+    expect(rows).toContain('Доставка: 70,00');
+    expect(rows).toContain('Коригування: 5,00');
+    expect(rows).toContain('Разом: 2 573,00');
     expect(text).toContain('Менеджер зателефонує');
     expect(text).toContain('https://shop.example/order/track');
   });
@@ -122,7 +130,7 @@ describe('the Resend sender', () => {
       apiKey: 'k',
       from: 'shop@example.com',
       toOverride: null,
-      production: true,
+      appEnv: 'production',
       fetchImpl: impl,
     }).send(message);
     expect(seen[0]?.url).toBe('https://api.resend.com/emails');
@@ -138,7 +146,7 @@ describe('the Resend sender', () => {
       apiKey: 'k',
       from: 'shop@example.com',
       toOverride: 'catch@example.com',
-      production: false,
+      appEnv: 'staging',
       fetchImpl: impl,
     }).send(message);
     expect(seen[0]?.body['to']).toEqual(['catch@example.com']);
@@ -152,9 +160,32 @@ describe('the Resend sender', () => {
         apiKey: 'k',
         from: 'shop@example.com',
         toOverride: null,
-        production: false,
+        appEnv: 'staging',
       }),
     ).toThrow('EMAIL_TO_OVERRIDE');
+  });
+
+  it('refuses an empty API key', () => {
+    expect(() =>
+      createResendSender({
+        apiKey: ' ',
+        from: 'shop@example.com',
+        toOverride: null,
+        appEnv: 'production',
+      }),
+    ).toThrow('RESEND_API_KEY');
+  });
+
+  it('treats the provider answer for an already accepted idempotency key (409) as sent', async () => {
+    const duplicate = capture(new Response('{}', { status: 409 }));
+    const sender = createResendSender({
+      apiKey: 'k',
+      from: 'shop@example.com',
+      toOverride: null,
+      appEnv: 'production',
+      fetchImpl: duplicate.impl,
+    });
+    await expect(sender.send(message)).resolves.toBeUndefined();
   });
 
   it('refuses an override in production (it would swallow every customer email)', () => {
@@ -163,7 +194,7 @@ describe('the Resend sender', () => {
         apiKey: 'k',
         from: 'shop@example.com',
         toOverride: 'catch@example.com',
-        production: true,
+        appEnv: 'production',
       }),
     ).toThrow('must not be set in production');
   });
@@ -176,7 +207,7 @@ describe('the Resend sender', () => {
       apiKey: 'k',
       from: 'shop@example.com',
       toOverride: null,
-      production: true,
+      appEnv: 'production',
       fetchImpl: bad.impl,
     });
     await expect(sender.send(message)).rejects.toMatchObject({
@@ -189,7 +220,7 @@ describe('the Resend sender', () => {
       apiKey: 'k',
       from: 'shop@example.com',
       toOverride: null,
-      production: true,
+      appEnv: 'production',
       fetchImpl: down.impl,
     });
     const error = await failing.send(message).catch((e: unknown) => e);

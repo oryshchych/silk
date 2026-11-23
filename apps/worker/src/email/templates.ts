@@ -20,6 +20,8 @@ export interface EmailOrder {
   subtotal: number;
   discountTotal: number;
   shippingTotal: number;
+  /** Manual correction from the admin (can be negative). */
+  adjustmentTotal: number;
   total: number;
   /** Absolute address of the tracking page. */
   trackUrl: string;
@@ -68,6 +70,7 @@ const COPY = {
     discount: 'Знижка',
     shipping: 'Доставка',
     total: 'Разом',
+    adjustment: 'Коригування',
     track: 'Відстежити замовлення (потрібні номер і телефон)',
     notYou: 'Якщо ви не оформлювали це замовлення, просто проігноруйте цей лист.',
     adminSubject: (n: string, total: string) => `Нове замовлення ${n} на ${total}`,
@@ -88,6 +91,7 @@ const COPY = {
     discount: 'Discount',
     shipping: 'Delivery',
     total: 'Total',
+    adjustment: 'Adjustment',
     track: 'Track your order (order number and phone needed)',
     notYou: 'If you did not place this order, simply ignore this email.',
     adminSubject: (n: string, total: string) => `New order ${n} for ${total}`,
@@ -112,6 +116,7 @@ function body(order: EmailOrder, audience: 'customer' | 'admin'): { html: string
     `${c.subtotal}: ${fmt(order.subtotal)}`,
     ...(order.discountTotal > 0 ? [`${c.discount}: -${fmt(order.discountTotal)}`] : []),
     `${c.shipping}: ${fmt(order.shippingTotal)}`,
+    ...(order.adjustmentTotal === 0 ? [] : [`${c.adjustment}: ${fmt(order.adjustmentTotal)}`]),
     `${c.total}: ${fmt(order.total)}`,
   ];
   const contact =

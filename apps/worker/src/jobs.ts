@@ -9,6 +9,8 @@
  */
 import type { PgBoss } from 'pg-boss';
 
+import { DomainError } from '@store/core/errors';
+
 import { findReservedDrift, releaseExpiredOrders } from '@store/core/expiry';
 import type { Reader, Tx } from '@store/db/types';
 
@@ -71,6 +73,8 @@ export function createJobHandlers(deps: JobDeps): JobHandlers {
         // Variant ids only: they identify the product rows to inspect, nothing personal.
         variants: drift.slice(0, 20).map((entry) => entry.variantId),
       });
+      // A drifted counter is a money alert: fail the job so it reaches the dead-letter queue.
+      if (drift.length > 0) throw new Error('stock counters drifted from the live reservations');
     },
     [JOB_NAMES.syncNp]: async () => {
       if (deps.directory === null) {
@@ -83,18 +87,46 @@ export function createJobHandlers(deps: JobDeps): JobHandlers {
   };
 }
 
-/** Creates the queues, schedules them, and starts one consumer each (concurrency 1). */
-export async function registerJobs(boss: PgBoss, handlers: JobHandlers): Promise<void> {
-  for (const [name, cron] of Object.entries(SCHEDULES)) {
+/** Only the name and the domain code of a failure reach pg-boss's job output (no stack, no paths). */
+function scrub(error: unknown): Error {
+  const name = error instanceof Error ? error.name : 'Error';
+  const code = error instanceof DomainError ? ` ${error.code}` : '';
+  const safe = new Error(`${name}${code}: job failed`);
+  safe.stack = safe.message;
+  return safe;
+}
+
+/**
+ * Creates the queues, schedules them, and starts one consumer each (concurrency 1).
+ *
+ * `expiry` is OFF unless asked for (owner queue Q27): the expiry job cancels unpaid orders at the
+ * end of their reservation, and until `payments:reconcile-open` exists (phase 3) nothing settles
+ * an attempt whose result is unknown. The wiring turns it on once that job exists.
+ */
+export async function registerJobs(
+  boss: PgBoss,
+  handlers: JobHandlers,
+  options: { expiry?: boolean } = {},
+): Promise<void> {
+  const enabled = Object.entries(SCHEDULES).filter(
+    ([name]) => name !== JOB_NAMES.releaseExpired || options.expiry === true,
+  );
+  for (const [name, cron] of enabled) {
     // The directory sync makes many sequential calls: give it an hour before pg-boss re-runs it.
     await boss.createQueue(name, {
       expireInSeconds: name === JOB_NAMES.syncNp ? 3600 : 900,
     });
     await boss.schedule(name, cron, undefined, { tz: CRON_TZ });
   }
+  const names = new Set(enabled.map(([name]) => name));
   for (const [name, handler] of Object.entries(handlers)) {
+    if (!names.has(name)) continue;
     await boss.work(name, { batchSize: 1, pollingIntervalSeconds: 5 }, async () => {
-      await handler();
+      try {
+        await handler();
+      } catch (error) {
+        throw scrub(error);
+      }
     });
   }
 }

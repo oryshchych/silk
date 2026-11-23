@@ -8,6 +8,7 @@ import { asc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { orderItems, orders, settings } from '@store/db/schema';
+import { add, money } from '@store/shared/money';
 import type { Reader } from '@store/db/types';
 
 import type { EmailSender } from './resend.ts';
@@ -92,13 +93,15 @@ export async function loadEmailOrder(
       size: item.sizeLabel,
       color: item.colorName,
       quantity: item.quantity,
-      lineTotal: item.lineTotal,
+      // Gross: the order total lists the discount once, so each line is shown before it.
+      lineTotal: add(money(item.lineTotal), money(item.lineDiscount)),
     })),
     subtotal: order.subtotal,
     discountTotal: order.discountTotal,
     shippingTotal: order.shippingTotal,
+    adjustmentTotal: order.adjustmentTotal,
     total: order.total,
-    trackUrl: `${siteUrl}${prefix}/order/track`,
+    trackUrl: `${siteUrl.replace(/\/+$/, '')}${prefix}/order/track`,
   };
 }
 

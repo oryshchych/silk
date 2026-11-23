@@ -14,7 +14,7 @@ import { settings } from '@store/db/schema';
 import { seedMoneySkeleton } from '@store/db/seed/money-skeleton';
 import { createTestDatabase, type TestDatabase } from '@store/db/test/db';
 
-import { startBoss } from '../src/boss.ts';
+import { DEAD_LETTER_QUEUE, registerWorkers, startBoss } from '../src/boss.ts';
 import { handleOrderCreated, OrderEmailError } from '../src/email/order-created.ts';
 import type { EmailMessage, EmailSender } from '../src/email/resend.ts';
 import { createJobHandlers, JOB_NAMES, registerJobs } from '../src/jobs.ts';
@@ -45,9 +45,12 @@ afterEach(async () => {
 
 const token = (name: string): string => `tok-${name}`.padEnd(20, 'x');
 
-async function placeOrder(name: string, over: { locale?: 'uk' | 'en'; name?: string } = {}) {
+async function placeOrder(
+  name: string,
+  over: { locale?: 'uk' | 'en'; name?: string; quantity?: number; promo?: string } = {},
+) {
   await app.db.transaction(async (tx) => {
-    await setCartItem(tx, { cartToken: token(name), variantId, quantity: 1 });
+    await setCartItem(tx, { cartToken: token(name), variantId, quantity: over.quantity ?? 1 });
   });
   const intent = await app.db.transaction(
     async (tx) => await startCheckout(tx, { cartToken: token(name) }),
@@ -57,7 +60,7 @@ async function placeOrder(name: string, over: { locale?: 'uk' | 'en'; name?: str
       cartToken: token(name),
       intentId: intent.intentId,
       delivery: 'pickup',
-      promoCode: null,
+      promoCode: over.promo ?? null,
     });
   });
   return await app.db.transaction(
@@ -68,7 +71,7 @@ async function placeOrder(name: string, over: { locale?: 'uk' | 'en'; name?: str
         contact: { email: 'buyer@example.com', phone: '+380501234567', name: over.name ?? 'Buyer' },
         delivery: { method: 'pickup' },
         paymentProvider: 'cod',
-        promoCode: null,
+        promoCode: over.promo ?? null,
         locale: over.locale ?? 'uk',
         termsAccepted: true,
       }),
@@ -114,6 +117,34 @@ describe('email.order-created', () => {
       { dedupKey: 'k', payload: { orderId: placed.orderId } },
     );
     expect(email.sent).toHaveLength(0);
+  });
+
+  it('with a promo the lines, the items row, the discount and the total tell one story', async () => {
+    await app.db.execute(
+      sql`INSERT INTO promo_codes (code, type, value) VALUES ('HUNDRED', 'fixed', 10000)`,
+    );
+    const placed = await placeOrder('mail-promo', { quantity: 2, promo: 'HUNDRED' });
+    await app.db.execute(
+      sql`UPDATE orders SET adjustment_total = 500, total = total + 500 WHERE id = ${placed.orderId}`,
+    );
+    const email = new Recorder();
+    await handleOrderCreated(
+      { reader: app.db, sender: email, siteUrl: 'https://shop.example/' },
+      { dedupKey: 'k', payload: { orderId: placed.orderId } },
+    );
+    const text = email.sent[0]?.text ?? '';
+    const nbsp = (value: string): string => value.replace(/\s/g, ' ');
+    const rows = nbsp(text);
+    // 1299.00 x 2 = 2598.00 gross; discount 100.00; adjustment 5.00; total 2503.00.
+    expect(rows).toMatch(/x 2: 2 598,00/);
+    expect(rows).toMatch(/Товари: 2 598,00/);
+    expect(rows).toMatch(/Знижка: -100,00/);
+    expect(rows).toMatch(/Доставка: 0,00/);
+    expect(rows).toMatch(/Коригування: 5,00/);
+    expect(rows).toMatch(/Разом: 2 503,00/);
+    // A trailing slash on the site address must not double up in the link.
+    expect(text).toContain('https://shop.example/order/track');
+    expect(text).not.toContain('example//order');
   });
 
   it('an English order gets the English mail and the English tracking path', async () => {
@@ -232,6 +263,40 @@ describe('the message router', () => {
   });
 });
 
+describe('an alert on a real pg-boss', () => {
+  it('is logged and fails into the dead-letter queue, never completed', async () => {
+    const boss = await startBoss(testDb.bossUrl, {
+      retryLimit: 0,
+      retryDelay: 0,
+      retryBackoff: false,
+    });
+    try {
+      const logs: string[] = [];
+      const sender = createMessageSender({
+        reader: app.db,
+        email: new Recorder(),
+        siteUrl: 'https://shop.example',
+        log: (l) => logs.push(l),
+      });
+      await registerWorkers(boss, sender, 1);
+      await boss.send('alert.refund-due', {
+        dedupKey: 'refund-due:x',
+        topic: 'alert.refund-due',
+        payload: { orderId: '0193f0a4-7c3e-7000-8000-000000000001' },
+      });
+      let dead = 0;
+      for (let i = 0; i < 80 && dead === 0; i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        dead = (await boss.findJobs(DEAD_LETTER_QUEUE, { limit: 5 })).length;
+      }
+      expect(dead).toBe(1);
+      expect(logs.some((l) => l.includes('alert.refund-due'))).toBe(true);
+    } finally {
+      await boss.stop({ graceful: false });
+    }
+  });
+});
+
 describe('scheduled jobs', () => {
   let boss: PgBoss;
   beforeEach(async () => {
@@ -256,6 +321,7 @@ describe('scheduled jobs', () => {
     await registerJobs(
       boss,
       createJobHandlers({ db: app.db, directory: null, log: (l) => logs.push(l) }),
+      { expiry: true },
     );
     await boss.send(JOB_NAMES.releaseExpired, {});
     await until(() => logs.some((l) => l.includes(JOB_NAMES.releaseExpired)));
@@ -291,7 +357,10 @@ describe('scheduled jobs', () => {
       createJobHandlers({ db: app.db, directory: null, log: () => undefined }),
     );
     const schedules = await boss.getSchedules();
-    expect(schedules.map((s) => s.name).sort()).toEqual(Object.values(JOB_NAMES).sort());
+    // Expiry is opt-in (Q27): without the flag it is neither scheduled nor consumed.
+    expect(schedules.map((s) => s.name).sort()).toEqual(
+      [JOB_NAMES.reconcileStock, JOB_NAMES.syncNp].sort(),
+    );
     expect(schedules.every((s) => s.timezone === 'Europe/Kyiv')).toBe(true);
   });
 
@@ -302,7 +371,7 @@ describe('scheduled jobs', () => {
     );
     const logs: string[] = [];
     const handlers = createJobHandlers({ db: app.db, directory: null, log: (l) => logs.push(l) });
-    await handlers[JOB_NAMES.reconcileStock]();
+    await expect(handlers[JOB_NAMES.reconcileStock]()).rejects.toThrow('drifted');
     const line = JSON.parse(logs[0] ?? '{}') as Record<string, unknown>;
     expect(line).toMatchObject({ level: 'error', scope: JOB_NAMES.reconcileStock, drifted: 2 });
   });

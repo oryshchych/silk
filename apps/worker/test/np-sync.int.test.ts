@@ -189,7 +189,12 @@ describe('np directory sync', () => {
 
   it('the API key never appears in an error, and unreadable data is a NovaPoshtaError', async () => {
     const garbage = (() =>
-      Promise.resolve(new Response('<html>not json</html>', { status: 200 }))) as typeof fetch;
+      Promise.resolve(
+        new Response('<html>not json</html>', {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      )) as typeof fetch;
     const error = await createNovaPoshtaDirectory({ apiKey: 'SECRET-KEY-123', fetchImpl: garbage })
       .cities(1, 10)
       .catch((e: unknown) => e);
@@ -242,6 +247,109 @@ describe('np directory sync', () => {
       )
     ).rows;
     expect(active?.n).toBe(6);
+  });
+
+  it('an API that ignores Page and repeats one page aborts instead of "completing"', async () => {
+    await syncNpDirectory(app.db, directory(fakeFetch().impl));
+    const same = ((_url: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as {
+        calledMethod: string;
+      };
+      const all = fixture(
+        body.calledMethod === 'getCities' ? 'np-cities.json' : 'np-warehouses.json',
+      ).data;
+      return Promise.resolve(Response.json({ success: true, data: all.slice(0, 2) }));
+    }) as typeof fetch;
+    await expect(syncNpDirectory(app.db, directory(same), { pageSize: 2 })).rejects.toBeInstanceOf(
+      NpSyncAbortedError,
+    );
+    const [active] = (
+      await app.db.execute<{ n: number }>(
+        sql`SELECT count(*)::int AS n FROM np_warehouses WHERE is_active`,
+      )
+    ).rows;
+    expect(active?.n).toBe(6);
+  });
+
+  it('more than a tenth of malformed rows aborts even when the active count stays high', async () => {
+    await syncNpDirectory(app.db, directory(fakeFetch().impl));
+    // 20 extra rows without a Ref next to the 7 good ones: 74 percent malformed, all good rows active.
+    const junk = Array.from({ length: 20 }, (_, i) => ({ Description: `broken ${String(i)}` }));
+    const noisy = fakeFetch((name, rows) => (name === 'getWarehouses' ? [...rows, ...junk] : rows));
+    await expect(syncNpDirectory(app.db, directory(noisy.impl))).rejects.toMatchObject({
+      name: 'NpSyncAbortedError',
+      message: expect.stringContaining('malformed') as string,
+    });
+  });
+
+  it('nothing is written when a run aborts, and renamed coordinates keep what we know', async () => {
+    await syncNpDirectory(app.db, directory(fakeFetch().impl));
+    await app.db.execute(
+      sql`UPDATE np_warehouses SET latitude = 50.45, longitude = 30.52 WHERE ref = 'np-wh-lviv-1'`,
+    );
+    const renamed = fakeFetch((name, rows) =>
+      name === 'getWarehouses'
+        ? rows.map((row) => ({
+            ...row,
+            Latitude: undefined,
+            Longitude: undefined,
+            Lat: '1',
+            Lon: '2',
+          }))
+        : rows,
+    );
+    await syncNpDirectory(app.db, directory(renamed.impl));
+    const [row] = (
+      await app.db.execute<{ latitude: number; longitude: number }>(
+        sql`SELECT latitude, longitude FROM np_warehouses WHERE ref = 'np-wh-lviv-1'`,
+      )
+    ).rows;
+    expect(row).toEqual({ latitude: 50.45, longitude: 30.52 });
+    // An aborting run leaves descriptions untouched too.
+    await app.db.execute(
+      sql`UPDATE np_warehouses SET description_uk = 'kept' WHERE ref = 'np-wh-lviv-1'`,
+    );
+    const shrunk = fakeFetch((name, rows) => (name === 'getWarehouses' ? rows.slice(0, 1) : rows));
+    await expect(syncNpDirectory(app.db, directory(shrunk.impl))).rejects.toBeInstanceOf(
+      NpSyncAbortedError,
+    );
+    const [kept] = (
+      await app.db.execute<{ d: string }>(
+        sql`SELECT description_uk AS d FROM np_warehouses WHERE ref = 'np-wh-lviv-1'`,
+      )
+    ).rows;
+    expect(kept?.d).toBe('kept');
+  });
+
+  it('refuses an oversized, mistyped or over-long answer and never follows a redirect', async () => {
+    const seen: RequestInit[] = [];
+    const ok = ((_u: string | URL | Request, init?: RequestInit) => {
+      seen.push(init ?? {});
+      return Promise.resolve(Response.json({ success: true, data: [] }));
+    }) as typeof fetch;
+    await directory(ok).cities(1, 10);
+    expect(seen[0]?.redirect).toBe('error');
+
+    const html = (() =>
+      Promise.resolve(
+        new Response('{}', { headers: { 'content-type': 'text/html' } }),
+      )) as typeof fetch;
+    await expect(directory(html).cities(1, 10)).rejects.toThrow('content type');
+    const big = (() =>
+      Promise.resolve(
+        new Response('{}', {
+          headers: {
+            'content-type': 'application/json',
+            'content-length': String(40 * 1024 * 1024),
+          },
+        }),
+      )) as typeof fetch;
+    await expect(directory(big).cities(1, 10)).rejects.toThrow('too large');
+    const many = (() =>
+      Promise.resolve(
+        Response.json({ success: true, data: Array.from({ length: 11 }, () => ({})) }),
+      )) as typeof fetch;
+    await expect(directory(many).cities(1, 10)).rejects.toThrow('more rows than asked');
   });
 
   it('an API refusal or an HTTP error is a NovaPoshtaError without the body', async () => {

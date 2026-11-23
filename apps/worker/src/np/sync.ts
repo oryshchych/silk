@@ -37,119 +37,127 @@ const MIN_SHARE_PERCENT = 80;
 /** More malformed rows than this share of everything the API sent means its shape changed. */
 const MAX_DROPPED_PERCENT = 10;
 const MAX_PAGES = 500;
+const CHUNK = 1000;
 
+/** Pages of one kind until a short page. Aborts on a repeated page and when the page limit is hit. */
+async function fetchAll<T extends { ref: string }>(
+  fetchPage: (page: number) => Promise<{ rows: T[]; raw: number }>,
+  pageSize: number,
+  what: string,
+): Promise<{ rows: Map<string, T>; raw: number }> {
+  const byRef = new Map<string, T>();
+  let rawTotal = 0;
+  let previous = '';
+  for (let page = 1; page <= MAX_PAGES; page += 1) {
+    const { rows, raw } = await fetchPage(page);
+    rawTotal += raw;
+    // An API that ignores `Page` answers the same page every time: refuse instead of "completing".
+    const signature = rows.map((row) => row.ref).join('|');
+    if (page > 1 && signature !== '' && signature === previous) {
+      throw new NpSyncAbortedError(`the carrier repeated a page of ${what}`);
+    }
+    previous = signature;
+    for (const row of rows) byRef.set(row.ref, row);
+    if (raw < pageSize) return { rows: byRef, raw: rawTotal };
+  }
+  throw new NpSyncAbortedError(`the page limit was reached while fetching ${what}`);
+}
+
+/**
+ * Everything is fetched and checked BEFORE the first write; the writes are one transaction. A
+ * run that aborts (partial fetch, repeated page, malformed rows, too few active branches)
+ * changes nothing at all.
+ */
 export async function syncNpDirectory(
   runner: TransactionRunner,
   directory: NovaPoshtaDirectory,
   options: { pageSize?: number } = {},
 ): Promise<NpSyncResult> {
   const pageSize = options.pageSize ?? PAGE_SIZE;
-  const started = await runner.transaction(async (tx) => {
-    const row = await tx.execute<{ now: string }>(sql`SELECT clock_timestamp()::text AS now`);
-    const held = await tx.execute<{ n: number }>(
+  const held = await runner.transaction(async (tx) => {
+    const row = await tx.execute<{ n: number }>(
       sql`SELECT count(*)::int AS n FROM np_warehouses WHERE is_active`,
     );
-    return { at: row.rows[0]?.now ?? '', held: held.rows[0]?.n ?? 0 };
+    return row.rows[0]?.n ?? 0;
   });
 
-  let cities = 0;
-  let dropped = 0;
-  let sent = 0;
-  for (let page = 1; page <= MAX_PAGES; page += 1) {
-    const { rows, raw } = await directory.cities(page, pageSize);
-    dropped += raw - rows.length;
-    sent += raw;
-    if (rows.length > 0) {
-      await runner.transaction(async (tx) => {
-        await tx
-          .insert(npSettlements)
-          .values(
-            rows.map((city) => ({
-              ref: city.ref,
-              nameUk: city.name,
-              areaNameUk: city.area,
-              settlementTypeUk: city.type,
-            })),
-          )
-          .onConflictDoUpdate({
-            target: npSettlements.ref,
-            set: {
-              nameUk: sql`excluded.name_uk`,
-              areaNameUk: sql`excluded.area_name_uk`,
-              settlementTypeUk: sql`excluded.settlement_type_uk`,
-              syncedAt: sql`now()`,
-            },
-          });
-      });
-    }
-    cities += rows.length;
-    if (raw < pageSize) break;
-  }
+  const cities = await fetchAll((page) => directory.cities(page, pageSize), pageSize, 'cities');
+  const branches = await fetchAll(
+    (page) => directory.branches(page, pageSize),
+    pageSize,
+    'branches',
+  );
 
-  let branches = 0;
-  let activeBranches = 0;
-  // Status changes are held back until the whole fetch passed the guards below: an upsert that
-  // flipped `is_active` page by page would already have emptied the directory when they abort.
-  const statuses: { ref: string; active: boolean }[] = [];
-  for (let page = 1; page <= MAX_PAGES; page += 1) {
-    const { rows, raw } = await directory.branches(page, pageSize);
-    dropped += raw - rows.length;
-    sent += raw;
-    if (rows.length > 0) {
-      await runner.transaction(async (tx) => {
-        await tx
-          .insert(npWarehouses)
-          .values(
-            rows.map((branch) => ({
-              ref: branch.ref,
-              settlementRef: branch.cityRef,
-              number: branch.number,
-              descriptionUk: branch.description,
-              type: branch.kind,
-              maxWeightKg: branch.maxWeightKg,
-              latitude: branch.latitude,
-              longitude: branch.longitude,
-              isActive: branch.isActive,
-            })),
-          )
-          .onConflictDoUpdate({
-            target: npWarehouses.ref,
-            set: {
-              settlementRef: sql`excluded.settlement_ref`,
-              number: sql`excluded.number`,
-              descriptionUk: sql`excluded.description_uk`,
-              type: sql`excluded.type`,
-              maxWeightKg: sql`excluded.max_weight_kg`,
-              latitude: sql`excluded.latitude`,
-              longitude: sql`excluded.longitude`,
-              syncedAt: sql`now()`,
-            },
-          });
-      });
-    }
-    branches += rows.length;
-    activeBranches += rows.filter((branch) => branch.isActive).length;
-    for (const branch of rows) statuses.push({ ref: branch.ref, active: branch.isActive });
-    if (raw < pageSize) break;
-  }
-
+  const sent = cities.raw + branches.raw;
+  const dropped = sent - cities.rows.size - branches.rows.size;
   if (dropped * 100 > sent * MAX_DROPPED_PERCENT) {
     throw new NpSyncAbortedError('too many malformed rows: the carrier data changed shape');
   }
-  // Active branches, not rows: a renamed status field would turn every row inactive.
-  if (started.held > 0 && activeBranches * 100 < started.held * MIN_SHARE_PERCENT) {
+  // Distinct ACTIVE refs: a renamed status field turns every row inactive, a repeated page repeats.
+  const active = [...branches.rows.values()].filter((branch) => branch.isActive).length;
+  if (held > 0 && active * 100 < held * MIN_SHARE_PERCENT) {
     throw new NpSyncAbortedError('the carrier returned far fewer active branches than we hold');
   }
 
   return await runner.transaction(async (tx) => {
-    await tx.execute(
-      sql`UPDATE np_warehouses w SET is_active = d.active
-            FROM jsonb_to_recordset(${JSON.stringify(statuses)}::jsonb) AS d(ref text, active boolean)
-           WHERE w.ref = d.ref AND w.is_active <> d.active`,
-    );
+    const cityList = [...cities.rows.values()];
+    for (let i = 0; i < cityList.length; i += CHUNK) {
+      await tx
+        .insert(npSettlements)
+        .values(
+          cityList.slice(i, i + CHUNK).map((city) => ({
+            ref: city.ref,
+            nameUk: city.name,
+            areaNameUk: city.area,
+            settlementTypeUk: city.type,
+          })),
+        )
+        .onConflictDoUpdate({
+          target: npSettlements.ref,
+          set: {
+            nameUk: sql`excluded.name_uk`,
+            areaNameUk: sql`excluded.area_name_uk`,
+            settlementTypeUk: sql`excluded.settlement_type_uk`,
+            syncedAt: sql`now()`,
+          },
+        });
+    }
+    const branchList = [...branches.rows.values()];
+    for (let i = 0; i < branchList.length; i += CHUNK) {
+      await tx
+        .insert(npWarehouses)
+        .values(
+          branchList.slice(i, i + CHUNK).map((branch) => ({
+            ref: branch.ref,
+            settlementRef: branch.cityRef,
+            number: branch.number,
+            descriptionUk: branch.description,
+            type: branch.kind,
+            maxWeightKg: branch.maxWeightKg,
+            latitude: branch.latitude,
+            longitude: branch.longitude,
+            isActive: branch.isActive,
+          })),
+        )
+        .onConflictDoUpdate({
+          target: npWarehouses.ref,
+          set: {
+            settlementRef: sql`excluded.settlement_ref`,
+            number: sql`excluded.number`,
+            descriptionUk: sql`excluded.description_uk`,
+            type: sql`excluded.type`,
+            // A renamed coordinate field must not wipe what we know: keep the old value on null.
+            maxWeightKg: sql`coalesce(excluded.max_weight_kg, np_warehouses.max_weight_kg)`,
+            latitude: sql`coalesce(excluded.latitude, np_warehouses.latitude)`,
+            longitude: sql`coalesce(excluded.longitude, np_warehouses.longitude)`,
+            isActive: sql`excluded.is_active`,
+            syncedAt: sql`now()`,
+          },
+        });
+    }
     const gone = await tx.execute(
       sql`UPDATE np_warehouses SET is_active = false
-           WHERE is_active AND synced_at < ${started.at}::timestamptz
+           WHERE is_active AND synced_at < now()
           RETURNING ref`,
     );
     await tx.execute(
@@ -161,6 +169,10 @@ export async function syncNpDirectory(
                    GROUP BY s2.ref) c
            WHERE s.ref = c.ref AND s.warehouses_count <> c.n`,
     );
-    return { cities, branches, deactivated: gone.rows.length };
+    return {
+      cities: cities.rows.size,
+      branches: branches.rows.size,
+      deactivated: gone.rows.length,
+    };
   });
 }
