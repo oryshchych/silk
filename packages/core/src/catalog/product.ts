@@ -97,6 +97,23 @@ function distinctColors(rows: readonly z.output<typeof variantRow>[]): ProductDe
   return [...colors.values()];
 }
 
+/**
+ * Id and category of a visible product by slug: a cheap lookup that lets the
+ * caller tag the cached product read with `product:{id}` and `category:{id}`
+ * (cache tags must be known when the cache is created).
+ */
+export async function getProductRef(
+  reader: Reader,
+  slug: string,
+): Promise<{ id: string; categoryId: string } | null> {
+  const [row] = await queryRows(
+    reader,
+    z.object({ id: z.uuid(), category_id: z.uuid() }),
+    sql`SELECT p.id, p.category_id FROM products p WHERE p.slug = ${slug} AND ${visibleProduct}`,
+  );
+  return row === undefined ? null : { id: row.id, categoryId: row.category_id };
+}
+
 export async function getProductBySlug(
   reader: Reader,
   slug: string,

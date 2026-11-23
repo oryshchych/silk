@@ -11,7 +11,7 @@ import '../globals.css';
 // No generateStaticParams on purpose: nothing under [locale] is prerendered at
 // build time, so getSiteUrl() reads the RUNTIME SITE_URL (ADR-10); getSiteUrl()
 // fails the build if that ever stops being true. Pages are rendered per request
-// (ISR with tags arrives with the product page).
+// (the product page is ISR with tags).
 
 export async function generateMetadata({ params }: LayoutProps<'/[locale]'>): Promise<Metadata> {
   const { locale } = resolveLocale((await params).locale);
@@ -33,7 +33,7 @@ export default async function LocaleLayout({ children, params }: LayoutProps<'/[
     <html lang={locale}>
       <body className="min-h-dvh bg-surface text-text-primary antialiased">
         {/* Only the namespaces client components use: not the whole bundle on every page. */}
-        <NextIntlClientProvider messages={{ errors: messages.errors }}>
+        <NextIntlClientProvider messages={{ errors: messages.errors, product: messages.product }}>
           {children}
         </NextIntlClientProvider>
       </body>

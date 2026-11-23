@@ -10,12 +10,14 @@ import {
   getCategories,
   getCategoryPage,
   getFilterOptions,
+  getProductBySlug,
+  getProductRef,
   listProducts,
   normalizeListingParams,
   restrictListingParams,
   type ListingParams,
 } from '@store/core/catalog';
-import { categoryTag, CATEGORIES_TAG } from '@store/shared/cache-tags';
+import { categoryTag, CATEGORIES_TAG, productTag } from '@store/shared/cache-tags';
 import type { FilterOptionsDto, ListingDto } from '@store/shared/dto/catalog';
 import type { SiteLocale } from '@store/shared/seo';
 
@@ -103,4 +105,22 @@ export async function loadListing(input: {
   if (params.page === 1) return { listing: first, params };
   if (params.page > Math.max(first.totalPages, 1)) return null;
   return { listing: await getCachedListing({ categoryIds, params, locale }), params };
+}
+
+/**
+ * Product page data, tagged `product:{id}` and `category:{id}` (ADR-8). The
+ * cheap slug lookup runs first only to learn the id: tags must be known when
+ * the cache is created. It runs when a page is (re)generated, not per visit.
+ */
+export async function loadProduct(slug: string, locale: SiteLocale) {
+  const ref = await getProductRef(await getDb(), slug);
+  if (ref === null) return null;
+  return await unstable_cache(
+    async () => await getProductBySlug(await getDb(), slug, locale),
+    ['product', ref.id, locale],
+    {
+      tags: [productTag(ref.id), categoryTag(ref.categoryId), CATEGORIES_TAG],
+      revalidate: CATEGORY_TTL,
+    },
+  )();
 }

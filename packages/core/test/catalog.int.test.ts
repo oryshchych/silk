@@ -19,6 +19,7 @@ import {
   getCategoryPage,
   getFilterOptions,
   getProductBySlug,
+  getProductRef,
   listProducts,
   PAGE_SIZE,
   parseListingParams,
@@ -299,6 +300,24 @@ describe('product page', () => {
     });
     expect(JSON.stringify(listing)).not.toContain(String(SECRET_COST));
     expect(JSON.stringify(listing)).not.toMatch(/cost|stockQuantity|reserved/i);
+  });
+
+  it('resolves the id and category of a visible product only', async () => {
+    expect(await getProductRef(db, 'aurora')).toEqual({
+      id: fx.productIds['aurora'],
+      categoryId: fx.categoryIds['bras'],
+    });
+    for (const slug of [
+      'draft',
+      'unpublished',
+      'future',
+      'giftcard',
+      'archived',
+      'shelved',
+      'nope',
+    ]) {
+      expect(await getProductRef(db, slug)).toBeNull();
+    }
   });
 
   it('is not found for drafts, unpublished, future, gift cards, archived and unknown slugs', async () => {

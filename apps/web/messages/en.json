@@ -84,5 +84,36 @@
   },
   "breadcrumbs": {
     "label": "Breadcrumb"
+  },
+  "product": {
+    "color": "Color",
+    "size": "Size",
+    "chooseSize": "Choose a size",
+    "inStock": "In stock",
+    "lastUnits": "Only a few left",
+    "outOfStock": "Out of stock",
+    "sizeUnavailable": "{size}, out of stock",
+    "sku": "SKU: {sku}",
+    "photo": "Photo {index} of {count}",
+    "gallery": "Product photos",
+    "description": "Description",
+    "composition": "Composition",
+    "care": "Care",
+    "sizeGuide": "Size guide",
+    "guideBand": "Underbust, cm",
+    "guideBandSize": "Band size",
+    "guideCup": "Bust minus underbust, cm",
+    "guideCupSize": "Cup",
+    "guideHint": "Measure under the bust and around the fullest part of the bust. The band is the nearest multiple of 5, the cup comes from the difference.",
+    "calcTitle": "Size calculator",
+    "calcUnderbust": "Underbust, cm",
+    "calcBust": "Bust, cm",
+    "calcSubmit": "Find my size",
+    "calcResult": "Your size: {size}",
+    "calcPick": "Select {size}",
+    "calcUnavailable": "Size {size} is not available in the selected color.",
+    "calcInvalid": "Enter both measurements as numbers.",
+    "calcUnderbustRange": "The underbust is outside the size table.",
+    "calcCupRange": "The bust difference is outside the size table."
   }
 }

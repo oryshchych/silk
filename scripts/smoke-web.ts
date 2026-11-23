@@ -185,6 +185,43 @@ try {
   check('an unknown category is a real 404', (await get('/category/nope')).status === 404);
   check('a page past the end is a real 404', (await get('/category/bras?page=99')).status === 404);
 
+  // The seed is deterministic: this product exists in the seeded dev database.
+  const productPath = '/product/push-up-bra-aurora-1';
+  const product = await get(productPath);
+  const productLd = [
+    ...product.html.matchAll(/<script type="application\/ld\+json">(.*?)<\/script>/g),
+  ].map((match) => match[1] ?? '');
+  check(
+    'product page is 200 with a title',
+    product.status === 200 && /<title>[^<]+<\/title>/.test(product.html),
+  );
+  check(
+    'product page canonical is absolute on the runtime host',
+    product.html.includes(`rel="canonical" href="${SITE}${productPath}"`),
+  );
+  check(
+    'product page has hreflang uk, en and x-default',
+    ['uk', 'en', 'x-default'].every((l) => product.html.includes(`hrefLang="${l}"`)),
+  );
+  check(
+    'product page has Product (with offers) and BreadcrumbList JSON-LD in the primary HTML',
+    productLd.some(
+      (j) =>
+        j.includes('"@type":"Product"') &&
+        j.includes('"priceCurrency":"UAH"') &&
+        j.includes('"availability":"https://schema.org/'),
+    ) && productLd.some((j) => j.includes('"BreadcrumbList"')),
+  );
+  check(
+    'product page renders an unavailable size as a disabled radio',
+    /<input type="radio"[^>]*disabled=""[^>]*name="size"/.test(product.html),
+  );
+  check(
+    'product page is served from the ISR cache on the second request (HIT)',
+    (await get(productPath)).cache === 'HIT',
+  );
+  check('an unknown product is a real 404', (await get('/product/nope')).status === 404);
+
   for (const path of ['/nope', '/en/nope', '/en/a/b']) {
     const page = await get(path);
     check(
