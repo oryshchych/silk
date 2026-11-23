@@ -11,6 +11,7 @@ import {
   getCategoryPage,
   getFilterOptions,
   listProducts,
+  normalizeListingParams,
   restrictListingParams,
   type ListingParams,
 } from '@store/core/catalog';
@@ -19,6 +20,7 @@ import type { FilterOptionsDto, ListingDto } from '@store/shared/dto/catalog';
 import type { SiteLocale } from '@store/shared/seo';
 
 import { getDb } from './db';
+import { isCacheableListing } from './listing-cache-policy';
 
 const CATEGORY_TTL = 60 * 60;
 const LISTING_TTL = 5 * 60;
@@ -76,8 +78,10 @@ export interface LoadedListing {
 
 /**
  * Listing for a category page. Everything that reaches a cache key or SQL is
- * bounded: filter values are restricted to what the category offers, a price
- * range (any number) is not cached at all, and a page past the end is rejected
+ * bounded: the caller's params are re-read through the URL grammar (a spread
+ * keeps the type brand but not the bounds), filter values are restricted to
+ * what the category offers, listings with a price range or many selected values
+ * are not cached (`isCacheableListing`), and a page past the end is rejected
  * from the cached first page before its own key exists. Returns null for a
  * page past the end.
  */
@@ -88,9 +92,9 @@ export async function loadListing(input: {
   locale: SiteLocale;
 }): Promise<LoadedListing | null> {
   const { categoryIds, locale } = input;
-  const params = restrictListingParams(input.params, input.options);
+  const params = restrictListingParams(normalizeListingParams(input.params), input.options);
 
-  if (params.priceMin !== null || params.priceMax !== null) {
+  if (!isCacheableListing(params)) {
     const listing = await listProducts(await getDb(), { categoryIds, params, locale });
     return params.page > Math.max(listing.totalPages, 1) ? null : { listing, params };
   }
