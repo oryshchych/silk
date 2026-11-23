@@ -18,8 +18,7 @@
       "Description": "Буча",
       "AreaDescription": "Київська",
       "SettlementTypeDescription": "місто"
-    },
-    { "Description": "Без референсу" }
+    }
   ],
   "errors": [],
   "warnings": [],

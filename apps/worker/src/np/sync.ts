@@ -32,8 +32,10 @@ export class NpSyncAbortedError extends Error {
 }
 
 const PAGE_SIZE = 500;
-/** A sync that returns fewer than this share of the branches we hold is treated as broken. */
-const MIN_SHARE_PERCENT = 50;
+/** A sync that returns fewer ACTIVE branches than this share of those we hold is treated as broken. */
+const MIN_SHARE_PERCENT = 80;
+/** More malformed rows than this share of everything the API sent means its shape changed. */
+const MAX_DROPPED_PERCENT = 10;
 const MAX_PAGES = 500;
 
 export async function syncNpDirectory(
@@ -51,8 +53,12 @@ export async function syncNpDirectory(
   });
 
   let cities = 0;
+  let dropped = 0;
+  let sent = 0;
   for (let page = 1; page <= MAX_PAGES; page += 1) {
-    const rows = await directory.cities(page, pageSize);
+    const { rows, raw } = await directory.cities(page, pageSize);
+    dropped += raw - rows.length;
+    sent += raw;
     if (rows.length > 0) {
       await runner.transaction(async (tx) => {
         await tx
@@ -77,12 +83,18 @@ export async function syncNpDirectory(
       });
     }
     cities += rows.length;
-    if (rows.length < pageSize) break;
+    if (raw < pageSize) break;
   }
 
   let branches = 0;
+  let activeBranches = 0;
+  // Status changes are held back until the whole fetch passed the guards below: an upsert that
+  // flipped `is_active` page by page would already have emptied the directory when they abort.
+  const statuses: { ref: string; active: boolean }[] = [];
   for (let page = 1; page <= MAX_PAGES; page += 1) {
-    const rows = await directory.branches(page, pageSize);
+    const { rows, raw } = await directory.branches(page, pageSize);
+    dropped += raw - rows.length;
+    sent += raw;
     if (rows.length > 0) {
       await runner.transaction(async (tx) => {
         await tx
@@ -110,21 +122,31 @@ export async function syncNpDirectory(
               maxWeightKg: sql`excluded.max_weight_kg`,
               latitude: sql`excluded.latitude`,
               longitude: sql`excluded.longitude`,
-              isActive: sql`excluded.is_active`,
               syncedAt: sql`now()`,
             },
           });
       });
     }
     branches += rows.length;
-    if (rows.length < pageSize) break;
+    activeBranches += rows.filter((branch) => branch.isActive).length;
+    for (const branch of rows) statuses.push({ ref: branch.ref, active: branch.isActive });
+    if (raw < pageSize) break;
   }
 
-  if (started.held > 0 && branches * 100 < started.held * MIN_SHARE_PERCENT) {
-    throw new NpSyncAbortedError('the carrier returned far fewer branches than we hold');
+  if (dropped * 100 > sent * MAX_DROPPED_PERCENT) {
+    throw new NpSyncAbortedError('too many malformed rows: the carrier data changed shape');
+  }
+  // Active branches, not rows: a renamed status field would turn every row inactive.
+  if (started.held > 0 && activeBranches * 100 < started.held * MIN_SHARE_PERCENT) {
+    throw new NpSyncAbortedError('the carrier returned far fewer active branches than we hold');
   }
 
   return await runner.transaction(async (tx) => {
+    await tx.execute(
+      sql`UPDATE np_warehouses w SET is_active = d.active
+            FROM jsonb_to_recordset(${JSON.stringify(statuses)}::jsonb) AS d(ref text, active boolean)
+           WHERE w.ref = d.ref AND w.is_active <> d.active`,
+    );
     const gone = await tx.execute(
       sql`UPDATE np_warehouses SET is_active = false
            WHERE is_active AND synced_at < ${started.at}::timestamptz

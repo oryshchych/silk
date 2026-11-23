@@ -24,7 +24,8 @@ export const JOB_NAMES = {
 
 /** Cron expressions and their timezone (ADR-17): the timezone moves the schedule, nothing else. */
 const SCHEDULES = {
-  [JOB_NAMES.releaseExpired]: '5 * * * *',
+  // Every ten minutes: a card reservation lives 30, an hourly run would hold stock up to 90.
+  [JOB_NAMES.releaseExpired]: '*/10 * * * *',
   [JOB_NAMES.reconcileStock]: '35 * * * *',
   [JOB_NAMES.syncNp]: '0 3 * * *',
 } as const;
@@ -55,6 +56,11 @@ export function createJobHandlers(deps: JobDeps): JobHandlers {
         failed: result.failed,
         failures: result.failures,
       });
+      // A counter drift is a money alert that must not look like a finished job: fail it, so it
+      // reaches the dead-letter queue instead of repeating quietly every run.
+      if (result.failures.some((failure) => failure.code === 'STOCK_COUNTER_DRIFT')) {
+        throw new Error('stock counter drift while releasing expired reservations');
+      }
     },
     [JOB_NAMES.reconcileStock]: async () => {
       const drift = await findReservedDrift(deps.db);
@@ -80,7 +86,10 @@ export function createJobHandlers(deps: JobDeps): JobHandlers {
 /** Creates the queues, schedules them, and starts one consumer each (concurrency 1). */
 export async function registerJobs(boss: PgBoss, handlers: JobHandlers): Promise<void> {
   for (const [name, cron] of Object.entries(SCHEDULES)) {
-    await boss.createQueue(name);
+    // The directory sync makes many sequential calls: give it an hour before pg-boss re-runs it.
+    await boss.createQueue(name, {
+      expireInSeconds: name === JOB_NAMES.syncNp ? 3600 : 900,
+    });
     await boss.schedule(name, cron, undefined, { tz: CRON_TZ });
   }
   for (const [name, handler] of Object.entries(handlers)) {

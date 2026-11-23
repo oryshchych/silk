@@ -86,6 +86,7 @@ export async function loadEmailOrder(
       .join(', '),
     paymentLabel: payments[order.paymentProvider ?? ''] ?? '',
     paymentProvider: order.paymentProvider,
+    status: order.status,
     items: items.map((item) => ({
       name: item.nameSnapshot,
       size: item.sizeLabel,
@@ -120,6 +121,8 @@ export async function handleOrderCreated(
   if (!parsed.success) throw new OrderEmailError('malformed payload');
   const order = await loadEmailOrder(deps.reader, parsed.data.orderId, deps.siteUrl);
 
+  // After a long outage the order may already be expired or cancelled: no "thank you" then.
+  if (order.status === 'cancelled') return;
   const customer = renderCustomerEmail(order);
   await deps.sender.send({
     to: order.customerEmail,

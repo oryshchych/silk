@@ -23,10 +23,16 @@ export interface NpBranch {
   isActive: boolean;
 }
 
+/** Parsed rows plus how many rows the API sent: paging stops on the RAW count, never on the parsed one. */
+export interface NpPage<T> {
+  rows: T[];
+  raw: number;
+}
+
 export interface NovaPoshtaDirectory {
-  /** A page of cities; fewer rows than `limit` means the last page. */
-  cities(page: number, limit: number): Promise<NpCity[]>;
-  branches(page: number, limit: number): Promise<NpBranch[]>;
+  /** A page of cities; fewer raw rows than `limit` means the last page. */
+  cities(page: number, limit: number): Promise<NpPage<NpCity>>;
+  branches(page: number, limit: number): Promise<NpPage<NpBranch>>;
 }
 
 const ENDPOINT = 'https://api.novaposhta.ua/v2.0/json/';
@@ -142,8 +148,13 @@ export function createNovaPoshtaDirectory(options: {
     return rows;
   }
   return {
-    cities: async (page, limit) => parseCities(await call('Address', 'getCities', page, limit)),
-    branches: async (page, limit) =>
-      parseBranches(await call('AddressGeneral', 'getWarehouses', page, limit)),
+    cities: async (page, limit) => {
+      const raw = await call('Address', 'getCities', page, limit);
+      return { rows: parseCities(raw), raw: raw.length };
+    },
+    branches: async (page, limit) => {
+      const raw = await call('AddressGeneral', 'getWarehouses', page, limit);
+      return { rows: parseBranches(raw), raw: raw.length };
+    },
   };
 }

@@ -24,6 +24,8 @@ export interface EmailOrder {
   /** Absolute address of the tracking page. */
   trackUrl: string;
   paymentProvider: string | null;
+  /** Order status at send time: a cancelled order gets no "thank you". */
+  status: string;
 }
 
 export interface RenderedEmail {

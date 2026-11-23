@@ -68,7 +68,7 @@ const directory = (fetchImpl: typeof fetch): NovaPoshtaDirectory =>
   createNovaPoshtaDirectory({ apiKey: 'test-key', fetchImpl });
 
 describe('np directory sync', () => {
-  it('loads cities and branches, skips rows without a ref, maps the kinds and counts branches', async () => {
+  it('loads cities and branches, maps the kinds and counts branches', async () => {
     const { impl } = fakeFetch();
     const result = await syncNpDirectory(app.db, directory(impl), { pageSize: 2 });
     expect(result).toEqual({ cities: 3, branches: 7, deactivated: 0 });
@@ -196,6 +196,52 @@ describe('np directory sync', () => {
     expect(error).toMatchObject({ name: 'NovaPoshtaError' });
     expect(JSON.stringify(error)).not.toContain('SECRET-KEY-123');
     expect(error).toHaveProperty('message', 'carrier API answered with unreadable data');
+  });
+
+  it('a page that is short only because a row was malformed does not end the fetch', async () => {
+    // Page size 2: the bad row sits on page 1, so the parsed page is short but the raw one is full.
+    const withBad = fakeFetch((name, rows) =>
+      name === 'getCities' ? [{ Description: 'No ref' }, ...rows] : rows,
+    );
+    const result = await syncNpDirectory(app.db, directory(withBad.impl), { pageSize: 2 });
+    expect(result.cities).toBe(3);
+    expect(withBad.calls.filter((c) => c.method === 'getCities').map((c) => c.page)).toEqual([
+      1, 2, 3,
+    ]);
+  });
+
+  it('mostly malformed rows abort the run before anything is deactivated', async () => {
+    await syncNpDirectory(app.db, directory(fakeFetch().impl));
+    const broken = fakeFetch((name, rows) =>
+      name === 'getWarehouses' ? rows.map((row) => ({ Ref: row['Ref'] })) : rows,
+    );
+    await expect(syncNpDirectory(app.db, directory(broken.impl))).rejects.toBeInstanceOf(
+      NpSyncAbortedError,
+    );
+    const [active] = (
+      await app.db.execute<{ n: number }>(
+        sql`SELECT count(*)::int AS n FROM np_warehouses WHERE is_active`,
+      )
+    ).rows;
+    expect(active?.n).toBe(6);
+  });
+
+  it('a renamed status field (every row inactive) aborts instead of emptying the directory', async () => {
+    await syncNpDirectory(app.db, directory(fakeFetch().impl));
+    const renamed = fakeFetch((name, rows) =>
+      name === 'getWarehouses'
+        ? rows.map((row) => ({ ...row, WarehouseStatus: undefined, Status: 'Working' }))
+        : rows,
+    );
+    await expect(syncNpDirectory(app.db, directory(renamed.impl))).rejects.toBeInstanceOf(
+      NpSyncAbortedError,
+    );
+    const [active] = (
+      await app.db.execute<{ n: number }>(
+        sql`SELECT count(*)::int AS n FROM np_warehouses WHERE is_active`,
+      )
+    ).rows;
+    expect(active?.n).toBe(6);
   });
 
   it('an API refusal or an HTTP error is a NovaPoshtaError without the body', async () => {

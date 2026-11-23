@@ -12,6 +12,7 @@ const order: EmailOrder = {
   deliveryLine: 'Нова пошта, відділення, Київ, Відділення №1 "Центр" & <b>',
   paymentLabel: 'Післяплата',
   paymentProvider: 'cod',
+  status: 'pending',
   items: [{ name: 'Бюстгальтер', size: '75B', color: 'Чорний', quantity: 2, lineTotal: 259800 }],
   subtotal: 259800,
   discountTotal: 10000,
@@ -154,6 +155,17 @@ describe('the Resend sender', () => {
         production: false,
       }),
     ).toThrow('EMAIL_TO_OVERRIDE');
+  });
+
+  it('refuses an override in production (it would swallow every customer email)', () => {
+    expect(() =>
+      createResendSender({
+        apiKey: 'k',
+        from: 'shop@example.com',
+        toOverride: 'catch@example.com',
+        production: true,
+      }),
+    ).toThrow('must not be set in production');
   });
 
   it('a provider error or an unreachable provider fails the job without leaking the body or the address', async () => {

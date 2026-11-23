@@ -49,6 +49,9 @@ export function createResendSender(options: {
   if (!options.production && options.toOverride === null) {
     throw new Error('EMAIL_TO_OVERRIDE is required outside production');
   }
+  if (options.production && options.toOverride !== null) {
+    throw new Error('EMAIL_TO_OVERRIDE must not be set in production');
+  }
   const doFetch = options.fetchImpl ?? fetch;
   return {
     async send(message) {

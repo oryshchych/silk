@@ -1,14 +1,22 @@
 /**
  * Routes outbox messages (queue jobs) to their consumers by topic. A topic with no consumer
  * is a failure, not a silent drop: the job retries and lands in the dead-letter queue, where
- * someone sees it. Money alerts are the one exception that only needs to be loud: until the
- * alert channel exists (Q15) they are written to stderr as one JSON line, ids only.
+ * someone sees it. Money alerts are logged (one JSON line, ids only) AND fail the same way until
+ * the alert channel exists (Q15).
  */
 import type { Reader } from '@store/db/types';
 
 import type { MessageSender, OutboundMessage } from './deliver.ts';
 import { handleOrderCreated } from './email/order-created.ts';
 import type { EmailSender } from './email/resend.ts';
+
+/** An `alert.*` message has no channel yet: it is logged AND fails, so it lands in the dead-letter queue. */
+export class AlertUndeliveredError extends Error {
+  constructor(topic: string) {
+    super(`alert ${topic} has no delivery channel yet`);
+    this.name = 'AlertUndeliveredError';
+  }
+}
 
 export class UnhandledTopicError extends Error {
   constructor(topic: string) {
@@ -47,7 +55,9 @@ export function createMessageSender(deps: {
             orderId: orderIdOf(message.payload),
           }),
         );
-        return;
+        // Until the alert channel exists (Q15) a money alert must not look delivered: failing the
+        // job keeps it in the dead-letter queue, where it stays visible and can be redriven.
+        throw new AlertUndeliveredError(message.topic);
       }
       throw new UnhandledTopicError(message.topic);
     },

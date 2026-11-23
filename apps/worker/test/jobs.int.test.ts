@@ -18,7 +18,8 @@ import { startBoss } from '../src/boss.ts';
 import { handleOrderCreated, OrderEmailError } from '../src/email/order-created.ts';
 import type { EmailMessage, EmailSender } from '../src/email/resend.ts';
 import { createJobHandlers, JOB_NAMES, registerJobs } from '../src/jobs.ts';
-import { createMessageSender, UnhandledTopicError } from '../src/router.ts';
+import { AlertUndeliveredError, createMessageSender, UnhandledTopicError } from '../src/router.ts';
+import { OUTBOX_TOPICS } from '../src/boss.ts';
 
 let testDb: TestDatabase;
 let app: DbHandle;
@@ -104,6 +105,17 @@ describe('email.order-created', () => {
     ]);
   });
 
+  it('an order cancelled before the job ran gets no "thank you"', async () => {
+    const placed = await placeOrder('mail-cancelled');
+    await app.db.execute(sql`UPDATE orders SET status = 'cancelled' WHERE id = ${placed.orderId}`);
+    const email = new Recorder();
+    await handleOrderCreated(
+      { reader: app.db, sender: email, siteUrl: 'https://shop.example' },
+      { dedupKey: 'k', payload: { orderId: placed.orderId } },
+    );
+    expect(email.sent).toHaveLength(0);
+  });
+
   it('an English order gets the English mail and the English tracking path', async () => {
     const placed = await placeOrder('mail2', { locale: 'en' });
     const email = new Recorder();
@@ -152,6 +164,42 @@ describe('email.order-created', () => {
 });
 
 describe('the message router', () => {
+  it('every outbox topic is handled or fails visibly: none is consumed and forgotten', async () => {
+    const sender = createMessageSender({
+      reader: app.db,
+      email: new Recorder(),
+      siteUrl: 'https://shop.example',
+      log: () => undefined,
+    });
+    // Topics whose consumer arrives with a later phase; they must fail (and reach the dead-letter queue).
+    const failing = new Set([
+      'email.payment-received',
+      'email.refund-issued',
+      'alert.late-payment',
+      'alert.double-payment',
+      'alert.payment-mismatch',
+      'alert.refund-due',
+    ]);
+    for (const topic of OUTBOX_TOPICS) {
+      const outcome = await sender
+        .send({
+          idempotencyKey: 'k',
+          topic,
+          payload: { orderId: '0193f0a4-7c3e-7000-8000-000000000001' },
+        })
+        .then(
+          () => 'handled',
+          (error: unknown) => (error instanceof Error ? error.name : 'other'),
+        );
+      expect(
+        failing.has(topic)
+          ? outcome !== 'handled'
+          : outcome === 'handled' || outcome === 'OrderEmailError',
+        topic,
+      ).toBe(true);
+    }
+  });
+
   it('routes the order email, logs an alert with ids only, and fails an unknown topic loudly', async () => {
     const placed = await placeOrder('route1');
     const email = new Recorder();
@@ -168,11 +216,13 @@ describe('the message router', () => {
       payload: { orderId: placed.orderId },
     });
     expect(email.sent).toHaveLength(2);
-    await sender.send({
-      idempotencyKey: 'b',
-      topic: 'alert.late-payment',
-      payload: { orderId: placed.orderId, email: 'x@example.com' },
-    });
+    await expect(
+      sender.send({
+        idempotencyKey: 'b',
+        topic: 'alert.late-payment',
+        payload: { orderId: placed.orderId, email: 'x@example.com' },
+      }),
+    ).rejects.toBeInstanceOf(AlertUndeliveredError);
     expect(logs).toHaveLength(1);
     expect(logs[0]).toContain(placed.orderId);
     expect(logs[0]).not.toContain('x@example.com');
@@ -221,6 +271,18 @@ describe('scheduled jobs', () => {
       )
     ).rows;
     expect(row).toEqual({ status: 'cancelled', reason: 'expired', reserved: 0 });
+  });
+
+  it('a counter drift during expiry fails the job so it reaches the dead-letter queue', async () => {
+    await placeOrder('job-drift');
+    await app.db.execute(
+      sql`UPDATE stock_reservations SET expires_at = now() - interval '1 minute'`,
+    );
+    await app.db.execute(sql`UPDATE product_variants SET reserved_quantity = 0`);
+    const logs: string[] = [];
+    const handlers = createJobHandlers({ db: app.db, directory: null, log: (l) => logs.push(l) });
+    await expect(handlers[JOB_NAMES.releaseExpired]()).rejects.toThrow('stock counter drift');
+    expect(JSON.parse(logs[0] ?? '{}')).toMatchObject({ level: 'error', failed: 1 });
   });
 
   it('the schedules exist with the Kyiv timezone, one per job', async () => {
