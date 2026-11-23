@@ -30,8 +30,14 @@ export interface WebhookRequest {
 
 export interface WebhookHandled {
   response: Response;
-  outcome: WebhookOutcome | { kind: 'unverified' };
+  outcome: WebhookOutcome | { kind: 'unverified' } | { kind: 'too_large' };
 }
+
+/**
+ * A provider callback is a few hundred bytes. Past this the message is refused BEFORE it is
+ * parsed or verified (and not stored): the edge of every route, not only this one, is bounded.
+ */
+export const MAX_WEBHOOK_BODY_BYTES = 16 * 1024;
 
 const KEPT_HEADERS = ['x-sign', 'content-type', 'user-agent'];
 /** An unverified body is attacker-controlled: keep a hash and a short, sanitised prefix only. */
@@ -74,6 +80,9 @@ export async function handlePaymentWebhook(
   deps: WebhookDeps,
   req: WebhookRequest,
 ): Promise<WebhookHandled> {
+  if (req.rawBody.byteLength > MAX_WEBHOOK_BODY_BYTES) {
+    return { response: new Response(null, { status: 413 }), outcome: { kind: 'too_large' } };
+  }
   const verified = await deps.provider.verifyWebhook(req.rawBody, req.headers);
   if (verified === null) {
     await quarantine(

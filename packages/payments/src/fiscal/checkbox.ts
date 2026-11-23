@@ -13,6 +13,7 @@ import { z } from 'zod';
 
 import { add, money, multiply } from '@store/shared/money';
 
+import { readJsonCapped } from '../http.ts';
 import type {
   FiscalLookup,
   FiscalProvider,
@@ -46,7 +47,15 @@ const receiptSchema = z.object({
 const CASH_ON_DELIVERY_LABEL = 'Післяплата';
 const CARD_LABEL = 'Безготівковий розрахунок';
 
+/**
+ * Only these answers mean "Checkbox looked at the request and said no" (ADR-16: `failed`,
+ * retrying will not help). A 5xx or 429, on any call including sign-in and opening the shift, is
+ * a transient failure: the result is `unknown` and the job retries.
+ */
+const DEFINITE_REFUSAL = new Set([400, 401, 403, 422]);
+
 class CheckboxRefusal extends Error {}
+class CheckboxTransient extends Error {}
 
 export class CheckboxProvider implements FiscalProvider {
   readonly code = 'checkbox';
@@ -75,6 +84,8 @@ export class CheckboxProvider implements FiscalProvider {
     return await this.http(`${this.config.baseUrl}${path}`, {
       ...init,
       headers,
+      // A redirect would carry the licence key and the body to another host.
+      redirect: 'error',
       signal: AbortSignal.timeout(this.config.timeoutMs ?? 10_000),
     });
   }
@@ -91,8 +102,13 @@ export class CheckboxProvider implements FiscalProvider {
       },
       false,
     );
-    if (!response.ok) throw new CheckboxRefusal(`sign-in refused (${String(response.status)})`);
-    const body: unknown = await response.json();
+    if (!response.ok) {
+      const message = `sign-in answered ${String(response.status)}`;
+      throw DEFINITE_REFUSAL.has(response.status)
+        ? new CheckboxRefusal(message)
+        : new CheckboxTransient(message);
+    }
+    const body: unknown = await readJsonCapped(response);
     if (
       typeof body !== 'object' ||
       body === null ||
@@ -118,7 +134,7 @@ export class CheckboxProvider implements FiscalProvider {
   private async ensureShift(): Promise<void> {
     const shift = await this.authed('/cashier/shift', { method: 'GET' });
     if (shift.ok) {
-      const body: unknown = await shift.json();
+      const body: unknown = await readJsonCapped(shift);
       if (
         typeof body === 'object' &&
         body !== null &&
@@ -131,7 +147,10 @@ export class CheckboxProvider implements FiscalProvider {
     const opened = await this.authed('/shifts', { method: 'POST', body: '{}' });
     // 4xx while opening may be "already open" (a race with another process): read it again.
     if (!opened.ok && opened.status !== 400 && opened.status !== 409) {
-      throw new CheckboxRefusal(`the shift could not be opened (${String(opened.status)})`);
+      const message = `the shift could not be opened (${String(opened.status)})`;
+      throw DEFINITE_REFUSAL.has(opened.status)
+        ? new CheckboxRefusal(message)
+        : new CheckboxTransient(message);
     }
   }
 
@@ -167,7 +186,7 @@ export class CheckboxProvider implements FiscalProvider {
         method: 'POST',
         body: JSON.stringify(body),
       });
-      if (response.status === 400 || response.status === 422) {
+      if (DEFINITE_REFUSAL.has(response.status)) {
         return {
           state: 'failed',
           error: `Checkbox refused the receipt (${String(response.status)})`,
@@ -204,7 +223,7 @@ export class CheckboxProvider implements FiscalProvider {
     });
     if (response.status === 404) return { found: false };
     if (!response.ok) throw new Error(`Checkbox lookup answered ${String(response.status)}`);
-    const parsed = receiptSchema.safeParse(await response.json());
+    const parsed = receiptSchema.safeParse(await readJsonCapped(response));
     if (!parsed.success || parsed.data.id !== localReference) {
       throw new Error('Checkbox lookup answered for a different receipt');
     }

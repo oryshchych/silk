@@ -3,7 +3,12 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { money } from '@store/shared/money';
 
 import { WayForPayProvider } from '../src/wayforpay/wayforpay-provider.ts';
-import { fromWayForPayAmount, hmacMd5, toWayForPayAmount } from '../src/wayforpay/signature.ts';
+import {
+  fromWayForPayAmount,
+  hmacMd5,
+  signatureMatches,
+  toWayForPayAmount,
+} from '../src/wayforpay/signature.ts';
 import { PaymentProviderError, type PaymentAttemptRef } from '../src/types.ts';
 import {
   FAKE_ACCOUNT,
@@ -280,5 +285,145 @@ describe('configuration', () => {
     expect(
       () => new WayForPayProvider({ ...base, secretKey: '', baseUrl: 'https://x.example' }),
     ).toThrow();
+  });
+});
+
+describe('review round: unsigned fields, nulls, amount text, caps', () => {
+  const cb = (over: Partial<Parameters<FakeWayForPay['callback']>[0]> = {}): string =>
+    fake.callback({
+      orderReference: REF,
+      amount: 1299.1,
+      transactionStatus: 'Declined',
+      reasonCode: 1101,
+      ...over,
+    });
+
+  it('the unsigned `reason` never reaches the failure text: it comes from the signed reason code', async () => {
+    const raw = cb({ extra: { reason: '<script>evil()</script> attacker text' } });
+    const result = await wfp.verifyWebhook(bytes(raw));
+    expect(result?.failureReason).toBe('WayForPay reason code 1101');
+    expect(JSON.stringify(result)).not.toContain('script');
+    expect(JSON.stringify(result)).not.toContain('attacker');
+  });
+
+  it('a genuine message with a JSON null in an optional signed field still verifies', async () => {
+    const raw = cb()
+      .replace('"authCode":""', '"authCode":null')
+      .replace('"cardPan":"41****1111"', '"cardPan":null');
+    expect(raw).toContain('"authCode":null');
+    // Signed over empty strings for the missing values: a null is an empty value.
+    const forNull = fake.callback({
+      orderReference: REF,
+      amount: 1299.1,
+      transactionStatus: 'Declined',
+      reasonCode: 1101,
+      authCode: '',
+      cardPan: '',
+    });
+    const nulled = forNull
+      .replace('"authCode":""', '"authCode":null')
+      .replace('"cardPan":""', '"cardPan":null');
+    expect((await wfp.verifyWebhook(bytes(nulled)))?.status).toBe('failed');
+  });
+
+  it('an amount signed as written ("10.10") verifies although the parsed number prints 10.1', async () => {
+    const quoted = fake.callback({
+      orderReference: REF,
+      amount: '10.10',
+      transactionStatus: 'Approved',
+    });
+    const asNumber = quoted.replace('"amount":"10.10"', '"amount":10.10');
+    expect(asNumber).toContain('"amount":10.10');
+    expect((await wfp.verifyWebhook(bytes(asNumber)))?.amount).toBe(1010);
+    expect((await wfp.verifyWebhook(bytes(quoted)))?.amount).toBe(1010);
+    // The normalised text is accepted too.
+    expect(
+      (
+        await wfp.verifyWebhook(
+          bytes(
+            fake.callback({ orderReference: REF, amount: 10.1, transactionStatus: 'Approved' }),
+          ),
+        )
+      )?.amount,
+    ).toBe(1010);
+  });
+
+  it('two amount keys (a duplicate-key trick) are refused even if the first one is signed', async () => {
+    const genuine = fake.callback({
+      orderReference: REF,
+      amount: 1,
+      transactionStatus: 'Approved',
+    });
+    const tricked = genuine.replace('{', '{"amount":999999,');
+    expect(await wfp.verifyWebhook(bytes(tricked))).toBeNull();
+    const trailing = genuine.replace(/}$/, ',"amount":999999}');
+    expect(await wfp.verifyWebhook(bytes(trailing))).toBeNull();
+  });
+
+  it('a null or empty secret never matches, whatever the signature', () => {
+    for (const secret of [null, '']) {
+      expect(signatureMatches(secret, ['a'], hmacMd5('', ['a']))).toBe(false);
+    }
+    expect(signatureMatches('k', ['a'], null)).toBe(false);
+    expect(signatureMatches('k', ['a'], hmacMd5('k', ['a']))).toBe(true);
+  });
+
+  it('the accept carries the time of the answer: a later answer has another time and signature', async () => {
+    let now = 1_700_000_000;
+    const clocked = new WayForPayProvider({
+      baseUrl: fake.baseUrl,
+      merchantAccount: FAKE_ACCOUNT,
+      secretKey: FAKE_SECRET,
+      merchantDomainName: 'shop.example',
+      now: () => now,
+    });
+    const result = await clocked.verifyWebhook(
+      bytes(fake.callback({ orderReference: REF, amount: 1299.1, transactionStatus: 'Approved' })),
+    );
+    if (result === null) throw new Error('expected a verified message');
+    const first = (await clocked.buildWebhookResponse(result).json()) as Record<string, unknown>;
+    now += 60;
+    const second = (await clocked.buildWebhookResponse(result).json()) as Record<string, unknown>;
+    expect(second['time']).toBe(1_700_000_060);
+    expect(second['signature']).not.toBe(first['signature']);
+    expect(second['signature']).toBe(hmacMd5(FAKE_SECRET, [REF, 'accept', '1700000060']));
+  });
+
+  it('messages that differ only in currency do not share a dedup key', async () => {
+    const uah = await wfp.verifyWebhook(
+      bytes(fake.callback({ orderReference: REF, amount: 5, transactionStatus: 'Approved' })),
+    );
+    const usd = await wfp.verifyWebhook(
+      bytes(
+        fake
+          .callback({ orderReference: REF, amount: 5, transactionStatus: 'Approved' })
+          .replace('"currency":"UAH"', '"currency":"USD"'),
+      ),
+    );
+    // The USD message is not signed for USD, so it is refused outright (the key can never collide).
+    expect(usd).toBeNull();
+    expect(uah?.messageKey).toContain('UAH');
+  });
+
+  it('an oversized provider answer is an unknown result, never buffered whole; a redirect is not followed', async () => {
+    fake.onCreate(() => ({
+      status: 200,
+      json: { reasonCode: 1100, invoiceUrl: 'x', pad: 'x'.repeat(2 * 1024 * 1024) },
+    }));
+    expect(await wfp.createPayment(attempt)).toEqual({ ok: false, externalIdUnknown: true });
+    fake.onCreate(() => ({ status: 307, headers: { Location: 'http://127.0.0.1:1/elsewhere' } }));
+    expect(await wfp.createPayment(attempt)).toEqual({ ok: false, externalIdUnknown: true });
+    fake.onCreate((body) => {
+      const ref = String(body['orderReference']);
+      fake.payments.set(ref, {
+        amount: Number(body['amount']),
+        status: 'Created',
+        reasonCode: 1100,
+      });
+      return {
+        status: 200,
+        json: { reasonCode: 1100, invoiceUrl: `https://secure.example/invoice/${ref}` },
+      };
+    });
   });
 });

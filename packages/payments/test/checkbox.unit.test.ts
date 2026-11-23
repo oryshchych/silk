@@ -169,3 +169,33 @@ describe('lookup and configuration', () => {
     ).toThrow();
   });
 });
+
+describe('review round: transient failures are retryable (ADR-16), redirects are not followed', () => {
+  it('a 503 or 429 on sign-in is unknown, not failed; 403 is definite', async () => {
+    for (const [status, state] of [
+      [503, 'unknown'],
+      [429, 'unknown'],
+      [403, 'failed'],
+    ] as const) {
+      fake.failPathOnce('/cashier/signin', status);
+      expect((await make().issueSale(sale())).state, String(status)).toBe(state);
+    }
+  });
+
+  it('a 503 or 500 when opening the shift is unknown; nothing is created', async () => {
+    for (const status of [503, 500]) {
+      fake.state.shiftOpen = false;
+      fake.failPathOnce('/shifts', status);
+      const request = sale();
+      expect((await make().issueSale(request)).state, String(status)).toBe('unknown');
+      expect(fake.receipts.has(request.localReference)).toBe(false);
+    }
+    fake.state.shiftOpen = false;
+  });
+
+  it('a redirect is never followed: the licence key and the body stay with Checkbox', async () => {
+    fake.failPathOnce('/receipts/sell', 307, { Location: `${fake.baseUrl}/leak` });
+    expect((await make().issueSale(sale())).state).toBe('unknown');
+    expect(fake.leaks).toEqual([]);
+  });
+});

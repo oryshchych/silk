@@ -14,10 +14,12 @@ export const wayForPayPaymentSchema = z.object({
   merchantSignature: z.string().min(1).max(64),
   amount: z.union([z.number().nonnegative().max(PG_INT_MAX), z.string().max(16)]),
   currency: z.string().min(1).max(8),
-  authCode: z.string().max(32).optional(),
-  cardPan: z.string().max(32).optional(),
+  // A JSON null is an empty value (the signature joins it as an empty string).
+  authCode: z.string().max(32).nullish(),
+  cardPan: z.string().max(32).nullish(),
   transactionStatus: z.string().min(1).max(40),
-  reason: z.string().max(200).optional(),
+  // `reason` is NOT in the signed list: it is accepted but never read (see failureTextOf).
+  reason: z.unknown().optional(),
   reasonCode: z.union([z.number().int(), z.string().max(8)]),
 });
 
@@ -26,12 +28,25 @@ export type WayForPayPayment = z.infer<typeof wayForPayPaymentSchema>;
 /** The text of a signed number as the signature saw it. */
 export const asSigned = (value: number | string): string => String(value);
 
-/** Fields of the callback and CHECK_STATUS signature, in the documented order. */
-export function paymentSignatureFields(p: WayForPayPayment): string[] {
+/**
+ * The failure text kept on an attempt: built from the SIGNED reason code only. WayForPay's own
+ * `reason` text is unsigned, so anyone who holds one genuine message could swap it for markup.
+ */
+export function failureTextOf(reasonCode: number | string, status: string): string | null {
+  if (String(reasonCode) === '1100' && status !== 'Declined') return null;
+  const code = /^\d{1,6}$/.test(String(reasonCode)) ? String(reasonCode) : 'unknown';
+  return `WayForPay reason code ${code}`;
+}
+
+/**
+ * Fields of the callback and CHECK_STATUS signature, in the documented order. `amountText` is the
+ * amount as written in the message; without it the parsed value's own text is used.
+ */
+export function paymentSignatureFields(p: WayForPayPayment, amountText?: string): string[] {
   return [
     p.merchantAccount,
     p.orderReference,
-    asSigned(p.amount),
+    amountText ?? asSigned(p.amount),
     p.currency,
     p.authCode ?? '',
     p.cardPan ?? '',

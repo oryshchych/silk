@@ -30,7 +30,12 @@ export interface FakeWayForPay {
     account?: string;
   }) => string;
   onCreate: (
-    handler: (body: Record<string, unknown>) => { status: number; json?: unknown; hang?: boolean },
+    handler: (body: Record<string, unknown>) => {
+      status: number;
+      json?: unknown;
+      hang?: boolean;
+      headers?: Record<string, string>;
+    },
   ) => void;
   onRefund: (
     handler: (body: Record<string, unknown>) => { status: number; json?: unknown; hang?: boolean },
@@ -78,8 +83,12 @@ export async function startFakeWayForPay(): Promise<FakeWayForPay> {
       const raw = await readBody(req);
       const body = JSON.parse(raw) as Record<string, unknown>;
       requests.push({ body });
-      const send = (status: number, json?: unknown): boolean => {
-        res.writeHead(status, { 'Content-Type': 'application/json' });
+      const send = (
+        status: number,
+        json?: unknown,
+        headers: Record<string, string> = {},
+      ): boolean => {
+        res.writeHead(status, { 'Content-Type': 'application/json', ...headers });
         res.end(json === undefined ? '' : JSON.stringify(json));
         return true;
       };
@@ -119,7 +128,7 @@ export async function startFakeWayForPay(): Promise<FakeWayForPay> {
       if (type === 'CREATE_INVOICE') {
         const result = createHandler(body);
         if (result.hang === true) return;
-        return send(result.status, result.json);
+        return send(result.status, result.json, result.headers);
       }
       if (type === 'REFUND') {
         const result = refundHandler(body);

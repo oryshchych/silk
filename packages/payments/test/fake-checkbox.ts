@@ -23,6 +23,10 @@ export interface FakeCheckbox {
   settleAfterReads: { value: number };
   /** Force the next POST /receipts/sell to answer this (and not store the receipt unless `store`). */
   failNextSell: (answer: { status: number; hang?: boolean; store?: boolean } | null) => void;
+  /** Make the next call to this exact path answer this status (once). */
+  failPathOnce: (path: string, status: number, headers?: Record<string, string>) => void;
+  /** Requests that reached /leak (a redirect target): must stay empty. */
+  leaks: string[];
   expireToken: () => void;
   close: () => Promise<void>;
 }
@@ -42,6 +46,8 @@ export async function startFakeCheckbox(): Promise<FakeCheckbox> {
   let token = 'token-0';
   let nextSell: { status: number; hang?: boolean; store?: boolean } | null = null;
   let serial = 1000;
+  const failures = new Map<string, { status: number; headers: Record<string, string> }>();
+  const leaks: string[] = [];
 
   const server: Server = createServer((req, res) => {
     void (async () => {
@@ -53,6 +59,17 @@ export async function startFakeCheckbox(): Promise<FakeCheckbox> {
       };
       const path = req.url ?? '';
       if (req.headers['x-license-key'] !== FAKE_LICENSE) return send(403, { message: 'licence' });
+      if (path === '/leak') {
+        leaks.push(req.headers['x-license-key'] ?? '');
+        return send(200, {});
+      }
+      const forced = failures.get(path);
+      if (forced !== undefined) {
+        failures.delete(path);
+        res.writeHead(forced.status, { 'Content-Type': 'application/json', ...forced.headers });
+        res.end('{}');
+        return true;
+      }
       if (path === '/cashier/signin' && req.method === 'POST') {
         const body = JSON.parse(raw) as Record<string, unknown>;
         if (body['login'] !== FAKE_LOGIN || body['password'] !== FAKE_PASSWORD) return send(403);
@@ -129,6 +146,10 @@ export async function startFakeCheckbox(): Promise<FakeCheckbox> {
     failNextSell: (answer) => {
       nextSell = answer;
     },
+    failPathOnce: (path, status, headers = {}) => {
+      failures.set(path, { status, headers });
+    },
+    leaks,
     expireToken: () => {
       token = 'expired-elsewhere';
     },

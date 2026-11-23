@@ -43,3 +43,15 @@ export function fromWayForPayAmount(value: number | string): Money | null {
   const kopiykas = Number(`${match[1] ?? ''}${(match[2] ?? '').padEnd(2, '0')}`);
   return Number.isSafeInteger(kopiykas) ? money(kopiykas) : null;
 }
+
+/**
+ * Every `"amount"` value in a JSON text, as written (the number's own digits, or the string's
+ * content). WayForPay signs the amount as it SENDS it, which may be `10.10` where a parsed number
+ * prints `10.1`. More than one occurrence is a duplicate-key trick (JSON.parse keeps the last, a
+ * signature could cover the first): the caller refuses such a body.
+ */
+export function amountTokens(jsonText: string): string[] {
+  return [...jsonText.matchAll(/"amount"\s*:\s*(?:"([^"\\]*)"|(-?[0-9][0-9.eE+-]*))/g)].map(
+    (match) => match[1] ?? match[2] ?? '',
+  );
+}

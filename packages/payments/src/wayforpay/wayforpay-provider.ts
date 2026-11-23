@@ -24,9 +24,17 @@ import {
   type RefundResult,
   type WebhookResult,
 } from '../types.ts';
-import { fromWayForPayAmount, hmacMd5, signatureMatches, toWayForPayAmount } from './signature.ts';
+import { readJsonCapped, readTextCapped } from '../http.ts';
+import {
+  amountTokens,
+  fromWayForPayAmount,
+  hmacMd5,
+  signatureMatches,
+  toWayForPayAmount,
+} from './signature.ts';
 import {
   asSigned,
+  failureTextOf,
   mapWayForPayStatus,
   paymentSignatureFields,
   wayForPayPaymentSchema,
@@ -88,6 +96,8 @@ export class WayForPayProvider implements PaymentProvider {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...body, apiVersion: 1 }),
+      // A redirect would resend the signed body to another host.
+      redirect: 'error',
       signal: AbortSignal.timeout(this.config.timeoutMs ?? 10_000),
     });
   }
@@ -134,7 +144,7 @@ export class WayForPayProvider implements PaymentProvider {
     if (!response.ok) return { ok: false, externalIdUnknown: true };
     let body: unknown;
     try {
-      body = await response.json();
+      body = await readJsonCapped(response);
     } catch {
       return { ok: false, externalIdUnknown: true };
     }
@@ -176,7 +186,8 @@ export class WayForPayProvider implements PaymentProvider {
     if (!response.ok) {
       throw new PaymentProviderError('WayForPay status lookup failed', response.status);
     }
-    const json: unknown = await response.json();
+    const text = await readTextCapped(response);
+    const json: unknown = JSON.parse(text);
     if (reasonCodeOf(json) === REASON_ORDER_NOT_FOUND) {
       // No payment exists for this reference: a definite answer, not a transport failure.
       throw new PaymentProviderError('WayForPay has no such order', 404);
@@ -187,7 +198,7 @@ export class WayForPayProvider implements PaymentProvider {
     if (
       payment.merchantAccount !== merchantAccount ||
       payment.orderReference !== orderReference ||
-      !signatureMatches(secretKey, paymentSignatureFields(payment), payment.merchantSignature)
+      !this.signedBy(secretKey, text, payment)
     ) {
       throw new PaymentProviderError('WayForPay answer did not verify', 502);
     }
@@ -201,7 +212,7 @@ export class WayForPayProvider implements PaymentProvider {
       amount: normalised.amount,
       capturedAmount: normalised.capturedAmount,
       stateVersion: null,
-      failureReason: payment.reason ?? null,
+      failureReason: failureTextOf(payment.reasonCode, payment.transactionStatus),
     };
   }
 
@@ -222,10 +233,30 @@ export class WayForPayProvider implements PaymentProvider {
     return Promise.resolve(this.verifySync(rawBody));
   }
 
+  /**
+   * The signature covers the amount as WayForPay wrote it (`10.10` signs as "10.10", a parsed
+   * number prints "10.1"): the text taken from the bytes is tried first, then the parsed value's.
+   * A body with more than one `amount` is refused: JSON.parse keeps the last, a signature could
+   * have covered the first.
+   */
+  private signedBy(secret: string, text: string, payment: WayForPayPayment): boolean {
+    const tokens = amountTokens(text);
+    if (tokens.length !== 1) return false;
+    const candidates = new Set([tokens[0] ?? '', asSigned(payment.amount)]);
+    return [...candidates].some((amountText) =>
+      signatureMatches(
+        secret,
+        paymentSignatureFields(payment, amountText),
+        payment.merchantSignature,
+      ),
+    );
+  }
+
   private verifySync(rawBody: Uint8Array): WebhookResult | null {
+    const text = Buffer.from(rawBody).toString('utf8');
     let json: unknown;
     try {
-      json = JSON.parse(Buffer.from(rawBody).toString('utf8'));
+      json = JSON.parse(text);
     } catch {
       return null;
     }
@@ -233,15 +264,7 @@ export class WayForPayProvider implements PaymentProvider {
     if (!parsed.success) return null;
     const payment = parsed.data;
     if (payment.merchantAccount !== this.config.merchantAccount) return null;
-    if (
-      !signatureMatches(
-        this.config.secretKey,
-        paymentSignatureFields(payment),
-        payment.merchantSignature,
-      )
-    ) {
-      return null;
-    }
+    if (!this.signedBy(this.config.secretKey, text, payment)) return null;
     const normalised = this.normalise(payment);
     if (normalised === null) return null;
     if (normalised.amount <= 0) return null;
@@ -250,6 +273,7 @@ export class WayForPayProvider implements PaymentProvider {
       // reason code is another. There is no event id and no signed timestamp.
       messageKey: [
         payment.orderReference,
+        payment.currency,
         payment.transactionStatus,
         asSigned(payment.reasonCode),
         payment.authCode ?? '',
@@ -263,13 +287,12 @@ export class WayForPayProvider implements PaymentProvider {
       capturedAmount: normalised.capturedAmount,
       currency: normalised.currency,
       stateVersion: null,
-      failureReason: payment.reason ?? null,
-      // The signed subset without card data (the masked PAN is dropped on purpose).
+      failureReason: failureTextOf(payment.reasonCode, payment.transactionStatus),
+      // Signed fields only, without card data: the masked PAN and the auth code are dropped.
       rawPayload: {
         orderReference: payment.orderReference,
         amount: payment.amount,
         currency: payment.currency,
-        authCode: payment.authCode ?? '',
         transactionStatus: payment.transactionStatus,
         reasonCode: payment.reasonCode,
       },
@@ -306,7 +329,7 @@ export class WayForPayProvider implements PaymentProvider {
     }
     let body: unknown;
     try {
-      body = await response.json();
+      body = await readJsonCapped(response);
     } catch {
       return { state: 'unknown', error: 'unreadable refund response' };
     }
