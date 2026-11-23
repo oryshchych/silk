@@ -45,6 +45,7 @@ beforeAll(async () => {
   checkbox = await startFakeCheckbox();
   wfpFake = await startFakeWayForPay();
   wfp = new WayForPayProvider({
+    pageHosts: ['secure.example'],
     baseUrl: wfpFake.baseUrl,
     merchantAccount: FAKE_ACCOUNT,
     secretKey: FAKE_SECRET,
@@ -268,10 +269,10 @@ describe('the scheduled payment jobs', () => {
       )
     ).rows[0]?.local_reference;
     await app.db.execute(
-      sql`UPDATE payment_attempts SET created_at = now() - interval '10 minutes'`,
+      sql`UPDATE payment_attempts SET created_at = now() - interval '3 hours', expires_at = now() - interval '2 hours'`,
     );
     const logs: string[] = [];
-    // The provider has no such payment: the attempt is closed.
+    // The provider has no such payment and the invoice (never confirmed) has long expired: closed.
     wfpFake.payments.delete(ref ?? '');
     await handlers(logs)[JOB_NAMES.reconcileOpen]();
     expect(JSON.parse(logs[0] ?? '{}')).toMatchObject({

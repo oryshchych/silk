@@ -26,6 +26,7 @@ let admin: DbHandle;
 beforeAll(async () => {
   fake = await startFakeWayForPay();
   wfp = new WayForPayProvider({
+    pageHosts: ['secure.example'],
     baseUrl: fake.baseUrl,
     merchantAccount: FAKE_ACCOUNT,
     secretKey: FAKE_SECRET,

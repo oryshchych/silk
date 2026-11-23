@@ -54,6 +54,7 @@ beforeAll(async () => {
   checkbox = await startFakeCheckbox();
   wfpFake = await startFakeWayForPay();
   wfp = new WayForPayProvider({
+    pageHosts: ['secure.example'],
     baseUrl: wfpFake.baseUrl,
     merchantAccount: FAKE_ACCOUNT,
     secretKey: FAKE_SECRET,
@@ -261,7 +262,7 @@ describe('cash on delivery and bank transfer', () => {
           orderId,
           actor: 'm',
           bankReference: 'BANK-F1',
-          receivedAmount: total,
+          receivedAmount: money(total),
         }),
     );
     expect(await orderRow(orderId)).toMatchObject({
