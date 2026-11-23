@@ -47,6 +47,15 @@ jobs:
       - uses: ./.github/actions/setup
       - run: pnpm test
 
+  # Integration tests on real Postgres (Testcontainers) and real pg-boss: the
+  # concurrency and money tests live here, so unit tests alone prove little.
+  test-integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+      - run: pnpm test:int
+
   boundaries:
     runs-on: ubuntu-latest
     steps:
