@@ -277,3 +277,9 @@ Left as notes:
 - **No invalidation endpoint yet:** the tags and `revalidate` TTLs are in place; the internal `revalidateTag(tag, 'max')` endpoint reached from the outbox comes with the first admin mutation (phase 4/5). Until then caches refresh by TTL.
 - **dependency-cruiser** does not resolve the `@/` alias of apps/web, so leaf modules under `apps/web/src/components` and `lib` are exempt from the orphan rule.
 - **Navigation failure policy:** `loadCategoryTree` serves the last good tree when the database fails; with none yet it rethrows, so a cached (ISR) page is never regenerated without navigation (Next keeps the previous entry or answers 500). Only the home page, which is rendered per request and never cached, passes `degrade` and renders without navigation, because CI's `web-image` job starts the image with an unreachable database and expects `/` to be 200 with `lang="uk"`. The log line has the error name and code only. If CI ever runs that check with a database, `degrade` can go. Mitigations for the cold-start case are in owner item Q21 (alert on the `navigation` stderr line, a readiness probe, warm the pages after a deploy).
+
+## Phase 1: home showcases and favicon (2026-11-23)
+
+- **Bestsellers are the products marked `bestseller` (badge) by the shop;** there is no sales ranking yet (orders exist only from phase 2). Both lists show the newest published first, eight items, and a section with no products is not rendered.
+- **The home page tolerates a failing showcase** (it is rendered per request and never cached): the section is skipped and one JSON line with the error name and code goes to stderr (`scope: showcase`), next to the `navigation` line. Included in the alert recommendation of Q21.
+- **Favicon** is a neutral placeholder monogram (`app/icon.svg`), a branding item for Q1.
