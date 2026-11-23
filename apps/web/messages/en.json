@@ -84,5 +84,17 @@
   },
   "breadcrumbs": {
     "label": "Breadcrumb"
+  },
+  "search": {
+    "title": "Search",
+    "metaTitle": "Search: {query}",
+    "heading": "Search results",
+    "resultsFor": "Query: “{query}”",
+    "results": "Products found: {count}",
+    "tooShort": "Enter at least {min} characters.",
+    "emptyTitle": "Nothing found",
+    "emptyText": "Check the spelling or try another query.",
+    "toCatalog": "Back to home",
+    "label": "What are you looking for?"
   }
 }

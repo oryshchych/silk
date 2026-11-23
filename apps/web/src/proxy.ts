@@ -4,6 +4,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { routing } from './i18n/routing';
 import { stripDefaultLocalePrefix } from './lib/locale-redirect';
+import { clientKey, createRateLimiter } from './lib/rate-limit';
 import { isAuthorized, parseExcludeList, requiresAuth } from './lib/staging-gate';
 
 /**
@@ -27,6 +28,11 @@ const gate =
       }
     : null;
 
+// Search runs a ranked full-text and trigram query, so it is the one public read
+// route that is limited per client (per instance, in memory).
+const searchLimiter = createRateLimiter({ limit: 30, windowMs: 60_000 });
+const SEARCH_PATHS = new Set(['/search', '/en/search']);
+
 /** Non-production environments are never indexed (third layer after basic auth and robots.txt). */
 function withNoindex(response: NextResponse): NextResponse {
   if (env.APP_ENV !== 'production') response.headers.set('X-Robots-Tag', 'noindex, nofollow');
@@ -48,6 +54,18 @@ export function proxy(request: NextRequest): NextResponse {
         'X-Robots-Tag': 'noindex, nofollow',
       },
     });
+  }
+
+  if (SEARCH_PATHS.has(pathname) && request.method === 'GET') {
+    const verdict = searchLimiter.check(clientKey(request.headers.get('x-forwarded-for')));
+    if (!verdict.allowed) {
+      return withNoindex(
+        new NextResponse('Too many requests', {
+          status: 429,
+          headers: { 'Retry-After': String(verdict.retryAfterSeconds) },
+        }),
+      );
+    }
   }
 
   // `/uk/...` -> `/...` permanently (308 keeps the method, search engines

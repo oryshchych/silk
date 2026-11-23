@@ -185,6 +185,34 @@ try {
   check('an unknown category is a real 404', (await get('/category/nope')).status === 404);
   check('a page past the end is a real 404', (await get('/category/bras?page=99')).status === 404);
 
+  const productLinks = (html: string): number =>
+    (html.match(/href="\/(en\/)?product\//g) ?? []).length;
+  const inflected = await get(`/search?q=${encodeURIComponent('бюстгальтери')}`);
+  check(
+    'search finds products for an inflected word and is noindex',
+    inflected.status === 200 &&
+      productLinks(inflected.html) > 0 &&
+      inflected.html.includes('content="noindex, follow"'),
+  );
+  const typo = await get(`/search?q=${encodeURIComponent('бюстгалтер')}`);
+  check('search finds products despite a typo', typo.status === 200 && productLinks(typo.html) > 0);
+  const nothing = await get('/en/search?q=qzxwvk');
+  check(
+    'search with no match is a 200 empty state',
+    nothing.status === 200 &&
+      productLinks(nothing.html) === 0 &&
+      nothing.html.includes('Nothing found'),
+  );
+  const short = await get('/search?q=a');
+  check(
+    'a one-character query shows the hint and no results',
+    short.status === 200 && productLinks(short.html) === 0,
+  );
+  check(
+    'a search page past the end is a real 404',
+    (await get(`/search?q=${encodeURIComponent('бюстгальтер')}&page=99`)).status === 404,
+  );
+
   for (const path of ['/nope', '/en/nope', '/en/a/b']) {
     const page = await get(path);
     check(

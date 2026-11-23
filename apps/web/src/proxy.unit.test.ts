@@ -56,3 +56,31 @@ describe('proxy: /uk redirect', () => {
     );
   });
 });
+
+describe('proxy: search rate limit', () => {
+  const search = (ip: string, path = '/search') =>
+    new NextRequest(`http://localhost:3000${path}?q=bra`, { headers: { 'x-forwarded-for': ip } });
+
+  it('answers 429 with Retry-After after 30 searches a minute from one address', async () => {
+    const proxy = await loadProxy('local');
+    for (let i = 0; i < 30; i++) expect(proxy(search('203.0.113.7')).status).not.toBe(429);
+    const blocked = proxy(search('203.0.113.7', '/en/search'));
+    expect(blocked.status).toBe(429);
+    expect(Number(blocked.headers.get('retry-after'))).toBeGreaterThan(0);
+    expect(blocked.headers.get('x-robots-tag')).toBe('noindex, nofollow');
+  });
+
+  it('does not limit another address or other pages', async () => {
+    const proxy = await loadProxy('local');
+    for (let i = 0; i < 31; i++) proxy(search('203.0.113.7'));
+    expect(proxy(search('198.51.100.9')).status).not.toBe(429);
+    for (let i = 0; i < 40; i++) {
+      const page = proxy(
+        new NextRequest('http://localhost:3000/category/bras', {
+          headers: { 'x-forwarded-for': '203.0.113.7' },
+        }),
+      );
+      expect(page.status).not.toBe(429);
+    }
+  });
+});
