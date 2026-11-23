@@ -1,25 +1,25 @@
 import type { Metadata } from 'next';
-import { hasLocale } from 'next-intl';
 import { getTranslations } from 'next-intl/server';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
-import { routing, type Locale } from '@/i18n/routing';
+import { resolveLocale } from '@/i18n/locale';
+import type { Locale } from '@/i18n/routing';
 import { getSiteUrl } from '@/lib/site-url';
-import { buildAlternates } from '@store/shared/seo';
+import { buildAlternates, localizedPath } from '@store/shared/seo';
 
 export async function generateMetadata({ params }: PageProps<'/[locale]'>): Promise<Metadata> {
-  const { locale } = await params;
-  if (!hasLocale(routing.locales, locale)) return {};
+  const { locale, known } = resolveLocale((await params).locale);
+  if (!known) return {};
   return { alternates: buildAlternates({ siteUrl: await getSiteUrl(), locale, path: '/' }) };
 }
 
 export default async function HomePage({ params }: PageProps<'/[locale]'>) {
-  const { locale } = await params;
-  if (!hasLocale(routing.locales, locale)) notFound();
+  const { locale, known } = resolveLocale((await params).locale);
+  if (!known) notFound();
   const t = await getTranslations('home');
   const otherLocale: Locale = locale === 'uk' ? 'en' : 'uk';
-  const otherHref = otherLocale === 'uk' ? '/' : '/en';
+  const otherHref = localizedPath(otherLocale, '/');
 
   return (
     <main className="mx-auto flex min-h-dvh max-w-2xl flex-col items-center justify-center gap-6 px-6 text-center">

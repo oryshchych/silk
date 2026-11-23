@@ -67,6 +67,20 @@ describe('parseEnv', () => {
     expect(parseEnv(example).APP_ENV).toBe('local');
   });
 
+  it('requires a site URL on staging, either runtime or build-time', () => {
+    const staging = {
+      ...base,
+      APP_ENV: 'staging',
+      STAGING_BASIC_AUTH_USER: 'u',
+      STAGING_BASIC_AUTH_PASSWORD: 'p',
+    } as const;
+    expect(() => parseEnv(staging)).toThrow(/SITE_URL/);
+    expect(parseEnv({ ...staging, SITE_URL: 'https://s.example' }).APP_ENV).toBe('staging');
+    expect(parseEnv({ ...staging, NEXT_PUBLIC_SITE_URL: 'https://s.example' }).APP_ENV).toBe(
+      'staging',
+    );
+  });
+
   it('requires SITE_URL in production', () => {
     const rest: Record<string, string> = { ...productionSecrets };
     delete rest['SITE_URL'];

@@ -115,6 +115,20 @@ export const envSchema = z
       }
     }
 
+    if (
+      value.APP_ENV === 'staging' &&
+      value.SITE_URL === undefined &&
+      value.NEXT_PUBLIC_SITE_URL === undefined
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['SITE_URL'],
+        message:
+          'SITE_URL (or the build-time NEXT_PUBLIC_SITE_URL) is required on staging: ' +
+          'canonical and hreflang must not fall back to localhost.',
+      });
+    }
+
     if (value.APP_ENV === 'staging') {
       const hasUser = (value.STAGING_BASIC_AUTH_USER ?? '') !== '';
       const hasPassword = (value.STAGING_BASIC_AUTH_PASSWORD ?? '') !== '';

@@ -8,6 +8,8 @@ declare global {
     interface ProcessEnv {
       /** Константа збірки Next: у якому runtime виконується код. */
       readonly NEXT_RUNTIME?: 'nodejs' | 'edge';
+      /** Set by Next while `next build` runs. */
+      readonly NEXT_PHASE?: string;
     }
   }
 }

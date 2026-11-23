@@ -258,3 +258,10 @@ Left as notes:
 - **Refund reason is limited to 200 characters**; use codes, not customer text.
 - **Returns**: stock goes back only through the physical receipt of a return (a later phase); a refund
   does not touch `stock_quantity`.
+
+## Phase 1: SEO skeleton follow-ups (2026-11-23)
+
+- **Thin metadata:** no `openGraph` / `twitter` fields and no `Organization` / `WebSite` JSON-LD yet. OG and Twitter come with the PLP/PDP slice (product image, title, description); Organization and WebSite markup is phase 6.
+- **Root not-found:** the locale layout is the root layout, so the 404 for unknown paths is a catch-all `[locale]/[...rest]` page that calls `notFound()` (rendered by `[locale]/not-found.tsx`). If `experimental.globalNotFound` becomes stable it is the cleaner option.
+- **Redirect loop report on `/` (independent review of PR 34):** not reproduced on this branch with `node .next/standalone/apps/web/server.js`, `next start` and `next dev` (APP_ENV local and staging, with basic auth, Googlebot UA, `Accept-Language` variants, a foreign `Host`). Real-server checks run in CI need Playwright (Q6); until then they are manual.
+- **No `loading.tsx` at the locale level:** it starts the response stream before a page can call `notFound()`, so every 404 would be a streamed 200 (soft 404; checked on a real server). Skeletons go on slow regions with `<Suspense>` AFTER the page has resolved its slug and called `notFound()`; the product and category pages must do their existence check first.
