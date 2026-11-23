@@ -39,7 +39,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   if (product === null) return {};
 
   const t = await getTranslations({ locale, namespace: 'meta' });
-  const image = product.ogImageUrl ?? product.images[0]?.url ?? null;
+  const siteUrl = await getSiteUrl();
+  // Same order as the JSON-LD: the photos of the colour the page opens on first.
+  const image =
+    product.ogImageUrl ??
+    productImageUrls(product.images, initialSelection(product.variants).colorSlug, siteUrl)[0] ??
+    null;
   return pageMetadata({
     title: `${product.metaTitle ?? `${product.name}, ${product.brand}`} | ${t('siteName')}`,
     description:
@@ -48,11 +53,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       htmlToSnippet(product.description, DESCRIPTION_LENGTH),
     locale,
     siteName: t('siteName'),
-    alternates: buildAlternates({
-      siteUrl: await getSiteUrl(),
-      locale,
-      path: paths.product(slug),
-    }),
+    alternates: buildAlternates({ siteUrl, locale, path: paths.product(slug) }),
     // A product with nothing to choose is a thin page: not indexed.
     index: !product.noindex && product.variants.length > 0,
     image,

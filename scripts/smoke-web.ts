@@ -255,6 +255,11 @@ try {
       !productLd.some((j) => j.includes('aggregateRating')),
   );
 
+  check(
+    'product og:image is absolute on the runtime host',
+    product.html.includes(`property="og:image" content="${SITE}/placeholder.svg"`),
+  );
+
   // Unknown, malformed, hostile and over-long slugs are answered before any page
   // exists: they must not add files to the build's page or data caches.
   const storedBefore = storedFiles();
