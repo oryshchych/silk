@@ -11,9 +11,11 @@ import {
   getCategoryPage,
   getFilterOptions,
   listProducts,
+  restrictListingParams,
   type ListingParams,
 } from '@store/core/catalog';
 import { categoryTag, CATEGORIES_TAG } from '@store/shared/cache-tags';
+import type { FilterOptionsDto, ListingDto } from '@store/shared/dto/catalog';
 import type { SiteLocale } from '@store/shared/seo';
 
 import { getDb } from './db';
@@ -27,15 +29,25 @@ export const getCachedCategories = (locale: SiteLocale) =>
     revalidate: CATEGORY_TTL,
   })();
 
-export const getCachedCategoryPage = (slug: string, locale: SiteLocale) =>
+const getCachedCategoryPage = (slug: string, locale: SiteLocale) =>
   unstable_cache(
     async () => await getCategoryPage(await getDb(), slug, locale),
     ['category-page', slug, locale],
     { tags: [CATEGORIES_TAG], revalidate: CATEGORY_TTL },
   )();
 
+/**
+ * Category page data for a slug. The slug is checked against the cached
+ * category list FIRST: a cache key per client-chosen slug (misses included)
+ * would grow without bound.
+ */
+export async function loadCategoryPage(slug: string, locale: SiteLocale) {
+  const known = (await getCachedCategories(locale)).some((category) => category.slug === slug);
+  return known ? await getCachedCategoryPage(slug, locale) : null;
+}
+
 /** Tagged with every category in scope, so changing a product refreshes its category and the ancestors listing it. */
-export const getCachedListing = (input: {
+const getCachedListing = (input: {
   categoryIds: readonly string[];
   params: ListingParams;
   locale: SiteLocale;
@@ -55,3 +67,36 @@ export const getCachedFilterOptions = (input: {
     ['filter-options', input.locale, ...input.categoryIds],
     { tags: input.categoryIds.map(categoryTag), revalidate: LISTING_TTL },
   )();
+
+export interface LoadedListing {
+  listing: ListingDto;
+  /** The filters actually applied: values the category does not offer are dropped. */
+  params: ListingParams;
+}
+
+/**
+ * Listing for a category page. Everything that reaches a cache key or SQL is
+ * bounded: filter values are restricted to what the category offers, a price
+ * range (any number) is not cached at all, and a page past the end is rejected
+ * from the cached first page before its own key exists. Returns null for a
+ * page past the end.
+ */
+export async function loadListing(input: {
+  categoryIds: readonly string[];
+  params: ListingParams;
+  options: FilterOptionsDto;
+  locale: SiteLocale;
+}): Promise<LoadedListing | null> {
+  const { categoryIds, locale } = input;
+  const params = restrictListingParams(input.params, input.options);
+
+  if (params.priceMin !== null || params.priceMax !== null) {
+    const listing = await listProducts(await getDb(), { categoryIds, params, locale });
+    return params.page > Math.max(listing.totalPages, 1) ? null : { listing, params };
+  }
+
+  const first = await getCachedListing({ categoryIds, params: { ...params, page: 1 }, locale });
+  if (params.page === 1) return { listing: first, params };
+  if (params.page > Math.max(first.totalPages, 1)) return null;
+  return { listing: await getCachedListing({ categoryIds, params, locale }), params };
+}

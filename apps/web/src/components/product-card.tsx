@@ -8,8 +8,6 @@ import type { SiteLocale } from '@store/shared/seo';
 
 import { href, paths } from '@/lib/paths';
 
-const IMAGE_SIZES = '(min-width: 1024px) 25vw, 50vw';
-
 const BADGE_KEYS = {
   new: 'badgeNew',
   sale: 'badgeSale',
@@ -21,10 +19,13 @@ export async function ProductCard({
   product,
   locale,
   priority = false,
+  as: Heading = 'h2',
 }: {
   product: ProductCardDto;
   locale: SiteLocale;
   priority?: boolean;
+  /** Heading level of the name: h2 under a page title, h3 under a section title. */
+  as?: 'h2' | 'h3';
 }) {
   const t = await getTranslations('card');
   const badge = product.badge === 'none' ? null : t(BADGE_KEYS[product.badge]);
@@ -45,7 +46,6 @@ export async function ProductCard({
               alt={product.image.alt}
               width={product.image.width ?? 800}
               height={product.image.height ?? 1000}
-              sizes={IMAGE_SIZES}
               priority={priority}
               unoptimized
               className="h-full w-full object-cover"
@@ -57,7 +57,7 @@ export async function ProductCard({
             </span>
           )}
         </div>
-        <h3 className="text-sm">{product.name}</h3>
+        <Heading className="text-sm">{product.name}</Heading>
       </Link>
       <p className="text-xs text-text-muted">{product.brand}</p>
       <p className="flex items-baseline gap-2 text-sm">

@@ -37,17 +37,34 @@ describe('loadCategoryTree', () => {
     const { loadCategoryTree } = await import('./navigation');
     getCachedCategories.mockResolvedValueOnce([category]);
     await loadCategoryTree('en');
-    getCachedCategories.mockRejectedValue(new Error('connect ECONNREFUSED\nsecond line'));
+    getCachedCategories.mockRejectedValue(new Error('connect ECONNREFUSED'));
     expect((await loadCategoryTree('en')).map((c) => c.slug)).toEqual(['bras']);
-    expect(await loadCategoryTree('uk')).toEqual([]);
   });
 
-  it('renders an empty navigation on a cold start during an outage, and logs one line', async () => {
+  it('rethrows on a cold start during an outage, so a cached page is never regenerated without navigation', async () => {
     const { loadCategoryTree } = await import('./navigation');
-    getCachedCategories.mockRejectedValue(new Error('connect ECONNREFUSED\npassword=secret'));
-    expect(await loadCategoryTree('uk')).toEqual([]);
+    getCachedCategories.mockRejectedValue(new Error('connect ECONNREFUSED'));
+    await expect(loadCategoryTree('uk')).rejects.toThrow('ECONNREFUSED');
+  });
+
+  it('renders without navigation on request when the page is never cached (degrade)', async () => {
+    const { loadCategoryTree } = await import('./navigation');
+    getCachedCategories.mockRejectedValue(new Error('connect ECONNREFUSED'));
+    expect(await loadCategoryTree('uk', { degrade: true })).toEqual([]);
+  });
+
+  it('logs one line with the error name and code, never query text or parameters', async () => {
+    const { loadCategoryTree } = await import('./navigation');
+    const driver = Object.assign(new Error('password authentication failed for user "u"'), {
+      name: 'DatabaseError',
+      code: '28P01',
+    });
+    const wrapped = new Error('Failed query: SELECT 1\nparams: secret-param', { cause: driver });
+    getCachedCategories.mockRejectedValue(wrapped);
+    await loadCategoryTree('uk', { degrade: true });
     const written = write.mock.calls.map(([chunk]) => String(chunk)).join('');
-    expect(written).toContain('ECONNREFUSED');
-    expect(written).not.toContain('secret');
+    expect(written.trim().split('\n')).toHaveLength(1);
+    expect(written).toContain('DatabaseError 28P01');
+    expect(written).not.toMatch(/secret-param|SELECT|password/);
   });
 });

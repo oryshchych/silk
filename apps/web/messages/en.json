@@ -31,7 +31,6 @@
     "search": "Search",
     "searchPlaceholder": "Search products",
     "searchSubmit": "Search",
-    "language": "Site language",
     "switchTo": "Українська",
     "skip": "Skip to content"
   },
@@ -49,8 +48,9 @@
     "sortPriceAsc": "Price: low to high",
     "sortPriceDesc": "Price: high to low",
     "sortDiscount": "Biggest discount",
-    "loading": "Loading products",
-    "metaDescription": "{name}: original products delivered across Ukraine."
+    "metaDescription": "{name}: original products delivered across Ukraine.",
+    "bandTitle": "{name}: band {band}",
+    "bandDescription": "{name} in band {band}: original products delivered across Ukraine."
   },
   "filters": {
     "title": "Filters",

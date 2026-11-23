@@ -31,7 +31,6 @@
     "search": "Пошук",
     "searchPlaceholder": "Пошук товарів",
     "searchSubmit": "Шукати",
-    "language": "Мова сайту",
     "switchTo": "English",
     "skip": "Перейти до вмісту"
   },
@@ -49,8 +48,9 @@
     "sortPriceAsc": "Від дешевих до дорогих",
     "sortPriceDesc": "Від дорогих до дешевих",
     "sortDiscount": "За розміром знижки",
-    "loading": "Завантаження товарів",
-    "metaDescription": "{name}: оригінальна продукція з доставкою по Україні."
+    "metaDescription": "{name}: оригінальна продукція з доставкою по Україні.",
+    "bandTitle": "{name}: обхват {band}",
+    "bandDescription": "{name} з обхватом {band}: оригінальна продукція з доставкою по Україні."
   },
   "filters": {
     "title": "Фільтри",

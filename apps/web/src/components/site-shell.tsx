@@ -19,6 +19,7 @@ export async function SiteShell({
   locale,
   path,
   search = '',
+  degrade = false,
   children,
 }: {
   locale: SiteLocale;
@@ -26,14 +27,16 @@ export async function SiteShell({
   path: string;
   /** Normalised query of the current page. */
   search?: string;
+  /** Render without navigation if categories cannot load: only for pages that are never cached. */
+  degrade?: boolean;
   children: ReactNode;
 }) {
   const t = await getTranslations('nav');
   const brand = await getTranslations('meta');
   const tf = await getTranslations('footer');
-  const tree = await loadCategoryTree(locale);
+  const tree = await loadCategoryTree(locale, { degrade });
   const other = OTHER[locale];
-  const focus = 'rounded-sm hover:underline';
+  const navLink = 'inline-flex min-h-6 items-center rounded-sm hover:underline';
 
   return (
     <>
@@ -52,7 +55,7 @@ export async function SiteShell({
             <ul className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
               {tree.map((category) => (
                 <li key={category.id}>
-                  <Link href={href(locale, paths.category(category.slug))} className={focus}>
+                  <Link href={href(locale, paths.category(category.slug))} className={navLink}>
                     {category.name}
                   </Link>
                 </li>
@@ -88,7 +91,6 @@ export async function SiteShell({
             href={href(other, path, search)}
             hrefLang={other}
             lang={other}
-            aria-label={t('language')}
             className="min-h-8 rounded-full border border-border px-3 py-1 text-sm hover:bg-surface-raised"
           >
             {t('switchTo')}

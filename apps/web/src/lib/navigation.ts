@@ -9,20 +9,31 @@ const lastGood = new Map<SiteLocale, CategoryNode[]>();
 /**
  * Category tree for the header and the home page.
  *
- * If the database is unreachable the last good tree is used, so an ISR
- * regeneration during a short outage does not replace a good page with one
- * without navigation. Only a cold start during an outage renders an empty
- * navigation (the page still serves, the error goes to stderr); that page is
- * then cached until its next regeneration.
+ * If the database is unreachable the last good tree is used, so a short
+ * outage does not take the navigation away. With no good tree yet (a cold
+ * start during an outage) the error is rethrown, so a cached (ISR) page is
+ * never regenerated without navigation: Next keeps serving the previous entry
+ * or answers 500. `degrade` is for pages that are rendered per request and
+ * never cached (the home page): they render without navigation instead, and
+ * the failure goes to stderr as one line with the error name and code only
+ * (no query text or parameters).
  */
-export async function loadCategoryTree(locale: SiteLocale): Promise<CategoryNode[]> {
+export async function loadCategoryTree(
+  locale: SiteLocale,
+  options: { degrade?: boolean } = {},
+): Promise<CategoryNode[]> {
   try {
     const tree = buildCategoryTree(await getCachedCategories(locale));
     lastGood.set(locale, tree);
     return tree;
   } catch (error) {
-    const reason = (error instanceof Error ? error.message : 'unknown error').split('\n')[0];
+    const stale = lastGood.get(locale);
+    if (stale === undefined && options.degrade !== true) throw error;
+    // Drizzle wraps the driver error: the code (ECONNREFUSED, 57P01) is on the cause.
+    const source = error instanceof Error && error.cause instanceof Error ? error.cause : error;
+    const code = source instanceof Error && 'code' in source ? String(source.code) : undefined;
+    const reason = `${source instanceof Error ? source.name : 'Error'}${code === undefined ? '' : ` ${code}`}`;
     process.stderr.write(`${JSON.stringify({ level: 'error', scope: 'navigation', reason })}\n`);
-    return lastGood.get(locale) ?? [];
+    return stale ?? [];
   }
 }

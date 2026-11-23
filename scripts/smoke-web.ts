@@ -87,9 +87,6 @@ try {
   check('/ is 200 with <html lang="uk">', uk.status === 200 && uk.html.includes('<html lang="uk"'));
   check('/ canonical uses the runtime SITE_URL', uk.html.includes(`rel="canonical" href="${SITE}`));
 
-  const again = await get('/');
-  check('/ is served from the ISR cache on the second request (HIT)', again.cache === 'HIT');
-
   const en = await get('/en');
   check(
     '/en is 200 with <html lang="en">',
@@ -150,6 +147,41 @@ try {
       !oneBand.html.includes('noindex') &&
       oneBand.html.includes(`rel="canonical" href="${SITE}/en/category/bras?band=75"`),
   );
+  const bandTitle = (html: string): string => /<title>([^<]*)<\/title>/.exec(html)?.[1] ?? '';
+  check(
+    'an indexable band filter has its own title and h1',
+    bandTitle(oneBand.html) !== bandTitle((await get('/en/category/bras')).html) &&
+      /<h1[^>]*>[^<]*75/.test(oneBand.html),
+  );
+
+  // Hostile values stay bounded: they are dropped (200) or rejected (404), never crash or cache.
+  const hostile = [
+    `/category/bras?brand=${'x'.repeat(100)}&size=${'y'.repeat(30)}&color=%00&band=999&cup=zz`,
+    '/category/bras?price_min=99999999999&price_max=-1',
+    `/category/bras?brand=${encodeURIComponent("'; DROP TABLE products; --")}`,
+  ];
+  for (const path of hostile)
+    check(
+      `hostile filter values give a bounded 200: ${path.slice(0, 48)}`,
+      (await get(path)).status === 200,
+    );
+  check(
+    'the largest page number past the end is a real 404',
+    (await get('/category/bras?page=1000')).status === 404,
+  );
+  check(
+    'an invalid page number is page 1',
+    (await get('/category/bras?page=99999')).status === 200,
+  );
+
+  // Nothing internal reaches the HTML or the RSC payload of the home page or a listing.
+  const internal =
+    /cost_price|costPrice|unit_cost|admin_note|stock_quantity|stockQuantity|reserved_quantity/i;
+  check(
+    'home and listing HTML carry no cost, stock or admin fields',
+    !internal.test((await get('/')).html) && !internal.test(category.html),
+  );
+
   check('an unknown category is a real 404', (await get('/category/nope')).status === 404);
   check('a page past the end is a real 404', (await get('/category/bras?page=99')).status === 404);
 

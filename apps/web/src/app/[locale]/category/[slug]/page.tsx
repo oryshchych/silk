@@ -2,7 +2,6 @@ import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { Suspense } from 'react';
 
 import { parseListingParams, serializeListingParams } from '@store/core/catalog';
 import { buildBreadcrumbList, buildItemList } from '@store/shared/schema-org';
@@ -10,13 +9,12 @@ import { buildAlternates } from '@store/shared/seo';
 
 import { Breadcrumbs } from '@/components/breadcrumbs';
 import { FiltersForm } from '@/components/filters-form';
-import { FiltersSkeleton } from '@/components/filters-skeleton';
 import { JsonLd } from '@/components/json-ld';
 import { Pagination } from '@/components/pagination';
 import { ProductCard } from '@/components/product-card';
 import { SiteShell } from '@/components/site-shell';
 import { resolveLocale } from '@/i18n/locale';
-import { getCachedCategoryPage, getCachedFilterOptions, getCachedListing } from '@/lib/catalog';
+import { getCachedFilterOptions, loadCategoryPage, loadListing } from '@/lib/catalog';
 import { listingSeo } from '@/lib/listing-seo';
 import { pageMetadata } from '@/lib/metadata';
 import { href, paths } from '@/lib/paths';
@@ -27,17 +25,25 @@ type Props = PageProps<'/[locale]/category/[slug]'>;
 export async function generateMetadata({ params, searchParams }: Props): Promise<Metadata> {
   const { locale: segment, slug } = await params;
   const { locale, known } = resolveLocale(segment);
-  const category = known ? await getCachedCategoryPage(slug, locale) : null;
+  const category = known ? await loadCategoryPage(slug, locale) : null;
   if (category === null) return {};
 
   const t = await getTranslations({ locale, namespace: 'meta' });
   const tl = await getTranslations({ locale, namespace: 'listing' });
-  const seo = listingSeo(parseListingParams(await searchParams));
+  const parsedParams = parseListingParams(await searchParams);
+  const seo = listingSeo(parsedParams);
   const name = category.page.name;
+  // An indexable band filter is its own landing page: its own title and description.
+  const band = seo.canonicalSearch === '' ? undefined : parsedParams.bands[0];
+  const heading = band === undefined ? name : tl('bandTitle', { name, band });
   return pageMetadata({
-    title: `${category.page.metaTitle ?? name} | ${t('siteName')}`,
+    title: `${band === undefined ? (category.page.metaTitle ?? name) : heading} | ${t('siteName')}`,
     description:
-      category.page.metaDescription ?? category.page.description ?? tl('metaDescription', { name }),
+      band === undefined
+        ? (category.page.metaDescription ??
+          category.page.description ??
+          tl('metaDescription', { name }))
+        : tl('bandDescription', { name, band }),
     locale,
     siteName: t('siteName'),
     alternates: buildAlternates({
@@ -51,42 +57,41 @@ export async function generateMetadata({ params, searchParams }: Props): Promise
   });
 }
 
-async function FiltersPanel({
-  categoryIds,
-  locale,
-  params,
-}: {
-  categoryIds: readonly string[];
-  locale: 'uk' | 'en';
-  params: ReturnType<typeof parseListingParams>;
-}) {
-  const options = await getCachedFilterOptions({ categoryIds, locale });
-  return <FiltersForm options={options} params={params} />;
-}
-
 export default async function CategoryPage({ params, searchParams }: Props) {
   const { locale: segment, slug } = await params;
   const { locale, known } = resolveLocale(segment);
   if (!known) notFound();
 
   // Existence is decided BEFORE anything streams, so a missing category is a real 404.
-  const category = await getCachedCategoryPage(slug, locale);
+  const category = await loadCategoryPage(slug, locale);
   if (category === null) notFound();
 
-  const listingParams = parseListingParams(await searchParams);
-  const listing = await getCachedListing({
+  // Filter values are restricted to what the category offers before they can
+  // become a cache key or a query (see loadListing).
+  const options = await getCachedFilterOptions({ categoryIds: category.categoryIds, locale });
+  const loaded = await loadListing({
     categoryIds: category.categoryIds,
-    params: listingParams,
+    params: parseListingParams(await searchParams),
+    options,
     locale,
   });
-  if (listingParams.page > Math.max(listing.totalPages, 1)) notFound();
+  if (loaded === null) notFound();
+  const { listing, params: listingParams } = loaded;
 
   const t = await getTranslations('listing');
   const tn = await getTranslations('nav');
   const siteUrl = await getSiteUrl();
   const search = serializeListingParams(listingParams);
+  const band =
+    listingSeo(listingParams).canonicalSearch === '' ? undefined : listingParams.bands[0];
+  const title =
+    band === undefined ? category.page.name : t('bandTitle', { name: category.page.name, band });
   const pagePath = paths.category(slug);
-  const absolute = (path: string): string => `${siteUrl}${href(locale, path)}`;
+  // The home URL has no trailing slash, so it equals the canonical of the home page.
+  const absolute = (path: string): string => {
+    const local = href(locale, path);
+    return `${siteUrl}${local === '/' ? '' : local}`;
+  };
   const trail = category.page.breadcrumbs;
   const hrefForPage = (page: number): string =>
     href(locale, pagePath, serializeListingParams({ ...listingParams, page }));
@@ -121,19 +126,13 @@ export default async function CategoryPage({ params, searchParams }: Props) {
           })),
         ]}
       />
-      <h1 className="mt-3 font-display text-3xl">{category.page.name}</h1>
+      <h1 className="mt-3 font-display text-3xl">{title}</h1>
       {category.page.description === null ? null : (
         <p className="mt-2 max-w-2xl text-text-muted">{category.page.description}</p>
       )}
       <div className="mt-6 grid gap-8 md:grid-cols-[16rem_1fr]">
         <aside>
-          <Suspense fallback={<FiltersSkeleton />}>
-            <FiltersPanel
-              categoryIds={category.categoryIds}
-              locale={locale}
-              params={listingParams}
-            />
-          </Suspense>
+          <FiltersForm options={options} params={listingParams} />
         </aside>
         <section aria-label={t('title')} className="flex flex-col gap-6">
           <p aria-live="polite" className="text-sm text-text-muted">

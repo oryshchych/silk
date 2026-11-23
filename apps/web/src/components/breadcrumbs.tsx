@@ -24,7 +24,10 @@ export async function Breadcrumbs({ locale, crumbs }: { locale: SiteLocale; crum
                 {crumb.name}
               </span>
             ) : (
-              <Link href={href(locale, crumb.path)} className="hover:underline">
+              <Link
+                href={href(locale, crumb.path)}
+                className="inline-flex min-h-6 items-center hover:underline"
+              >
                 {crumb.name}
               </Link>
             )}

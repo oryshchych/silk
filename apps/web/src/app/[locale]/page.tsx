@@ -12,17 +12,9 @@ import { pageMetadata } from '@/lib/metadata';
 import { href, paths } from '@/lib/paths';
 import { getSiteUrl } from '@/lib/site-url';
 
-// ISR: rendered on the first request (nothing is prerendered at build, so the
-// runtime SITE_URL is used) and regenerated at most hourly; category changes
-// refresh it earlier through the `categories` tag.
-export const revalidate = 3600;
-
-// An empty list prerenders nothing at build (the runtime SITE_URL is read on the
-// first request) but makes the dynamic `[locale]` route ISR-capable: without a
-// generateStaticParams export Next renders it per request and never caches it.
-export function generateStaticParams(): { locale: string }[] {
-  return [];
-}
+// Rendered per request (no ISR): the header and the category grid come from the
+// data cache, and a render without them (database down on a cold start) must
+// never be stored as a cached page. The product page is the ISR page.
 
 export async function generateMetadata({ params }: PageProps<'/[locale]'>): Promise<Metadata> {
   const { locale, known } = resolveLocale((await params).locale);
@@ -42,7 +34,7 @@ export default async function HomePage({ params }: PageProps<'/[locale]'>) {
   const { locale, known } = resolveLocale((await params).locale);
   if (!known) notFound();
   const t = await getTranslations('home');
-  const tree = await loadCategoryTree(locale);
+  const tree = await loadCategoryTree(locale, { degrade: true });
   const first = tree[0];
   const usp = [
     ['usp1Title', 'usp1Text'],
@@ -51,7 +43,7 @@ export default async function HomePage({ params }: PageProps<'/[locale]'>) {
   ] as const;
 
   return (
-    <SiteShell locale={locale} path={paths.home}>
+    <SiteShell locale={locale} path={paths.home} degrade>
       <section className="flex flex-col items-start gap-4 py-8">
         <h1 className="font-display text-4xl tracking-wide">{t('heroTitle')}</h1>
         <p className="max-w-xl text-text-muted">{t('tagline')}</p>
