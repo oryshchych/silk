@@ -421,6 +421,9 @@ describe('search', () => {
     expect(await find('qzxwvk')).toEqual([]);
     expect(await find(`"'; DROP TABLE products; -- &|!():*`)).toEqual([]);
     expect(await find('\\')).toEqual([]);
+    expect(await find('br\u0000a')).toBeInstanceOf(Array);
+    expect(await find('\u0000\u0000')).toEqual([]);
+    expect(await find('bra\u0001\u007f\u001fcket')).toBeInstanceOf(Array);
     expect(await find('😀😀 😀')).toEqual([]);
     expect(await find('бюстгальтер '.repeat(30))).toEqual(expect.any(Array));
     const [row] = await db.select({ n: sql<number>`count(*)::int` }).from(products);

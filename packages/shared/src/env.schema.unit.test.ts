@@ -81,6 +81,14 @@ describe('parseEnv', () => {
     );
   });
 
+  it('reads TRUSTED_PROXY_HOPS as a small non-negative integer', () => {
+    expect(parseEnv({ ...base, TRUSTED_PROXY_HOPS: '2' }).TRUSTED_PROXY_HOPS).toBe(2);
+    expect(parseEnv(base).TRUSTED_PROXY_HOPS).toBeUndefined();
+    for (const bad of ['-1', '6', '1.5', 'many']) {
+      expect(() => parseEnv({ ...base, TRUSTED_PROXY_HOPS: bad })).toThrow(/TRUSTED_PROXY_HOPS/);
+    }
+  });
+
   it('requires SITE_URL in production', () => {
     const rest: Record<string, string> = { ...productionSecrets };
     delete rest['SITE_URL'];

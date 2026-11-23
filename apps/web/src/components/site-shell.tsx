@@ -66,6 +66,7 @@ export async function SiteShell({
             action={href(locale, paths.search)}
             method="get"
             role="search"
+            aria-label={t('search')}
             className="ml-auto flex items-center gap-2"
           >
             <label className="sr-only" htmlFor="site-search">

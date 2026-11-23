@@ -83,6 +83,12 @@ export const envSchema = z
     // /api: інакше провайдер отримує 401 і навіть не доходить до перевірки
     // підпису (ENVIRONMENTS.md, пастка 0).
     STAGING_BASIC_AUTH_EXCLUDE: z.string().optional(),
+
+    // How many reverse proxies in front of the app append to X-Forwarded-For
+    // and are trusted (Traefik only: 1; Cloudflare then Traefik: 2). The client
+    // address is the entry that many places from the RIGHT; anything to its left
+    // is supplied by the client and means nothing. 0: trust no header.
+    TRUSTED_PROXY_HOPS: z.coerce.number().int().min(0).max(5).optional(),
   })
   .superRefine((value, ctx) => {
     if (value.APP_ENV !== 'production' && value.EMAIL_TO_OVERRIDE === undefined) {
