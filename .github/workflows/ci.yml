@@ -147,6 +147,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup
       - run: pnpm --filter web build
+      # Starts the built standalone server and checks what a bot sees: lang, runtime
+      # canonical, hreflang, the /uk redirect and server-rendered 404s.
+      - run: pnpm smoke:web
 
   # Правила для AI-інструментів генеруються з ai/ (docs/AI_SETUP.md §2).
   # Розійшлися — три різні версії правил, і Cursor радить заборонене.
