@@ -9,6 +9,7 @@ export { getFilterOptions, listProducts } from './listing.ts';
 export {
   PAGE_SIZE,
   defaultListingParams,
+  normalizeListingParams,
   parseListingParams,
   restrictListingParams,
   serializeListingParams,

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   defaultListingParams,
+  normalizeListingParams,
   parseListingParams,
   restrictListingParams,
   serializeListingParams,
@@ -147,5 +148,38 @@ describe('ListingParams brand', () => {
       page,
     };
     expect(byHand.page).toBe(1);
+  });
+});
+
+describe('normalizeListingParams', () => {
+  it('re-applies every bound to params rebuilt with a spread (the brand survives a spread, the bounds do not)', () => {
+    const forged: ListingParams = {
+      ...parseListingParams({}),
+      sort: 'x; DROP TABLE products' as never,
+      page: -5,
+      priceMin: 1e12,
+      priceMax: -3,
+      brands: ['b'.repeat(500), ...Array.from({ length: 80 }, (_, i) => `b${String(i)}`)],
+    };
+    const safe = normalizeListingParams(forged);
+    expect(safe.sort).toBe('newest');
+    expect(safe.page).toBe(1);
+    expect(safe.priceMin).toBeNull();
+    expect(safe.priceMax).toBeNull();
+    expect(safe.brands).toHaveLength(20);
+    expect(safe.brands.every((brand) => brand.length <= 120)).toBe(true);
+  });
+
+  it('keeps already valid params unchanged', () => {
+    const params = parseListingParams({
+      band: '75',
+      cup: 'B',
+      sort: 'price_asc',
+      page: '2',
+      price_min: '500',
+    });
+    expect(serializeListingParams(normalizeListingParams(params))).toBe(
+      serializeListingParams(params),
+    );
   });
 });

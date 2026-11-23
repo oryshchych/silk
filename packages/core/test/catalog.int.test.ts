@@ -160,6 +160,26 @@ describe('listing', () => {
   });
 });
 
+describe('listing with params that bypass the parser', () => {
+  it('re-applies the bounds: an out-of-range price, a bad sort and a negative page do not fail the query', async () => {
+    const bras = await getCategoryPage(db, 'bras', 'uk');
+    const forged: ListingParams = {
+      ...parseListingParams({}),
+      sort: 'x; DROP TABLE products' as never,
+      page: -5,
+      priceMin: 1e12,
+      priceMax: 9e15,
+    };
+    const listing = await listProducts(db, {
+      categoryIds: bras?.categoryIds ?? [],
+      params: forged,
+      locale: 'uk',
+    });
+    expect(listing.page).toBe(1);
+    expect(listing.items.length).toBeGreaterThan(0);
+  });
+});
+
 describe('listing pagination and query count', () => {
   let counted: { reader: Reader; count: () => number };
 

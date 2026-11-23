@@ -128,6 +128,19 @@ export function parseListingParams(raw: RawSearchParams): ListingParams {
   });
 }
 
+/**
+ * Re-reads params through the URL grammar: the brand only proves a value came
+ * from here, but a spread copies it, so `{ ...parsed, sort: 'x', priceMin: 1e12 }`
+ * is still typed as `ListingParams`. Whatever sits at a cache or SQL boundary
+ * calls this and trusts nothing about its caller. Prices keep whole
+ * hryvnias, as in the URL.
+ */
+export function normalizeListingParams(params: ListingParams): ListingParams {
+  return parseListingParams(
+    Object.fromEntries(new URLSearchParams(serializeListingParams(params))),
+  );
+}
+
 /** What a category actually offers; the shape of `FilterOptionsDto` that matters here. */
 export interface KnownFilterValues {
   bands: readonly number[];

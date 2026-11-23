@@ -22,7 +22,7 @@ import {
 } from '@store/shared/dto/catalog';
 import { serialize } from '@store/shared/dto/serialize';
 
-import { clampPage, PAGE_SIZE, type ListingParams } from './listing-params.ts';
+import { normalizeListingParams, PAGE_SIZE, type ListingParams } from './listing-params.ts';
 import { fetchMainImages } from './images.ts';
 import { availableVariant, localized, queryRows, visibleProduct, type SiteLocale } from './sql.ts';
 
@@ -87,6 +87,7 @@ function orderBy(sort: ListingParams['sort']): SQL {
                  ELSE (p.compare_at_price - p.base_price)::numeric / p.compare_at_price END DESC,
                  p.published_at DESC, p.id`;
     case 'newest':
+    default:
       return sql`p.published_at DESC, p.id`;
   }
 }
@@ -105,7 +106,8 @@ export async function listProducts(
   input: { categoryIds: readonly string[]; params: ListingParams; locale: SiteLocale },
 ): Promise<ListingDto> {
   const { categoryIds, locale } = input;
-  const params = { ...input.params, page: clampPage(input.params.page) };
+  // Never trust the caller's params: a spread keeps the brand but not the bounds.
+  const params = normalizeListingParams(input.params);
   if (categoryIds.length === 0) {
     return serialize(listingDto, {
       items: [],
