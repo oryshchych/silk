@@ -77,33 +77,72 @@ example a dependency bot's PR) in the queue.
 
 ## Review tiers (speed and cost)
 
-Approved by the owner on 2026-11-23 after phase 1 took hours. The review effort
-follows the risk of the change; the gate (CI, PASS for the current head, pinned
-commit) applies to every tier.
+Approved by the owner on 2026-11-23, tightened the same day after phase 2 took
+3 to 4 hours. The review effort follows the risk of the change; the gate (CI, PASS
+for the current head, pinned commit) applies to every tier.
 
 | Tier | Change | Review |
 |---|---|---|
 | T0 | docs, CI-only, config text | CI green and the orchestrator reads the diff. No worktree run, no specialist |
-| T1 | small code change that touches no cache, rate limit, proxy, DTO, auth, money, schema or webhook | CI green; the orchestrator runs `pnpm verify` (and `test:int` while CI has no integration job) in a worktree. At most one specialist, only if the diff is not trivial |
-| T2 | money, stock, payments, DTOs, caching keys, rate limits, `proxy.ts`, schema, webhooks, auth | the matching specialists (`money-reviewer`, `security-auditor`, `seo-reviewer`), 3 to 5 mutations of the critical protections, the orchestrator's own run |
+| T1 | small code change that touches no cache, rate limit, proxy, DTO, auth, money, schema or webhook | CI green; the orchestrator runs `pnpm verify` (and `test:int` until CI has the integration job, owner queue Q6) in a worktree. No specialist unless the diff is not trivial, then one |
+| T2 | money, stock, payments, DTOs, caching keys, rate limits, `proxy.ts`, schema, webhooks, auth | **one** specialist chosen by the dominant risk (`money-reviewer`, `security-auditor`, `migration-reviewer`, `seo-reviewer`), 3 to 5 mutations of the critical protections, the orchestrator's own run |
 
-Rules that apply across tiers:
+Two specialists on one PR only when it carries two independent high-risk
+surfaces (for example a migration plus a money path, or a webhook plus a
+public route). Never three.
 
-- **Re-review is scoped.** After fixes, a specialist re-checks only what changed
-  (and any new attack surface the fixes created), not the whole PR. If the fix is
-  mechanical and its tests pass in the orchestrator's run, no re-review.
+Who reviews what:
+
+- **The orchestrator owns T2 specialists.** An authoring session does not run
+  its own `money-reviewer`, `security-auditor` or `migration-reviewer` on a
+  PR: it would duplicate the orchestrator's review. It runs the gates
+  (`verify`, `test:int`, build, smoke, `review-pr-silk` checklist) and may break
+  its own critical code on purpose to prove its tests fail.
+- **Reviewers get a scope, not the whole repository.** Name the files, the
+  attack surface and the mutations; tell them not to repeat what CI or the
+  author's gates already show.
 - **Cheaper models for read-heavy reviewers** where the review is mostly reading
   and measuring; keep the strongest model for design-heavy work.
+
+Rounds and re-review:
+
+- **One consolidated findings comment, one fix round.** Collect all findings of
+  all reviewers into a single PR comment first (cross-session messages can sit in
+  a queue for a long time, a comment cannot be lost), and the author fixes them
+  together.
+- **Re-review is scoped.** After the fixes the orchestrator re-checks only the
+  changed files and the new attack surface the fixes created (its own run plus
+  two mutations of its choosing). No specialist re-run for mechanical fixes whose
+  tests pass in the orchestrator's run, and no repeating mutations the author
+  already showed failing.
+- **At most two rounds.** After the second round the PR is merged, queued for
+  the owner, or stopped.
+- **Accepted risk.** A PASS may carry should-fix items when all three hold: there
+  is no blocker, the item is not reachable in production yet or is covered by an
+  owner queue entry, and the PASS comment names it, its owner and where it will
+  be fixed. Anything reachable in production, any money or data loss path, and
+  any blocker is fixed before the merge.
+
+Cost of the work itself:
+
 - **Bigger slices.** Prefer one coherent PR per slice over many tiny ones; each PR
-  costs a full review round.
+  costs a full review round. Split only when a PR passes about 40 files or mixes
+  independent risks.
+- **Prepare the next slice while the previous one is in review.** PRs are never
+  stacked (every PR targets `main`; the merge gate refuses anything else). The
+  author builds the next slice locally off the previous head, then rebases it on
+  `main` and opens it as soon as the previous PR is merged.
 - **Do not duplicate CI.** If CI already ran a check on the head commit, the
   orchestrator does not repeat it unless CI does not cover it. CI has no
-  integration job yet (owner queue Q6), so `test:int` is still run by hand for
-  T1 and T2 until it does.
-- **Findings go into a durable PR comment first.** Cross-session messages can sit
-  in a queue for a long time; a comment on the PR cannot be lost.
+  integration job until the owner merges it (Q6), so `test:int` is still run by
+  hand for T1 and T2 until then.
+- **Run in parallel.** The orchestrator's own checks run while CI is still
+  running; specialists on one PR run in parallel, not one after another.
 - **Measure the right thing.** For cache growth count every store (`.next/server`,
   `.next/cache`), not one directory.
+- **Time-box a phase.** Budget a phase in review rounds, not hours: slices times
+  at most two rounds. When a phase passes its budget the orchestrator says so in
+  the owner queue instead of adding rounds.
 
 ## Hard stops: never, in any mode
 
