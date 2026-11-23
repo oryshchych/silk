@@ -8,7 +8,7 @@ import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { createDb, type Db, type DbHandle } from '@store/db/client';
-import { products } from '@store/db/schema';
+import { productImages, products } from '@store/db/schema';
 import { createTestDatabase, type TestDatabase } from '@store/db/test/db';
 import type { Reader } from '@store/db/types';
 
@@ -19,6 +19,8 @@ import {
   getCategoryPage,
   getFilterOptions,
   getProductBySlug,
+  getProductRef,
+  listVisibleProductSlugs,
   listProducts,
   listShowcase,
   PAGE_SIZE,
@@ -327,6 +329,24 @@ describe('product page', () => {
     expect(JSON.stringify(listing)).not.toMatch(/cost|stockQuantity|reserved/i);
   });
 
+  it('resolves the id and category of a visible product only', async () => {
+    expect(await getProductRef(db, 'aurora')).toEqual({
+      id: fx.productIds['aurora'],
+      categoryId: fx.categoryIds['bras'],
+    });
+    for (const slug of [
+      'draft',
+      'unpublished',
+      'future',
+      'giftcard',
+      'archived',
+      'shelved',
+      'nope',
+    ]) {
+      expect(await getProductRef(db, slug)).toBeNull();
+    }
+  });
+
   it('is not found for drafts, unpublished, future, gift cards, archived and unknown slugs', async () => {
     for (const slug of [
       'draft',
@@ -400,5 +420,61 @@ describe('search', () => {
     expect(await find('бюстгальтер '.repeat(30))).toEqual(expect.any(Array));
     const [row] = await db.select({ n: sql<number>`count(*)::int` }).from(products);
     expect(row?.n ?? 0).toBeGreaterThan(0);
+  });
+});
+
+describe('product input hardening', () => {
+  it('rejects malformed slugs before they reach SQL, including a NUL byte', async () => {
+    for (const slug of [
+      'x\u0000abc',
+      'Aurora',
+      'a'.repeat(201),
+      'a--b',
+      '-a',
+      '',
+      'a b',
+      '../etc',
+    ]) {
+      expect(await getProductRef(db, slug)).toBeNull();
+      expect(await getProductBySlug(db, slug, 'uk')).toBeNull();
+    }
+  });
+
+  it('lists exactly the slugs of visible products', async () => {
+    const slugs = await listVisibleProductSlugs(db);
+    expect(slugs).toEqual(expect.arrayContaining(['aurora', 'lavanda', 'breeze', 'robe']));
+    for (const hidden of ['draft', 'unpublished', 'future', 'giftcard', 'archived', 'shelved']) {
+      expect(slugs).not.toContain(hidden);
+    }
+  });
+
+  it('keeps only https and site-relative media URLs in images and the Open Graph image', async () => {
+    const robe = fx.productIds['robe'] ?? '';
+    await db.insert(productImages).values([
+      { productId: robe, url: 'javascript:alert(1)', sortOrder: 1 },
+      { productId: robe, url: 'data:text/html,<script>alert(1)</script>', sortOrder: 2 },
+      { productId: robe, url: 'https://cdn.example/robe.webp', sortOrder: 3 },
+      { productId: robe, url: '/placeholder.svg', sortOrder: 4 },
+      { productId: robe, url: '//evil.example/x.png', sortOrder: 5 },
+    ]);
+    await db.execute(
+      sql`UPDATE products SET og_image_url = 'javascript:alert(12)' WHERE id = ${robe}`,
+    );
+
+    const product = await getProductBySlug(db, 'robe', 'uk');
+    expect(product?.images.map((image) => image.url)).toEqual([
+      'https://cdn.example/robe.webp',
+      '/placeholder.svg',
+    ]);
+    expect(product?.ogImageUrl).toBeNull();
+
+    const category = await getCategoryPage(db, 'homewear', 'uk');
+    const listing = await listProducts(db, {
+      categoryIds: category?.categoryIds ?? [],
+      params: params(),
+      locale: 'uk',
+    });
+    // The card shows the first photo by sort order; an unsafe first photo means no photo, never a bad URL.
+    expect(JSON.stringify(listing)).not.toMatch(/javascript:|data:text|evil\.example/);
   });
 });

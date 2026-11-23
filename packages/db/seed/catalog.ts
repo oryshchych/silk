@@ -4,7 +4,14 @@
  */
 import { sql } from 'drizzle-orm';
 
-import { categories, colors, products, productVariants, sizes } from '../src/schema.ts';
+import {
+  categories,
+  colors,
+  productImages,
+  products,
+  productVariants,
+  sizes,
+} from '../src/schema.ts';
 import type { Tx } from '../src/types.ts';
 import type { Rng } from './random.ts';
 
@@ -300,6 +307,17 @@ export async function seedCatalog(tx: Tx, rng: Rng): Promise<SeedCatalog> {
         .returning({ id: products.id });
       if (product === undefined) throw new Error(`товар ${sku} не створився`);
       productIds.push(product.id);
+      // A site-relative placeholder until real media exists (R2, packages/media):
+      // pages and structured data need a photo, and a relative URL is made absolute at render time.
+      await tx.insert(productImages).values({
+        productId: product.id,
+        url: '/placeholder.svg',
+        altUk: nameUk,
+        altEn: `${typeEn} "${collEn}"`,
+        width: 800,
+        height: 1000,
+        sortOrder: 0,
+      });
 
       const productColors = rng.sample(colorRows, rng.int(2, 3));
       const productSizes = rng.sample(
