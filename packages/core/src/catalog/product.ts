@@ -231,12 +231,26 @@ export async function getProductBySlug(
   });
 }
 
-/** Slugs of every product the storefront shows: the proxy answers an unknown product URL with a 404 before any page (and any cache entry) exists. */
-export async function listVisibleProductSlugs(reader: Reader): Promise<string[]> {
+/** Most slugs the proxy gate holds in memory; a bigger catalog needs paging, so this fails instead of truncating. */
+export const MAX_GATE_SLUGS = 200_000;
+
+/**
+ * Slugs of every product the storefront shows: the proxy answers an unknown
+ * product URL with a 404 before any page (and any cache entry) exists. Past
+ * the limit it throws rather than silently dropping products, which would
+ * answer 404 for real ones.
+ */
+export async function listVisibleProductSlugs(
+  reader: Reader,
+  limit: number = MAX_GATE_SLUGS,
+): Promise<string[]> {
   const rows = await queryRows(
     reader,
     z.object({ slug: z.string() }),
-    sql`SELECT p.slug FROM products p WHERE ${visibleProduct} ORDER BY p.slug LIMIT 200000`,
+    sql`SELECT p.slug FROM products p WHERE ${visibleProduct} ORDER BY p.slug LIMIT ${limit + 1}`,
   );
+  if (rows.length > limit) {
+    throw new RangeError(`more than ${String(limit)} visible products: the slug gate needs paging`);
+  }
   return rows.map((row) => row.slug);
 }
