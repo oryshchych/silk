@@ -77,7 +77,7 @@ export default async function CartPage({ params }: Props) {
                   )}
                   {line.sellable && line.quantity > line.available ? (
                     <p role="status" className="text-sm text-danger">
-                      {t('onlyLeft', { count: line.available })}
+                      {t('notEnough')}
                     </p>
                   ) : null}
                   <CartLineControls

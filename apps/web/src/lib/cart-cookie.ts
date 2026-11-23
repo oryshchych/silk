@@ -16,7 +16,8 @@ const CART = 'silk_cart';
 const ORDER = 'silk_order';
 /** Order page access: a day, not a month, so a shared computer does not keep showing the address. */
 const ONE_DAY = 24 * 60 * 60;
-const CART_TOKEN = /^[A-Za-z0-9_-]{16,64}$/;
+/** Minted as 24 random bytes in base64url: exactly 32 characters. */
+const CART_TOKEN = /^[A-Za-z0-9_-]{32}$/;
 const THIRTY_DAYS = 30 * 24 * 60 * 60;
 
 const COUNT = CART_COUNT_COOKIE;

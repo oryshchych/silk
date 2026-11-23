@@ -20,13 +20,20 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
-export default async function OrderTrackPage({ params }: Props) {
+export default async function OrderTrackPage({ params, searchParams }: Props) {
   const { locale, known } = resolveLocale((await params).locale);
   if (!known) notFound();
   const t = await getTranslations('order');
+  // Only the exact value 1 shows the notice; nothing else from the query is used.
+  const placed = (await searchParams)['placed'] === '1';
   return (
     <SiteShell locale={locale} path={paths.orderTrack} degrade>
       <h1 className="font-display text-3xl">{t('trackTitle')}</h1>
+      {placed ? (
+        <p role="status" className="mt-2">
+          {t('trackPlaced')}
+        </p>
+      ) : null}
       <p className="mb-6 mt-2 text-text-muted">{t('trackIntro')}</p>
       <TrackForm locale={locale} />
     </SiteShell>

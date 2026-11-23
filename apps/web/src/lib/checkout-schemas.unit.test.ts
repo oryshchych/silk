@@ -61,6 +61,8 @@ describe('placeOrderSchema', () => {
     ['the gift card provider', { payment: 'gift_card' }],
     ['an unknown locale', { locale: 'de' }],
     ['an over-long promo code', { promoCode: 'x'.repeat(65) }],
+    ['a NUL byte in the name', { name: 'Іван\u0000' }],
+    ['a NUL byte in the promo code', { promoCode: 'A\u0000B' }],
   ])('refuses %s', (_label, over) => {
     expect(placeOrderSchema.safeParse({ ...valid, ...over }).success).toBe(false);
   });

@@ -5,7 +5,11 @@ import { searchWarehouses } from '@store/core/np-directory';
 import { getDb } from '@/lib/db';
 import { json, limitedOrNull } from '@/lib/np-route';
 
-const query = z.object({ city: z.string().min(1).max(64), q: z.string().max(60).default('') });
+const noNul = (value: string): boolean => !value.includes('\0');
+const query = z.object({
+  city: z.string().min(1).max(64).refine(noNul),
+  q: z.string().max(60).refine(noNul).default(''),
+});
 
 /** `GET /api/np/warehouses?city=<ref>&q=` — branches and lockers of one city. */
 export async function GET(request: Request): Promise<Response> {

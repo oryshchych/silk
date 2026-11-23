@@ -67,7 +67,8 @@ export function CheckoutForm({
   const point = useRef({ settlementRef: '', warehouseRef: '' });
   const [pending, start] = useTransition();
   const [failure, setFailure] = useState<PlaceOrderResult | null>(null);
-  const quote = useQuote(locale, delivery, promo);
+  const [refresh, setRefresh] = useState(0);
+  const quote = useQuote(locale, delivery, promo, refresh);
   const onPoint = useCallback((value: { settlementRef: string; warehouseRef: string }) => {
     point.current = value;
   }, []);
@@ -95,10 +96,14 @@ export function CheckoutForm({
           ? { address: text('address') }
           : {}),
         payment,
-        promoCode: promo,
+        // Only a code the server accepted travels: a refused one would make the order impossible.
+        promoCode: quote.status === 'ready' && quote.summary.promo?.accepted === true ? promo : '',
       });
       // A success redirects; whatever comes back is a refusal to show.
       setFailure(result);
+      // The server holds the new total now; price again so the summary shows it, and keep the
+      // button disabled until it does: the next press is the buyer's confirmation.
+      if (result.kind === 'priceChanged') setRefresh((value) => value + 1);
     });
   }
 
@@ -149,7 +154,10 @@ export function CheckoutForm({
                 value={method}
                 checked={delivery === method}
                 label={t(`method.${method}`)}
-                onSelect={setDelivery}
+                onSelect={(value) => {
+                  setFailure(null);
+                  setDelivery(value);
+                }}
               />
             ))}
           </div>
@@ -175,7 +183,10 @@ export function CheckoutForm({
                 value={method}
                 checked={payment === method}
                 label={t(`pay.${method}`)}
-                onSelect={setPayment}
+                onSelect={(value) => {
+                  setFailure(null);
+                  setPayment(value);
+                }}
               />
             ))}
           </div>
@@ -201,6 +212,7 @@ export function CheckoutForm({
               type="button"
               className="min-h-10 rounded-full border border-border px-4"
               onClick={() => {
+                setFailure(null);
                 setPromo(promoInput.trim());
               }}
             >
@@ -246,12 +258,7 @@ function Failure({ failure }: { failure: PlaceOrderResult | null }) {
         <ul className="list-disc pl-5">
           {failure.problems.map((problem) => (
             <li key={`${problem.name}-${problem.size}`}>
-              {t('stockLine', {
-                name: problem.name,
-                size: problem.size,
-                requested: problem.requested,
-                available: problem.available,
-              })}
+              {t('stockLine', { name: problem.name, size: problem.size })}
             </li>
           ))}
         </ul>

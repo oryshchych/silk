@@ -29,10 +29,12 @@ export function OrderSummary({ quote }: { quote: QuoteState }) {
               <dt>{t('subtotal')}</dt>
               <dd>{quote.summary.subtotal}</dd>
             </div>
-            <div className="flex justify-between">
-              <dt>{t('discount')}</dt>
-              <dd>−{quote.summary.discount}</dd>
-            </div>
+            {quote.summary.hasDiscount ? (
+              <div className="flex justify-between">
+                <dt>{t('discount')}</dt>
+                <dd>−{quote.summary.discount}</dd>
+              </div>
+            ) : null}
             <div className="flex justify-between">
               <dt>{t('shipping')}</dt>
               <dd>{quote.summary.shipping}</dd>

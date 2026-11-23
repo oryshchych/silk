@@ -16,12 +16,13 @@ export type TrackResult = { ok: true; order: TrackedOrderDto } | ActionFailure;
  * travels in a POST body, never in a URL.
  */
 export async function trackOrderAction(input: unknown): Promise<TrackResult> {
+  // Parse first: a garbage body must not take a slot in the limiter's key table.
+  const parsed = trackSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, code: 'TRACK_NOT_FOUND' };
   const verdict = await checkLimit(limiters.track);
   if (!verdict.allowed) {
     return { ok: false, code: RATE_LIMITED, retryAfterSeconds: verdict.retryAfterSeconds };
   }
-  const parsed = trackSchema.safeParse(input);
-  if (!parsed.success) return { ok: false, code: 'TRACK_NOT_FOUND' };
   const order = await findOrderForTracking(
     await getDb(),
     parsed.data.orderNumber,

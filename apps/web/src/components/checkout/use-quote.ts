@@ -15,7 +15,13 @@ export type QuoteState =
  * Prices the cart on the server each time the delivery method or the applied promo code changes.
  * The server remembers the total it returned; placing the order is refused if it moves.
  */
-export function useQuote(locale: 'uk' | 'en', delivery: Delivery, promoCode: string): QuoteState {
+export function useQuote(
+  locale: 'uk' | 'en',
+  delivery: Delivery,
+  promoCode: string,
+  /** Bump to price again without a change of choices (after the server refused a stale total). */
+  refresh = 0,
+): QuoteState {
   const [state, setState] = useState<QuoteState>({ status: 'loading' });
   const latest = useRef(0);
 
@@ -30,7 +36,7 @@ export function useQuote(locale: 'uk' | 'en', delivery: Delivery, promoCode: str
           : { status: 'error', code: result.code },
       );
     });
-  }, [locale, delivery, promoCode]);
+  }, [locale, delivery, promoCode, refresh]);
 
   return state;
 }

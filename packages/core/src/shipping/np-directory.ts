@@ -46,6 +46,8 @@ export const escapeLike = (text: string): string => text.replace(/[\\%_]/g, (cha
 
 /** Normalised autocomplete text, or null when it is too short or too long to search. */
 export function normalizeCityQuery(raw: string): string | null {
+  // A NUL byte cannot be stored in text and would fail the query: such text is not a search.
+  if (raw.includes('\0')) return null;
   const text = raw.normalize('NFC').trim().replace(/\s+/g, ' ');
   return text.length >= MIN_CITY_QUERY && text.length <= MAX_CITY_QUERY ? text : null;
 }
@@ -85,6 +87,7 @@ export async function searchWarehouses(
   settlementRef: string,
   raw: string,
 ): Promise<WarehouseOption[]> {
+  if (raw.includes('\0') || settlementRef.includes('\0')) return [];
   const text = raw.normalize('NFC').trim().slice(0, MAX_CITY_QUERY);
   const filter = text === '' ? sql`` : sql` AND description_uk ILIKE ${`%${escapeLike(text)}%`}`;
   const rows = await queryRows(

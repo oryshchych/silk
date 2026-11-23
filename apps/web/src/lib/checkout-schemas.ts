@@ -3,6 +3,8 @@ import { z } from 'zod';
 import { normalizeUaPhone } from '@store/shared/phone';
 
 const UUID = z.uuid();
+/** A NUL byte cannot be stored in a Postgres text column: refuse it at the edge. */
+const text = (schema: z.ZodString) => schema.refine((value) => !value.includes('\0'));
 const locale = z.enum(['uk', 'en']);
 
 /** Phone typed in any common way, stored in the canonical `+380XXXXXXXXX` form. */
@@ -25,21 +27,21 @@ const phone = z
  */
 export const placeOrderSchema = z.object({
   locale,
-  name: z.string().trim().min(2).max(100),
+  name: text(z.string().trim().min(2).max(100)),
   email: z.email().max(254),
   phone,
   delivery: z.enum(['np_warehouse', 'np_courier', 'ukrposhta', 'pickup']),
-  settlementRef: z.string().max(64).optional(),
-  warehouseRef: z.string().max(64).optional(),
-  address: z.string().trim().max(300).optional(),
+  settlementRef: text(z.string().max(64)).optional(),
+  warehouseRef: text(z.string().max(64)).optional(),
+  address: text(z.string().trim().max(300)).optional(),
   payment: z.enum(['cod', 'bank_transfer', 'mono', 'wayforpay']),
-  promoCode: z.string().trim().max(64).optional(),
+  promoCode: text(z.string().trim().max(64)).optional(),
 });
 
 export const quoteSchema = z.object({
   locale,
   delivery: z.enum(['np_warehouse', 'np_courier', 'ukrposhta', 'pickup']),
-  promoCode: z.string().trim().max(64).optional(),
+  promoCode: text(z.string().trim().max(64)).optional(),
 });
 
 export const cartLineSchema = z.object({
@@ -53,6 +55,6 @@ export const addToCartSchema = z.object({
 });
 
 export const trackSchema = z.object({
-  orderNumber: z.string().trim().max(32),
+  orderNumber: text(z.string().trim().max(32)),
   phone,
 });

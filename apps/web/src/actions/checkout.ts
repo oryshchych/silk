@@ -10,14 +10,24 @@ import { quoteCheckout } from '@store/core/quote';
 import { formatMoney } from '@store/shared/money';
 
 import { codeFor, RATE_LIMITED, type ActionFailure } from '@/lib/action-result';
-import { mintCartToken, readCartToken, setCartCount, setOrderAccess } from '@/lib/cart-cookie';
+import {
+  mintCartToken,
+  readCartToken,
+  readOrderAccess,
+  setCartCount,
+  setOrderAccess,
+} from '@/lib/cart-cookie';
 import { placeOrderSchema, quoteSchema } from '@/lib/checkout-schemas';
 import { getDb } from '@/lib/db';
 import { errorReason } from '@/lib/error-reason';
 import { href, paths } from '@/lib/paths';
 import { checkLimit, limiters } from '@/lib/request-limits';
 
+type Delivery = 'np_warehouse' | 'np_courier' | 'ukrposhta' | 'pickup';
+
 export interface QuoteSummary {
+  /** False when no discount applies: the page hides the discount row. */
+  hasDiscount: boolean;
   subtotal: string;
   discount: string;
   shipping: string;
@@ -73,6 +83,7 @@ export async function quoteAction(input: unknown): Promise<QuoteResult> {
     return {
       ok: true,
       summary: {
+        hasDiscount: pricing.discountTotal > 0,
         subtotal: formatMoney(pricing.subtotal, locale),
         discount: formatMoney(pricing.discountTotal, locale),
         shipping: formatMoney(pricing.shippingTotal, locale),
@@ -92,8 +103,6 @@ export async function quoteAction(input: unknown): Promise<QuoteResult> {
 interface StockProblemView {
   name: string;
   size: string;
-  requested: number;
-  available: number;
 }
 
 export type PlaceOrderResult =
@@ -153,6 +162,12 @@ export async function placeOrderAction(input: unknown): Promise<PlaceOrderResult
     );
   } catch (error) {
     if (error instanceof PriceChangedError) {
+      // The buyer confirms the new total by pressing the button again, so the server must hold
+      // THAT total now: quote again (own transactions) before answering. Without it every
+      // further press would fail on the old figure.
+      await requote(db, token, data).catch((reason: unknown) => {
+        log('requote', { reason: errorReason(reason) });
+      });
       return {
         ok: false,
         kind: 'priceChanged',
@@ -168,8 +183,6 @@ export async function placeOrderAction(input: unknown): Promise<PlaceOrderResult
         problems: error.problems.map((problem) => ({
           name: byVariant.get(problem.variantId)?.name ?? '',
           size: byVariant.get(problem.variantId)?.sizeLabel ?? '',
-          requested: problem.requested,
-          available: problem.available,
         })),
       };
     }
@@ -185,5 +198,30 @@ export async function placeOrderAction(input: unknown): Promise<PlaceOrderResult
   if (created.accessToken !== null) await setOrderAccess(created.orderNumber, created.accessToken);
   await mintCartToken();
   await setCartCount(0);
-  redirect(href(data.locale, paths.orderSuccess));
+  // A replay (the first answer was lost, or a second tab submitted) gets no new token: the order
+  // page needs this browser's cookie, so without it the buyer is sent to tracking with a notice.
+  const access = await readOrderAccess();
+  const ownsOrder = access?.orderNumber === created.orderNumber;
+  redirect(
+    created.accessToken !== null || ownsOrder
+      ? href(data.locale, paths.orderSuccess)
+      : href(data.locale, paths.orderTrack, 'placed=1'),
+  );
+}
+
+/** Prices the cart again for the buyer's current choices, so the intent holds the figure they see. */
+async function requote(
+  db: Awaited<ReturnType<typeof getDb>>,
+  token: string,
+  data: { delivery: Delivery; promoCode?: string | undefined },
+): Promise<void> {
+  const intent = await db.transaction(async (tx) => await startCheckout(tx, { cartToken: token }));
+  await db.transaction(async (tx) => {
+    await quoteCheckout(tx, {
+      cartToken: token,
+      intentId: intent.intentId,
+      delivery: data.delivery,
+      promoCode: data.promoCode === undefined || data.promoCode === '' ? null : data.promoCode,
+    });
+  });
 }

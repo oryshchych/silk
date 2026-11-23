@@ -163,14 +163,14 @@
     "empty": "Your cart is empty.",
     "continueShopping": "Continue shopping",
     "gone": "No longer available",
-    "onlyLeft": "Only {count} left",
     "decrease": "Decrease quantity of {name}",
     "increase": "Increase quantity of {name}",
     "remove": "Remove {name} from the cart",
     "removeShort": "Remove",
     "subtotal": "Subtotal",
     "shippingNote": "Delivery and discounts are calculated at checkout.",
-    "checkout": "Checkout"
+    "checkout": "Checkout",
+    "notEnough": "Not enough in stock: reduce the quantity"
   },
   "checkout": {
     "title": "Checkout",
@@ -222,7 +222,7 @@
     "place": "Place order",
     "placing": "Placing order…",
     "priceChanged": "The total is now {total}. Review it and press the button again to confirm.",
-    "stockLine": "{name}, {size}: you asked for {requested}, available {available}"
+    "stockLine": "{name}, {size}: not enough in stock"
   },
   "order": {
     "successTitle": "Thank you, your order is placed",
@@ -257,6 +257,7 @@
     "trackNumber": "Order number",
     "trackPhone": "Phone",
     "trackSubmit": "Find order",
-    "trackNumberExample": "LS-2026-000123"
+    "trackNumberExample": "LS-2026-000123",
+    "trackPlaced": "Your order was placed. Look it up here with the order number from the confirmation email and your phone."
   }
 }

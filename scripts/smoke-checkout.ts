@@ -121,6 +121,9 @@ export async function runCheckoutSmoke({
   const plenty = plentyList[0] ?? '';
   // Spread the series over several variants so a re-used database does not run one dry.
   const spread = (i: number): string => plentyList[i % Math.max(plentyList.length, 1)] ?? '';
+  let drawn = 0;
+  /** Each step takes the next well-stocked variant, so no single one is drained by one run. */
+  const nextPlenty = (): string => spread(drawn++);
   const scarce = variants.find((variant) => !variant.plenty)?.id ?? '';
   check(
     'checkout smoke: found a well-stocked and a scarce variant',
@@ -147,7 +150,7 @@ export async function runCheckoutSmoke({
   const client = newClient();
   const added = await call(
     'addToCartAction',
-    { variantId: plenty, quantity: 2 },
+    { variantId: nextPlenty(), quantity: 2 },
     jar,
     client,
     slug,
@@ -209,6 +212,10 @@ export async function runCheckoutSmoke({
   const success = await page('/order/success', jar);
   const number = /<dd class="font-medium">(LS-\d{4}-\d{6})<\/dd>/.exec(success)?.[1] ?? '';
   check('the order page shows the order from the access cookie', number !== '');
+  const orderCookie = first.response.headers
+    .getSetCookie()
+    .find((line) => line.startsWith('__Host-silk_order='));
+  check('the order cookie lives one day', /Max-Age=86400(;|$)/.test(orderCookie ?? ''));
   check(
     'a tampered price changes nothing: the order total is the quoted one',
     typeof summary['total'] === 'string' && success.includes(summary['total']),
@@ -265,7 +272,7 @@ export async function runCheckoutSmoke({
   // 4. Two submits of one cart (a double click, two tabs): one order.
   const dbl: Jar = new Map();
   const dblClient = newClient();
-  await call('addToCartAction', { variantId: plenty, quantity: 1 }, dbl, dblClient, slug);
+  await call('addToCartAction', { variantId: nextPlenty(), quantity: 1 }, dbl, dblClient, slug);
   await call('quoteAction', { locale: 'uk', delivery: 'pickup', promoCode: '' }, dbl, dblClient);
   const dblPhone = phoneOf('002');
   const payload = buyer(dblPhone, {
@@ -281,9 +288,12 @@ export async function runCheckoutSmoke({
     call('placeOrderAction', payload, twinB, dblClient),
   ]);
   check(
-    'two simultaneous submits both end on the order page',
-    a.redirect?.startsWith('/order/success') === true &&
-      b.redirect?.startsWith('/order/success') === true,
+    'two simultaneous submits both end on the order page or on tracking with a notice',
+    [a, b].every(
+      (r) =>
+        r.redirect?.startsWith('/order/success') === true ||
+        r.redirect?.startsWith('/order/track?placed=1') === true,
+    ) && [a, b].some((r) => r.redirect?.startsWith('/order/success') === true),
   );
   const accessA = twinA.get('__Host-silk_order');
   const accessB = twinB.get('__Host-silk_order');
@@ -457,7 +467,13 @@ export async function runCheckoutSmoke({
   // Promo guessing is limited harder than plain quotes.
   const guessJar: Jar = new Map();
   const guessClient = newClient();
-  await call('addToCartAction', { variantId: plenty, quantity: 1 }, guessJar, guessClient, slug);
+  await call(
+    'addToCartAction',
+    { variantId: nextPlenty(), quantity: 1 },
+    guessJar,
+    guessClient,
+    slug,
+  );
   let promoLimited = false;
   for (let i = 0; i < 14; i += 1) {
     const attempt = await call(
@@ -469,4 +485,87 @@ export async function runCheckoutSmoke({
     if (resultOf(attempt.body)['code'] === 'RATE_LIMITED') promoLimited = true;
   }
   check('quotes with a promo code are limited harder (a guessing guard)', promoLimited);
+
+  // The guard of Q12 end to end: an order without a shown total is refused, and after the
+  // server refuses a stale total the next press (with the new total held) goes through.
+  const quoteJar: Jar = new Map();
+  const quoteClient = newClient();
+  await call(
+    'addToCartAction',
+    { variantId: nextPlenty(), quantity: 1 },
+    quoteJar,
+    quoteClient,
+    slug,
+  );
+  const unquoted = await call(
+    'placeOrderAction',
+    buyer(phoneOf('006'), {
+      delivery: 'pickup',
+      settlementRef: undefined,
+      warehouseRef: undefined,
+      payment: 'bank_transfer',
+    }),
+    quoteJar,
+    quoteClient,
+  );
+  check(
+    'placing an order without a prior quote is refused (CHECKOUT_QUOTE_REQUIRED)',
+    unquoted.redirect === null && resultOf(unquoted.body)['code'] === 'CHECKOUT_QUOTE_REQUIRED',
+  );
+  await call(
+    'quoteAction',
+    { locale: 'uk', delivery: 'pickup', promoCode: '' },
+    quoteJar,
+    quoteClient,
+  );
+  const changed = buyer(phoneOf('006'), { payment: 'bank_transfer' });
+  const stale = await call('placeOrderAction', changed, quoteJar, quoteClient);
+  check(
+    'a total that no longer matches the quote is refused with the new total',
+    resultOf(stale.body)['kind'] === 'priceChanged' && stale.redirect === null,
+  );
+  const beforeConfirm: Jar = new Map(quoteJar);
+  const confirmed = await call('placeOrderAction', changed, quoteJar, quoteClient);
+  check(
+    'pressing again after the refusal confirms the new total and places the order',
+    confirmed.redirect?.startsWith('/order/success') === true,
+  );
+
+  // A replay without the order cookie goes to tracking with a notice, not to an empty page.
+  const replayJar: Jar = new Map(beforeConfirm);
+  replayJar.delete('__Host-silk_order');
+  const replay = await call('placeOrderAction', changed, replayJar, quoteClient);
+  check(
+    'a replayed submit without the order cookie is sent to tracking',
+    replay.redirect?.startsWith('/order/track?placed=1') === true,
+  );
+
+  // A NUL byte must not be a server error anywhere a visitor can type.
+  for (const path of [
+    '/api/np/cities?q=%00%00abc',
+    '/api/np/warehouses?city=%00',
+    '/api/np/warehouses?city=x&q=%00',
+  ]) {
+    const response = await fetch(base + path, { headers: { 'X-Forwarded-For': newClient() } });
+    check(`a NUL byte in ${path.slice(0, 32)} is not a server error`, response.status < 500);
+  }
+  const nulJar: Jar = new Map();
+  const nulClient = newClient();
+  await call('addToCartAction', { variantId: nextPlenty(), quantity: 1 }, nulJar, nulClient, slug);
+  await call('quoteAction', { locale: 'uk', delivery: 'pickup', promoCode: '' }, nulJar, nulClient);
+  const nul = await call(
+    'placeOrderAction',
+    buyer(phoneOf('007'), {
+      name: 'Іван\u0000',
+      delivery: 'pickup',
+      settlementRef: undefined,
+      warehouseRef: undefined,
+    }),
+    nulJar,
+    nulClient,
+  );
+  check(
+    'a NUL byte in a form field is a validation answer, not a server error',
+    nul.status === 200 && resultOf(nul.body)['code'] === 'INVALID_FIELDS',
+  );
 }
