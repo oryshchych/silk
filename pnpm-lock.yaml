@@ -166,6 +166,9 @@ importers:
       '@store/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@store/payments':
+        specifier: workspace:*
+        version: link:../../packages/payments
       '@store/shared':
         specifier: workspace:*
         version: link:../../packages/shared

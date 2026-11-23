@@ -9,7 +9,14 @@ import { cpSync, mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { startFakeMono } from '../packages/payments/test/fake-mono.ts';
+import {
+  FAKE_ACCOUNT,
+  FAKE_SECRET,
+  startFakeWayForPay,
+} from '../packages/payments/test/fake-wayforpay.ts';
 import { runCheckoutSmoke } from './smoke-checkout.ts';
+import { runPaymentSmoke } from './smoke-payments.ts';
 
 const root = join(import.meta.dirname, '..');
 const port = 3917;
@@ -26,6 +33,11 @@ const databaseUrl =
 // leaves cached pages in the build.
 const copy = mkdtempSync(join(tmpdir(), 'smoke-web-'));
 cpSync(join(root, 'apps/web/.next/standalone'), copy, { recursive: true });
+
+// Local fakes of both providers: the app is pointed at them, never at a real provider.
+const fakeWfp = await startFakeWayForPay();
+const fakeMono = await startFakeMono();
+const MONO_TOKEN = 'smoke-mono-token-9f3c1a77';
 
 const server = spawn(process.execPath, [join(copy, 'apps/web/server.js')], {
   env: {
@@ -48,6 +60,12 @@ const server = spawn(process.execPath, [join(copy, 'apps/web/server.js')], {
         'R2_BUCKET_MEDIA',
       ].map((key) => [key, 'smoke']),
     ),
+    MONO_PLATA_TOKEN: MONO_TOKEN,
+    MONO_API_BASE_URL: fakeMono.baseUrl,
+    WAYFORPAY_MERCHANT_ACCOUNT: FAKE_ACCOUNT,
+    WAYFORPAY_SECRET_KEY: FAKE_SECRET,
+    WAYFORPAY_API_BASE_URL: fakeWfp.baseUrl,
+    WAYFORPAY_MERCHANT_DOMAIN: 'smoke.example',
   },
   stdio: 'ignore',
 });
@@ -377,8 +395,20 @@ try {
     );
   }
   await runCheckoutSmoke({ base, buildRoot: copy, check, storedFiles });
+  await runPaymentSmoke({
+    base,
+    buildRoot: copy,
+    databaseUrl,
+    staticDir: join(root, 'apps/web/.next/static'),
+    check,
+    wfp: fakeWfp,
+    mono: fakeMono,
+    secrets: [FAKE_SECRET, MONO_TOKEN],
+  });
 } finally {
   server.kill();
+  await fakeWfp.close();
+  await fakeMono.close();
   rmSync(copy, { recursive: true, force: true });
 }
 

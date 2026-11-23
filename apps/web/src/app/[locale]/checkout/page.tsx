@@ -11,6 +11,7 @@ import { SiteShell } from '@/components/site-shell';
 import { resolveLocale } from '@/i18n/locale';
 import { readCartToken } from '@/lib/cart-cookie';
 import { getDb } from '@/lib/db';
+import { getPaymentProviders } from '@/lib/payment-providers';
 import { href, paths } from '@/lib/paths';
 
 type Props = PageProps<'/[locale]/checkout'>;
@@ -33,7 +34,14 @@ export default async function CheckoutPage({ params }: Props) {
   const token = await readCartToken();
   const view = token === null ? null : await getCartView(db, token, locale);
   const settings = await loadShippingSettings(db);
-  const payments = ONLINE_METHODS.filter((method) => settings.paymentProviders[method]);
+  const configured = await getPaymentProviders();
+  // A card provider is offered only when it is switched on AND its credentials exist.
+  const payments = ONLINE_METHODS.filter(
+    (method) =>
+      settings.paymentProviders[method] &&
+      (method !== 'mono' || configured.mono !== undefined) &&
+      (method !== 'wayforpay' || configured.wayforpay !== undefined),
+  );
 
   return (
     <SiteShell locale={locale} path={paths.checkout} degrade>

@@ -7,8 +7,7 @@
  * tracking, and the guards (tampered price, double submit, COD series,
  * stock, directory without the carrier API).
  */
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { absorb, actionIds, cookieHeader, UUID, type Jar } from './smoke-http.ts';
 
 interface Context {
   base: string;
@@ -18,30 +17,6 @@ interface Context {
   /** Files under the build's page and data caches. */
   storedFiles: () => number;
 }
-
-type Jar = Map<string, string>;
-
-const UUID = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}';
-
-function actionIds(buildRoot: string): Record<string, string> {
-  const manifest = JSON.parse(
-    readFileSync(join(buildRoot, 'apps/web/.next/server/server-reference-manifest.json'), 'utf8'),
-  ) as { node: Record<string, { exportedName: string }> };
-  return Object.fromEntries(
-    Object.entries(manifest.node).map(([id, entry]) => [entry.exportedName, id]),
-  );
-}
-
-function absorb(jar: Jar, response: Response): void {
-  for (const line of response.headers.getSetCookie()) {
-    const [pair = ''] = line.split(';');
-    const index = pair.indexOf('=');
-    if (index > 0) jar.set(pair.slice(0, index), pair.slice(index + 1));
-  }
-}
-
-const cookieHeader = (jar: Jar): string =>
-  [...jar].map(([name, value]) => `${name}=${value}`).join('; ');
 
 export async function runCheckoutSmoke({
   base,

@@ -20,6 +20,7 @@ import {
 import { placeOrderSchema, quoteSchema } from '@/lib/checkout-schemas';
 import { getDb } from '@/lib/db';
 import { errorReason } from '@/lib/error-reason';
+import { beginCardPayment } from '@/lib/pay';
 import { href, paths } from '@/lib/paths';
 import { checkLimit, limiters } from '@/lib/request-limits';
 
@@ -143,7 +144,7 @@ export async function placeOrderAction(input: unknown): Promise<PlaceOrderResult
   if (token === null) return { ok: false, kind: 'error', code: 'CHECKOUT_EMPTY_CART' };
 
   const db = await getDb();
-  let created: { orderNumber: string; accessToken: string | null };
+  let created: { orderId: string; orderNumber: string; accessToken: string | null };
   try {
     const intent = await db.transaction(
       async (tx) => await startCheckout(tx, { cartToken: token }),
@@ -204,6 +205,13 @@ export async function placeOrderAction(input: unknown): Promise<PlaceOrderResult
   if (created.accessToken !== null) await setOrderAccess(created.orderNumber, created.accessToken);
   await mintCartToken();
   await setCartCount(0);
+  // A card order goes straight to the provider's page: a new ATTEMPT on the order that exists
+  // (ADR-11). If the provider is down or the answer is lost the order page takes over (it shows
+  // the real status and offers to pay again); the order itself is never lost.
+  if (data.payment === 'mono' || data.payment === 'wayforpay') {
+    const url = await cardPaymentUrl(created.orderId, data.payment, data.locale);
+    if (url !== null) redirect(url);
+  }
   // A replay (the first answer was lost, or a second tab submitted) gets no new token: the order
   // page needs this browser's cookie, so without it the buyer is sent to tracking with a notice.
   const access = await readOrderAccess();
@@ -213,6 +221,20 @@ export async function placeOrderAction(input: unknown): Promise<PlaceOrderResult
       ? href(data.locale, paths.orderSuccess)
       : href(data.locale, paths.orderTrack, 'placed=1'),
   );
+}
+
+async function cardPaymentUrl(
+  orderId: string,
+  provider: 'mono' | 'wayforpay',
+  locale: 'uk' | 'en',
+): Promise<string | null> {
+  try {
+    const started = await beginCardPayment(orderId, provider, locale);
+    return started.kind === 'redirect' ? started.url : null;
+  } catch (error) {
+    log('pay', { reason: errorReason(error) });
+    return null;
+  }
 }
 
 /** Prices the cart again for the buyer's current choices, so the intent holds the figure they see. */

@@ -90,3 +90,36 @@ export async function findOrderForTracking(
   // Reduced view: no street address, no waybill (see trackedOrderDto).
   return order === undefined ? null : serialize(trackedOrderDto, await loadView(reader, order));
 }
+
+export interface PayableOrder {
+  id: string;
+  orderNumber: string;
+  paymentProvider: typeof orders.$inferSelect.paymentProvider;
+  paymentStatus: typeof orders.$inferSelect.paymentStatus;
+  status: typeof orders.$inferSelect.status;
+}
+
+/**
+ * The order a browser may start a payment for: the number AND its access token (stored as a
+ * SHA-256 hash), compared in SQL. "No such order" and "wrong token" are the same `null`.
+ */
+export async function resolveOrderForPayment(
+  reader: Reader,
+  orderNumber: string,
+  accessToken: string,
+): Promise<PayableOrder | null> {
+  const number = normalizeOrderNumber(orderNumber);
+  if (number === null || accessToken === '' || accessToken.length > 200) return null;
+  const hash = createHash('sha256').update(accessToken).digest('hex');
+  const [order] = await reader
+    .select({
+      id: orders.id,
+      orderNumber: orders.orderNumber,
+      paymentProvider: orders.paymentProvider,
+      paymentStatus: orders.paymentStatus,
+      status: orders.status,
+    })
+    .from(orders)
+    .where(and(eq(orders.orderNumber, number), eq(orders.accessTokenHash, hash)));
+  return order ?? null;
+}

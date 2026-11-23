@@ -4,12 +4,15 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
 import { getOrderByAccessToken } from '@store/core/order-lookup';
+import { loadShippingSettings } from '@store/core/shipping';
 
 import { OrderDetails } from '@/components/order-details';
+import { OrderPayment } from '@/components/order-payment';
 import { SiteShell } from '@/components/site-shell';
 import { resolveLocale } from '@/i18n/locale';
 import { readOrderAccess } from '@/lib/cart-cookie';
 import { getDb } from '@/lib/db';
+import { getPaymentProviders } from '@/lib/payment-providers';
 import { href, paths } from '@/lib/paths';
 
 type Props = PageProps<'/[locale]/order/success'>;
@@ -34,10 +37,16 @@ export default async function OrderSuccessPage({ params }: Props) {
   if (!known) notFound();
   const t = await getTranslations('order');
   const access = await readOrderAccess();
+  const db = await getDb();
   const order =
-    access === null
-      ? null
-      : await getOrderByAccessToken(await getDb(), access.orderNumber, access.token);
+    access === null ? null : await getOrderByAccessToken(db, access.orderNumber, access.token);
+  // Card orders show the payment state and, while unpaid, the providers that can be used now.
+  const isCard = order?.paymentProvider === 'mono' || order?.paymentProvider === 'wayforpay';
+  const configured = await getPaymentProviders();
+  const enabled = (await loadShippingSettings(db)).paymentProviders;
+  const cards = (['mono', 'wayforpay'] as const).filter(
+    (code) => enabled[code] && configured[code] !== undefined,
+  );
 
   return (
     <SiteShell locale={locale} path={paths.orderSuccess} degrade>
@@ -53,6 +62,13 @@ export default async function OrderSuccessPage({ params }: Props) {
         <div className="flex flex-col gap-6">
           <h1 className="font-display text-3xl">{t('successTitle')}</h1>
           <p>{t('successText')}</p>
+          {isCard ? (
+            <OrderPayment
+              locale={locale}
+              state={cardState(order.paymentStatus, order.status)}
+              cards={cards}
+            />
+          ) : null}
           {order.paymentProvider === 'cod' ? <p className="text-sm">{t('nextCod')}</p> : null}
           {order.paymentProvider === 'bank_transfer' ? (
             <p className="text-sm">{t('nextTransfer')}</p>
@@ -65,4 +81,17 @@ export default async function OrderSuccessPage({ params }: Props) {
       )}
     </SiteShell>
   );
+}
+
+/** What the payment block shows: authorized is still "waiting", a cancelled order cannot be paid. */
+function cardState(
+  payment:
+    'pending' | 'authorized' | 'paid' | 'failed' | 'expired' | 'refunded' | 'partially_refunded',
+  status: string,
+): 'paid' | 'pending' | 'failed' | 'expired' | 'refunded' {
+  if (payment === 'paid' || payment === 'partially_refunded') return 'paid';
+  if (payment === 'refunded') return 'refunded';
+  if (status === 'cancelled') return 'expired';
+  if (payment === 'failed' || payment === 'expired') return payment;
+  return 'pending';
 }

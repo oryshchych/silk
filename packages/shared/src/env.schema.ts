@@ -55,6 +55,12 @@ export const envSchema = z
     MONO_PLATA_TOKEN: secret,
     WAYFORPAY_MERCHANT_ACCOUNT: secret,
     WAYFORPAY_SECRET_KEY: secret,
+    // Provider endpoints and the shop domain registered with WayForPay. Defaults (in the app):
+    // https://api.monobank.ua, https://api.wayforpay.com, and the host of SITE_URL. A sandbox
+    // or a local fake overrides them; the adapters refuse plain http outside loopback.
+    MONO_API_BASE_URL: z.url({ protocol: /^https?$/ }).optional(),
+    WAYFORPAY_API_BASE_URL: z.url({ protocol: /^https?$/ }).optional(),
+    WAYFORPAY_MERCHANT_DOMAIN: z.string().min(1).max(253).optional(),
 
     NOVA_POSHTA_API_KEY: secret,
     UKRPOSHTA_API_KEY: secret,
