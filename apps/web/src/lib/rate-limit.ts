@@ -7,10 +7,14 @@
  *   keep clients blocked or reset their windows; it is a parameter so tests
  *   need no fake timers.
  * - Memory is bounded. Expired windows are swept in batches, never one per
- *   request. If the table is still full of live windows, a NEW key is refused
- *   (fail closed): evicting a live key would let an attacker who rotates keys
- *   reset a blocked victim's limit.
+ *   request: once per window, and also when the table is full (throttled to
+ *   once a second), so a table of expired windows never locks anyone out. If it
+ *   is still full of LIVE windows, a NEW key is refused (fail closed): evicting
+ *   a live key would let an attacker who rotates keys reset a blocked
+ *   victim's limit.
  */
+const FULL_TABLE_SWEEP_MS = 1_000;
+
 interface RateLimit {
   allowed: boolean;
   /** Seconds until the window resets (0 when allowed). */
@@ -30,10 +34,12 @@ export function createRateLimiter(options: {
   const { limit, windowMs, maxKeys = 20_000 } = options;
   const windows = new Map<string, { count: number; resetAt: number }>();
   let nextSweepAt = 0;
+  let lastSweepAt = Number.NEGATIVE_INFINITY;
 
   function sweep(now: number): void {
     for (const [key, window] of windows) if (window.resetAt <= now) windows.delete(key);
     nextSweepAt = now + windowMs;
+    lastSweepAt = now;
   }
 
   return {
@@ -42,7 +48,11 @@ export function createRateLimiter(options: {
       const current = windows.get(key);
       if (current === undefined || current.resetAt <= now) {
         if (current === undefined && windows.size >= maxKeys) {
-          return { allowed: false, retryAfterSeconds: Math.ceil(windowMs / 1000) };
+          // Full: free the expired windows first (at most once a second), refuse only if still full.
+          if (now - lastSweepAt >= FULL_TABLE_SWEEP_MS) sweep(now);
+          if (windows.size >= maxKeys) {
+            return { allowed: false, retryAfterSeconds: Math.ceil(windowMs / 1000) };
+          }
         }
         windows.set(key, { count: 1, resetAt: now + windowMs });
         return { allowed: true, retryAfterSeconds: 0 };

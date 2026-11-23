@@ -194,6 +194,37 @@ describe('proxy: search rate limit', () => {
     expect((await proxy(search('not-an-ip'))).status).toBe(429);
   });
 
+  it('keys an IPv6 client by its /64: rotating the lower bits does not mint new keys', async () => {
+    const proxy = await loadProxy('local');
+    const blocked = await blockedOf(proxy, 40, (i) => search(`2001:db8:1:2::${i.toString(16)}`));
+    expect(blocked).toBe(10);
+    // Another /64 is another client.
+    expect((await proxy(search('2001:db8:1:3::1'))).status).not.toBe(429);
+  });
+
+  it('treats an IPv4-mapped IPv6 address as the same client as the IPv4 address', async () => {
+    const proxy = await loadProxy('local');
+    await blockedOf(proxy, 30, () => search('203.0.113.7'));
+    expect((await proxy(search('::ffff:203.0.113.7'))).status).toBe(429);
+    expect((await proxy(search('::ffff:cb00:7107'))).status).toBe(429);
+  });
+
+  it('caps all searches together, so many networks cannot sum to unlimited database work', async () => {
+    const proxy = await loadProxy('local');
+    // 20 clients x 30 searches = 600: all allowed, each within its own limit.
+    for (let client = 0; client < 20; client++) {
+      expect(await blockedOf(proxy, 30, () => search(`10.0.0.${String(client)}`))).toBe(0);
+    }
+    // The shared cap is spent: a client that never searched before is refused too.
+    const refused = await proxy(search('10.0.1.1'));
+    expect(refused.status).toBe(429);
+    expect(refused.headers.get('cache-control')).toBe('no-store');
+    // A client already over its own limit does not consume the shared cap further.
+    expect((await proxy(new NextRequest('http://localhost:3000/category/bras'))).status).not.toBe(
+      429,
+    );
+  });
+
   it('counts hops from the right as configured (Cloudflare then Traefik is two)', async () => {
     vi.stubEnv('TRUSTED_PROXY_HOPS', '2');
     const proxy = await loadProxy('local');
