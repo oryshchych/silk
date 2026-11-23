@@ -22,7 +22,10 @@
     "./cart-view": "./src/cart/view.ts",
     "./cart-merge": "./src/cart/merge.ts",
     "./shipping": "./src/shipping/rules.ts",
-    "./np-directory": "./src/shipping/np-directory.ts"
+    "./np-directory": "./src/shipping/np-directory.ts",
+    "./start-payment": "./src/payments/start-payment.ts",
+    "./reconcile": "./src/payments/reconcile.ts",
+    "./offline": "./src/payments/offline.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"

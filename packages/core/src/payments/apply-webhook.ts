@@ -109,10 +109,16 @@ async function derivePaymentStatus(tx: Tx, order: Order): Promise<PaymentStatus>
   return has('expired') && !has('failed') ? 'expired' : 'failed';
 }
 
+/**
+ * `source` names the confirmed server source in history and audit: a verified webhook (default)
+ * or an active status lookup (`reconcile:<provider>`, ADR-4 source 2). Both go through the same
+ * checks and the same transaction.
+ */
 export async function applyPaymentWebhook(
   tx: Tx,
   provider: 'mono' | 'wayforpay',
   result: WebhookResult,
+  source: string = `webhook:${provider}`,
 ): Promise<WebhookOutcome> {
   if (!UUID.test(result.localReference)) return { kind: 'unmatched' };
 
@@ -228,7 +234,7 @@ export async function applyPaymentWebhook(
     })
     .where(eq(paymentAttempts.id, attempt.id));
 
-  await settleOrder(tx, provider, order, to);
+  await settleOrder(tx, source, order, to);
   await markApplied(null);
   return { kind: 'applied', orderId: order.id };
 }
@@ -243,7 +249,7 @@ async function fillExternalId(tx: Tx, attempt: Attempt, result: WebhookResult): 
 
 async function settleOrder(
   tx: Tx,
-  provider: string,
+  source: string,
   order: Order,
   attemptStatus: PaymentStatus,
 ): Promise<void> {
@@ -282,7 +288,7 @@ async function settleOrder(
       fromStatus: order.paymentStatus,
       toStatus: next,
       field: 'payment_status',
-      source: `webhook:${provider}`,
+      source,
       comment:
         isLate && attemptStatus === 'paid' ? 'late payment after cancellation or expiry' : null,
     });
@@ -291,7 +297,7 @@ async function settleOrder(
       entity: 'order',
       entityId: order.id,
       diff: {
-        source: `webhook:${provider}`,
+        source,
         field: 'payment_status',
         from: order.paymentStatus,
         to: next,

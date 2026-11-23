@@ -47,7 +47,11 @@
       "RATE_LIMITED": "Too many attempts. Please wait a moment and try again.",
       "TRACK_NOT_FOUND": "We could not find an order with this number and phone.",
       "GENERIC": "Something went wrong. Please try again.",
-      "CHECKOUT_TERMS_REQUIRED": "Please accept the terms to place the order."
+      "CHECKOUT_TERMS_REQUIRED": "Please accept the terms to place the order.",
+      "PAYMENT_ORDER_NOT_PAYABLE": "This order can no longer be paid online.",
+      "PAYMENT_ATTEMPT_UNRESOLVED": "We are still checking your previous payment with the bank. Please wait a few minutes before trying again.",
+      "PAYMENT_PROVIDER_REFUSED": "The payment service did not accept the payment. Please try again or choose another provider.",
+      "PAYMENT_ATTEMPT_STILL_OPEN": "Your previous payment page is still open. Finish it or wait for it to expire."
     }
   },
   "nav": {
@@ -260,6 +264,13 @@
     "trackPhone": "Phone",
     "trackSubmit": "Find order",
     "trackNumberExample": "LS-2026-000123",
-    "trackPlaced": "Your order was placed. Look it up here with the order number from the confirmation email and your phone."
+    "trackPlaced": "Your order was placed. Look it up here with the order number from the confirmation email and your phone.",
+    "payGroup": "Pay for this order",
+    "payWith": "Pay with {method}",
+    "payWaiting": "We are waiting for the bank to confirm your payment. This page updates by itself.",
+    "payPaid": "Payment received. Thank you!",
+    "payFailed": "The payment did not go through. You can try again, with another card or another provider.",
+    "payExpired": "The payment window expired. You can start a new payment.",
+    "payRefunded": "This payment was refunded."
   }
 }

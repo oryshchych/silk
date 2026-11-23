@@ -12,6 +12,8 @@ import { createPublicKey } from 'node:crypto';
 
 import { money } from '@store/shared/money';
 
+import { isPaymentPageUrl } from '../page-url.ts';
+
 import {
   PaymentProviderError,
   type CreatePaymentResult,
@@ -39,6 +41,8 @@ export interface MonoConfig {
   /** Per-request timeout; a timeout on a write call means "unknown", not "failed". */
   timeoutMs?: number;
   fetch?: typeof fetch;
+  /** Extra payment page domains (a sandbox or a local fake); monobank.ua is always accepted. */
+  pageHosts?: readonly string[];
 }
 
 /** After a failed or first key fetch we wait this long before trying again. */
@@ -65,6 +69,10 @@ function assertPositiveMoney(amount: number): void {
 export class MonoProvider implements PaymentProvider {
   readonly code = 'mono';
   readonly statusLookupKey = 'externalId';
+
+  isPaymentPage(url: string): boolean {
+    return isPaymentPageUrl(url, ['monobank.ua', ...(this.config.pageHosts ?? [])]);
+  }
 
   private readonly config: MonoConfig;
   private readonly http: typeof fetch;
@@ -128,6 +136,9 @@ export class MonoProvider implements PaymentProvider {
     ) {
       return { ok: false, externalIdUnknown: true };
     }
+    // A page URL that is not the provider's is not used: the invoice may exist, so this is the
+    // lost-answer path (reconcile), never a redirect.
+    if (!this.isPaymentPage(body.pageUrl)) return { ok: false, externalIdUnknown: true };
     return { ok: true, redirectUrl: body.pageUrl, externalId: body.invoiceId };
   }
 

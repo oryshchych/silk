@@ -10,6 +10,8 @@
  */
 import { createHash } from 'node:crypto';
 
+import { sql } from 'drizzle-orm';
+
 import { webhookQuarantine } from '@store/db/schema';
 import type { Tx } from '@store/db/types';
 import type { PaymentProvider } from '@store/payments/types';
@@ -20,7 +22,21 @@ export interface WebhookDeps {
   provider: PaymentProvider;
   /** Runs `fn` in a database transaction; supplied by the caller (core has no pool). */
   runInTransaction: <T>(fn: (tx: Tx) => Promise<T>) => Promise<T>;
+  /**
+   * Upper bound of rows kept in `webhook_quarantine` (default 5000). The route is public, so a
+   * flood of garbage must not grow the table without bound; past the cap a refused message is
+   * still answered 400 but no longer stored (the cleanup job frees room by age).
+   */
+  quarantineCap?: number;
+  /**
+   * Asked before an UNVERIFIED body is stored. The web edge answers false once too many refused
+   * messages arrived in a window, so a flood of garbage costs the database nothing; a genuine
+   * message never depends on it (it is verified, applied and answered whatever this says).
+   */
+  mayStoreUnverified?: () => boolean;
 }
+
+const DEFAULT_QUARANTINE_CAP = 5000;
 
 export interface WebhookRequest {
   rawBody: Uint8Array;
@@ -59,13 +75,23 @@ async function quarantine(
   req: WebhookRequest,
   reason: string,
   stored: string,
+  untrusted: boolean,
 ): Promise<void> {
+  if (untrusted && deps.mayStoreUnverified?.() === false) return;
   const headers: Record<string, string> = {};
   for (const name of KEPT_HEADERS) {
     const value = req.headers.get(name);
     if (value !== null) headers[name] = sanitise(value.slice(0, 512));
   }
+  const cap = deps.quarantineCap ?? DEFAULT_QUARANTINE_CAP;
   await deps.runInTransaction(async (tx) => {
+    const [held] = await tx.select({ n: sql<number>`count(*)::int` }).from(webhookQuarantine);
+    if ((held?.n ?? 0) >= cap) {
+      process.stderr.write(
+        `${JSON.stringify({ level: 'warn', scope: 'webhook-quarantine', reason: 'cap reached, message not stored' })}\n`,
+      );
+      return;
+    }
     await tx.insert(webhookQuarantine).values({
       provider: deps.provider.code,
       rawBody: stored,
@@ -90,6 +116,7 @@ export async function handlePaymentWebhook(
       req,
       'signature or structure did not verify',
       describeUnverified(req.rawBody),
+      true,
     );
     // Non-2xx on purpose: a genuine message refused during a key outage is redelivered.
     return { response: new Response(null, { status: 400 }), outcome: { kind: 'unverified' } };
@@ -107,6 +134,7 @@ export async function handlePaymentWebhook(
       req,
       'authentic message names no known payment attempt',
       JSON.stringify(verified.rawPayload),
+      false,
     );
   }
   // A duplicate still gets the provider's own answer, or it retries for hours.

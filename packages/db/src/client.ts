@@ -20,6 +20,8 @@ export interface DbHandle {
   db: Db;
   /** Закриває пул. Без цього процес CLI не завершиться. */
   close: () => Promise<void>;
+  /** The pool behind `db`, for raw SQL in scripts (smoke checks) that cannot use the query builder. */
+  pool: pg.Pool;
 }
 
 export interface CreateDbOptions {
@@ -47,5 +49,5 @@ export function createDb(connectionString: string, options: CreateDbOptions = {}
     process.stderr.write(`${JSON.stringify({ level: 'error', scope: 'db-pool', reason })}\n`);
   });
   const db = drizzle({ client: pool, schema });
-  return { db, close: () => pool.end() };
+  return { db, close: () => pool.end(), pool };
 }

@@ -232,3 +232,24 @@ export class ContactInvalidError extends DomainError {
     super('CHECKOUT_CONTACT_INVALID', `Invalid contact details: ${field}`);
   }
 }
+
+/** A manager tried to confirm an order that cannot be confirmed (wrong method, cancelled, shipped). */
+export class OrderNotConfirmableError extends DomainError {
+  constructor(reason: string) {
+    super('ORDER_NOT_CONFIRMABLE', `The order cannot be confirmed: ${reason}`);
+  }
+}
+
+/** The money a manager reports for a bank transfer does not equal the order total. */
+export class TransferAmountMismatchError extends DomainError {
+  constructor() {
+    super('TRANSFER_AMOUNT_MISMATCH', 'The received amount does not equal the order total');
+  }
+}
+
+/** The payment provider refused the invoice or is switched off; the order itself is untouched. */
+export class PaymentProviderRefusedError extends DomainError {
+  constructor() {
+    super('PAYMENT_PROVIDER_REFUSED', 'The payment provider did not accept the invoice');
+  }
+}

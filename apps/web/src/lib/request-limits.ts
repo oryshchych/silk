@@ -23,6 +23,15 @@ export const limiters = {
   codPhone: createRateLimiter({ limit: 5, windowMs: 60 * 60_000 }),
   track: createRateLimiter({ limit: 10, windowMs: 10 * 60_000 }),
   np: createRateLimiter({ limit: 120, windowMs: 60_000 }),
+  /** Starting a card payment from the order page: a person retries a few times. */
+  pay: createRateLimiter({ limit: 10, windowMs: 10 * 60_000 }),
+  /** Provider callbacks per client: a provider sends a handful, retries included. */
+  webhook: createRateLimiter({ limit: 600, windowMs: 60_000 }),
+  /**
+   * Refused (unverified) bodies STORED per minute over all clients: past it a refused message is
+   * still answered 400 but not written to the quarantine. Genuine callbacks never touch it.
+   */
+  webhookRefused: createRateLimiter({ limit: 300, windowMs: 60_000, maxKeys: 1 }),
 } as const satisfies Record<string, RateLimiter>;
 
 /** The client key of the current request, from the trusted proxy hop. */
@@ -54,4 +63,9 @@ export async function checkRequestLimit(
   return limiter.check(
     clientAddress(request.headers.get('x-forwarded-for'), await trustedHopsOf()),
   );
+}
+
+/** The client key of a route-handler request (same trusted hop as every other limit). */
+export async function requestClient(request: Request): Promise<string> {
+  return clientAddress(request.headers.get('x-forwarded-for'), await trustedHopsOf());
 }

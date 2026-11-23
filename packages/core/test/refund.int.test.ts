@@ -47,7 +47,12 @@ let total: number;
 
 beforeAll(async () => {
   fake = await startFakeMono();
-  mono = new MonoProvider({ baseUrl: fake.baseUrl, token: 't', timeoutMs: 300 });
+  mono = new MonoProvider({
+    pageHosts: ['pay.example'],
+    baseUrl: fake.baseUrl,
+    token: 't',
+    timeoutMs: 300,
+  });
 });
 
 afterAll(async () => {
@@ -120,6 +125,7 @@ async function paidAttempt(externalId: string, provider: 'mono' | 'wayforpay'): 
 const wayforpayStandIn: PaymentProvider = {
   code: 'wayforpay',
   statusLookupKey: 'localReference',
+  isPaymentPage: (url) => mono.isPaymentPage(url),
   createPayment: async (a) => await mono.createPayment(a),
   getPaymentStatus: async (id) => await mono.getPaymentStatus(id),
   verifyWebhook: async (b, h) => await mono.verifyWebhook(b, h),

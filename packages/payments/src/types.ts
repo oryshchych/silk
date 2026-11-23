@@ -89,6 +89,13 @@ export interface PaymentProvider {
    */
   readonly statusLookupKey: 'externalId' | 'localReference';
 
+  /**
+   * Whether a URL is a payment page of this provider (https, its own domain or a configured
+   * sandbox host). The answer's URL is checked before it is stored and again before a buyer is
+   * redirected to it.
+   */
+  isPaymentPage(url: string): boolean;
+
   createPayment(attempt: PaymentAttemptRef): Promise<CreatePaymentResult>;
 
   /** Active reconciliation (ADR-4): a webhook may never arrive. */

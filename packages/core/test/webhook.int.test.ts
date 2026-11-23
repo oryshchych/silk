@@ -45,7 +45,12 @@ let attempt: { attemptId: string; localReference: string; amount: number };
 
 beforeAll(async () => {
   fake = await startFakeMono();
-  mono = new MonoProvider({ baseUrl: fake.baseUrl, token: 't', timeoutMs: 500 });
+  mono = new MonoProvider({
+    pageHosts: ['pay.example'],
+    baseUrl: fake.baseUrl,
+    token: 't',
+    timeoutMs: 500,
+  });
 });
 
 afterAll(async () => {
@@ -601,6 +606,29 @@ describe('review round: concurrency between the webhook and the attempt', () => 
   });
 });
 
+describe('the quarantine is bounded', () => {
+  it('past the cap a refused message is answered 400 but no longer stored', async () => {
+    const db = world.connect();
+    const send = async (raw: string) =>
+      await handlePaymentWebhook(
+        {
+          provider: mono,
+          quarantineCap: 2,
+          runInTransaction: async (fn) => await db.db.transaction(async (tx) => await fn(tx)),
+        },
+        { rawBody: bytes(raw), headers: new Headers({ 'X-Sign': 'garbage' }), sourceIp: null },
+      );
+    for (const n of [1, 2, 3, 4]) {
+      expect((await send(body({ invoiceId: `flood-${String(n)}` }))).response.status).toBe(400);
+    }
+    expect(await countOf('webhook_quarantine')).toBe(2);
+    // A genuine message is unaffected by a full quarantine.
+    const genuine = body();
+    expect((await deliver(genuine)).response.status).toBe(200);
+    expect((await state()).order?.payment).toBe('paid');
+  });
+});
+
 describe('review round: what the quarantine keeps', () => {
   it('an unverified body is stored as a hash and a short prefix, a NUL byte is not a 500', async () => {
     const huge = `${'x'.repeat(10_000)}\u0000tail`;
@@ -783,6 +811,7 @@ describe('WayForPay through the same pipeline (database, quarantine, signed acce
   beforeAll(async () => {
     wfpFake = await startFakeWayForPay();
     wfp = new WayForPayProvider({
+      pageHosts: ['secure.example'],
       baseUrl: wfpFake.baseUrl,
       merchantAccount: FAKE_ACCOUNT,
       secretKey: FAKE_SECRET,

@@ -23,6 +23,7 @@ let wfp: WayForPayProvider;
 beforeAll(async () => {
   fake = await startFakeWayForPay();
   wfp = new WayForPayProvider({
+    pageHosts: ['secure.example'],
     baseUrl: fake.baseUrl,
     merchantAccount: FAKE_ACCOUNT,
     secretKey: FAKE_SECRET,
@@ -213,6 +214,7 @@ describe('getPaymentStatus', () => {
 
   it('a lookup that fails is a provider error (never a verdict on the payment)', async () => {
     const dead = new WayForPayProvider({
+      pageHosts: ['secure.example'],
       baseUrl: 'http://127.0.0.1:1',
       merchantAccount: FAKE_ACCOUNT,
       secretKey: FAKE_SECRET,
@@ -224,6 +226,7 @@ describe('getPaymentStatus', () => {
 
   it('an answer signed with another secret is refused', async () => {
     const other = new WayForPayProvider({
+      pageHosts: ['secure.example'],
       baseUrl: fake.baseUrl,
       merchantAccount: FAKE_ACCOUNT,
       secretKey: 'a-different-secret',
@@ -371,6 +374,7 @@ describe('review round: unsigned fields, nulls, amount text, caps', () => {
   it('the accept carries the time of the answer: a later answer has another time and signature', async () => {
     let now = 1_700_000_000;
     const clocked = new WayForPayProvider({
+      pageHosts: ['secure.example'],
       baseUrl: fake.baseUrl,
       merchantAccount: FAKE_ACCOUNT,
       secretKey: FAKE_SECRET,

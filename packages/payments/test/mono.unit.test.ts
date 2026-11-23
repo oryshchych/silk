@@ -19,7 +19,12 @@ afterEach(() => {
 
 beforeAll(async () => {
   fake = await startFakeMono();
-  mono = new MonoProvider({ baseUrl: fake.baseUrl, token: 'test-token', timeoutMs: 400 });
+  mono = new MonoProvider({
+    pageHosts: ['pay.example'],
+    baseUrl: fake.baseUrl,
+    token: 'test-token',
+    timeoutMs: 400,
+  });
 });
 
 afterAll(async () => {
@@ -84,7 +89,12 @@ describe('verifyWebhook: signature over the raw body, fail closed', () => {
   });
 
   it('fails closed when the merchant key cannot be fetched', async () => {
-    const offline = new MonoProvider({ baseUrl: 'http://127.0.0.1:1', token: 'x', timeoutMs: 200 });
+    const offline = new MonoProvider({
+      pageHosts: ['pay.example'],
+      baseUrl: 'http://127.0.0.1:1',
+      token: 'x',
+      timeoutMs: 200,
+    });
     const raw = webhook();
     expect(await offline.verifyWebhook(bytes(raw), headersFor(fake.sign(raw)))).toBeNull();
   });
@@ -140,7 +150,12 @@ describe('the merchant key: bounded fetching, validated, rotation', () => {
     fake.requests.filter((r) => r.url === '/api/merchant/pubkey').length;
 
   it('garbage webhooks cannot make us hammer Mono: bounded key requests', async () => {
-    const provider = new MonoProvider({ baseUrl: fake.baseUrl, token: 't', timeoutMs: 400 });
+    const provider = new MonoProvider({
+      pageHosts: ['pay.example'],
+      baseUrl: fake.baseUrl,
+      token: 't',
+      timeoutMs: 400,
+    });
     fake.setPubkeyMode('error');
     const before = pubkeyCalls();
     const raw = webhook();
@@ -156,7 +171,12 @@ describe('the merchant key: bounded fetching, validated, rotation', () => {
   });
 
   it('a malformed key response does not replace a good key', async () => {
-    const provider = new MonoProvider({ baseUrl: fake.baseUrl, token: 't', timeoutMs: 400 });
+    const provider = new MonoProvider({
+      pageHosts: ['pay.example'],
+      baseUrl: fake.baseUrl,
+      token: 't',
+      timeoutMs: 400,
+    });
     const raw = webhook();
     expect(await provider.verifyWebhook(bytes(raw), headersFor(fake.sign(raw)))).not.toBeNull();
     fake.setPubkeyMode('garbage');
@@ -169,7 +189,12 @@ describe('the merchant key: bounded fetching, validated, rotation', () => {
   it('after the rotation window a non-EC key never replaces the good one', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     try {
-      const provider = new MonoProvider({ baseUrl: fake.baseUrl, token: 't', timeoutMs: 400 });
+      const provider = new MonoProvider({
+        pageHosts: ['pay.example'],
+        baseUrl: fake.baseUrl,
+        token: 't',
+        timeoutMs: 400,
+      });
       const raw = webhook();
       expect(await provider.verifyWebhook(bytes(raw), headersFor(fake.sign(raw)))).not.toBeNull();
       vi.setSystemTime(Date.now() + 6 * 60 * 1000);
@@ -188,7 +213,12 @@ describe('the merchant key: bounded fetching, validated, rotation', () => {
     const own = await startFakeMono(); // its own key: rotating must not disturb the shared fake
     try {
       vi.useFakeTimers({ toFake: ['Date'] });
-      const provider = new MonoProvider({ baseUrl: own.baseUrl, token: 't', timeoutMs: 400 });
+      const provider = new MonoProvider({
+        pageHosts: ['pay.example'],
+        baseUrl: own.baseUrl,
+        token: 't',
+        timeoutMs: 400,
+      });
       const raw = webhook();
       expect(await provider.verifyWebhook(bytes(raw), headersFor(own.sign(raw)))).not.toBeNull();
       own.rotateKey();
@@ -201,11 +231,21 @@ describe('the merchant key: bounded fetching, validated, rotation', () => {
   });
 
   it('refuses a plain-http base URL outside loopback', () => {
-    expect(() => new MonoProvider({ baseUrl: 'http://api.monobank.ua', token: 't' })).toThrow(
-      /https/,
-    );
     expect(
-      () => new MonoProvider({ baseUrl: 'https://api.monobank.ua', token: 't' }),
+      () =>
+        new MonoProvider({
+          pageHosts: ['pay.example'],
+          baseUrl: 'http://api.monobank.ua',
+          token: 't',
+        }),
+    ).toThrow(/https/);
+    expect(
+      () =>
+        new MonoProvider({
+          pageHosts: ['pay.example'],
+          baseUrl: 'https://api.monobank.ua',
+          token: 't',
+        }),
     ).not.toThrow();
   });
 });
@@ -283,7 +323,12 @@ describe('getPaymentStatus and refund', () => {
   });
 
   it('wraps network failures and unparsable answers as provider errors', async () => {
-    const offline = new MonoProvider({ baseUrl: 'http://127.0.0.1:1', token: 'x', timeoutMs: 200 });
+    const offline = new MonoProvider({
+      pageHosts: ['pay.example'],
+      baseUrl: 'http://127.0.0.1:1',
+      token: 'x',
+      timeoutMs: 200,
+    });
     await expect(offline.getPaymentStatus('inv-9')).rejects.toBeInstanceOf(PaymentProviderError);
     fake.invoices.set('inv-bad', { invoiceId: 'inv-bad', status: 'success', amount: -1 });
     await expect(mono.getPaymentStatus('inv-bad')).rejects.toBeInstanceOf(PaymentProviderError);

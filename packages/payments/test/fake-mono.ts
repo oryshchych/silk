@@ -23,6 +23,8 @@ export interface FakeMono {
   /** Merchant key rotation: signatures made before are no longer valid. */
   rotateKey: () => void;
   setPubkeyMode: (mode: 'ok' | 'garbage' | 'error' | 'rsa') => void;
+  /** Restores the default create and cancel behaviour. */
+  reset: () => void;
   close: () => Promise<void>;
   /** A second, unrelated key: signatures from it must not verify. */
   foreignSign: (rawBody: string) => string;
@@ -53,16 +55,18 @@ export async function startFakeMono(): Promise<FakeMono> {
   let pubkeyMode: 'ok' | 'garbage' | 'error' | 'rsa' = 'ok';
   const requests: FakeMono['requests'] = [];
   const invoices = new Map<string, Record<string, unknown>>();
-  let createHandler: Parameters<FakeMono['onCreate']>[0] = (body) => {
+  const defaultCreate: Parameters<FakeMono['onCreate']>[0] = (body) => {
     const reference = referenceOf(body);
     const invoiceId = `inv-${String(invoices.size + 1)}`;
     invoices.set(invoiceId, { invoiceId, status: 'created', reference });
     return { status: 200, json: { invoiceId, pageUrl: `https://pay.example/${invoiceId}` } };
   };
-  let cancelHandler: Parameters<FakeMono['onCancel']>[0] = () => ({
+  const defaultCancel: Parameters<FakeMono['onCancel']>[0] = () => ({
     status: 200,
     json: { status: 'success' },
   });
+  let createHandler = defaultCreate;
+  let cancelHandler = defaultCancel;
 
   const server: Server = createServer((req, res) => {
     void (async () => {
@@ -127,6 +131,10 @@ export async function startFakeMono(): Promise<FakeMono> {
     },
     onCancel: (handler) => {
       cancelHandler = handler;
+    },
+    reset: () => {
+      createHandler = defaultCreate;
+      cancelHandler = defaultCancel;
     },
     close: async () => {
       server.closeAllConnections();

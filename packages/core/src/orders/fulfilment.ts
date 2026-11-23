@@ -124,16 +124,25 @@ export async function shipOrder(
   if (!canTransition(order.status, 'shipped')) {
     throw new OrderNotShippableError(`the order is ${order.status}`);
   }
-  // Card payments only in the skeleton. COD and bank transfer shipping rules (what confirms
-  // them) are an owner decision, OWNER_QUEUE Q16; until then only a settled payment ships.
-  if (order.paymentStatus !== 'paid') {
-    throw new OrderNotShippableError('the order is not paid');
-  }
-  // Money that a refund has reserved, sent or settled is not money the order still holds: shipping
-  // while a refund is pending, in flight or unknown would give the customer both goods and money.
-  const heldRefunds = await heldRefundTotal(tx, order.id);
-  if (order.capturedTotal - heldRefunds < order.total) {
-    throw new OrderNotShippableError('a refund covers part of the captured amount');
+  // What lets an order ship (owner queue Q16): a settled payment (card, or a bank transfer the
+  // manager confirmed with a bank reference), or, for cash on delivery, the manager's
+  // confirmation. A COD order has captured nothing and has no attempt, so no money check applies.
+  const isCod = order.paymentProvider === 'cod';
+  if (isCod) {
+    if (order.status !== 'confirmed' && order.status !== 'processing') {
+      throw new OrderNotShippableError('the COD order is not confirmed');
+    }
+  } else {
+    if (order.paymentStatus !== 'paid') {
+      throw new OrderNotShippableError('the order is not paid');
+    }
+    // Money that a refund has reserved, sent or settled is not money the order still holds:
+    // shipping while a refund is pending, in flight or unknown would give the customer both goods
+    // and money.
+    const heldRefunds = await heldRefundTotal(tx, order.id);
+    if (order.capturedTotal - heldRefunds < order.total) {
+      throw new OrderNotShippableError('a refund covers part of the captured amount');
+    }
   }
 
   const reservations = await liveReservations(tx, order.id);
@@ -214,7 +223,7 @@ export async function cancelOrder(
     // provider first (AGENTS.md 2.5, owner queue Q27): cancelling now could cancel a paid order.
     const open = await tx.execute<{ n: number }>(
       sql`SELECT count(*)::int AS n FROM payment_attempts
-           WHERE order_id = ${order.id} AND state IN ('in_flight', 'unknown')`,
+           WHERE order_id = ${order.id} AND state IN ('pending', 'in_flight', 'unknown')`,
     );
     if ((open.rows[0]?.n ?? 0) > 0) return { orderId: order.id, changed: false };
   }
