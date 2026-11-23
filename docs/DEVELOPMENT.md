@@ -490,3 +490,13 @@ export const env = schema.parse(process.env);
 
 `pnpm verify` — одна команда перед комітом. Вона ж у `CLAUDE.md` як
 definition of done.
+
+### Migrations and locks (note from phase 2, in English)
+
+The migrator runs every pending migration in ONE transaction, so every lock a statement takes
+is held until the whole run commits. `ADD CONSTRAINT ... NOT VALID` followed by `VALIDATE
+CONSTRAINT` in the same migration therefore gives no lock benefit (migrations 0007 and 0008 use
+the pattern, but on tables that are small before launch, and their header comment overstates
+it; a committed migration is never edited). When a migration has to touch a large table, give
+the steps separate journal entries, or run them with a non-transactional runner, so the lock of
+one step is released before the next starts.

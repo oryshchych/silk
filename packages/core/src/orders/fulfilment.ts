@@ -210,6 +210,13 @@ export async function cancelOrder(
            WHERE order_id = ${order.id} AND released_at IS NULL`,
     );
     if (due.rows[0]?.due !== true) return { orderId: order.id, changed: false };
+    // A card attempt whose result is not known (lost or late webhook) must be reconciled with the
+    // provider first (AGENTS.md 2.5, owner queue Q27): cancelling now could cancel a paid order.
+    const open = await tx.execute<{ n: number }>(
+      sql`SELECT count(*)::int AS n FROM payment_attempts
+           WHERE order_id = ${order.id} AND state IN ('in_flight', 'unknown')`,
+    );
+    if ((open.rows[0]?.n ?? 0) > 0) return { orderId: order.id, changed: false };
   }
   if (!canTransition(order.status, 'cancelled')) {
     throw new OrderNotCancellableError(`the order is ${order.status}`);

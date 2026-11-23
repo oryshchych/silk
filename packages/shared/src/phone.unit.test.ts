@@ -24,6 +24,11 @@ describe('normalizeUaPhone', () => {
     '+3805012345',
     '0501234567x',
     '++380501234567',
+    '+0501234567',
+    '+80501234567',
+    '0000000000',
+    '+380000000000',
+    `0${'5'.repeat(40)}`,
   ])('refuses %j', (input) => {
     expect(normalizeUaPhone(input)).toBeNull();
   });

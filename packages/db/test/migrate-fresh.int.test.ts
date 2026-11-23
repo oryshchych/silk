@@ -625,23 +625,29 @@ describe('0007_phase2_integrity', () => {
   });
 
   it("an attempt that is some order's current one cannot be deleted (RESTRICT, not SET NULL)", async () => {
+    // Fresh rows: the attempt has no other child, so only orders_current_attempt_fk can refuse.
+    const order = await insertOrder('restrict-attempt@example.com');
+    const only = await attempt(order);
+    await app.query('UPDATE orders SET current_payment_attempt_id = $1 WHERE id = $2', [
+      only,
+      order,
+    ]);
     await expect(
-      app.query('DELETE FROM payment_attempts WHERE id = $1', [ids.attemptA]),
-    ).rejects.toMatchObject({
-      code: RESTRICT_VIOLATION,
-    });
+      app.query('DELETE FROM payment_attempts WHERE id = $1', [only]),
+    ).rejects.toMatchObject({ code: RESTRICT_VIOLATION, constraint: 'orders_current_attempt_fk' });
   });
 
   it('an order with status history cannot be deleted (RESTRICT, not CASCADE)', async () => {
+    // Fresh order with nothing but history, so only the history FK can refuse.
+    const order = await insertOrder('restrict-history@example.com');
     await app.query(
       `INSERT INTO order_status_history (order_id, to_status, source) VALUES ($1, 'pending', 'test')`,
-      [ids.orderB],
+      [order],
     );
-    await expect(app.query('DELETE FROM orders WHERE id = $1', [ids.orderB])).rejects.toMatchObject(
-      {
-        code: RESTRICT_VIOLATION,
-      },
-    );
+    await expect(app.query('DELETE FROM orders WHERE id = $1', [order])).rejects.toMatchObject({
+      code: RESTRICT_VIOLATION,
+      constraint: 'order_status_history_order_id_orders_id_fk',
+    });
   });
 });
 

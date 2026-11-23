@@ -58,4 +58,12 @@ export const customerOrderDto = z.object({
   items: z.array(customerOrderItemDto),
 });
 
+/**
+ * The order as served for "order number plus phone". The number is sequential and phones are
+ * often known, so this view carries no street address and no waybill; the full DTO is only for
+ * the holder of the order's access token.
+ */
+export const trackedOrderDto = customerOrderDto.omit({ deliveryAddress: true, ttn: true });
+
 export type CustomerOrderDto = z.output<typeof customerOrderDto>;
+export type TrackedOrderDto = z.output<typeof trackedOrderDto>;

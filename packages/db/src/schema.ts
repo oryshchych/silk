@@ -1937,14 +1937,26 @@ $$ LANGUAGE plpgsql;
 -- 8. Часткові UNIQUE для ліміту промокоду на клієнта створити
 --    окремим виразом, залежно від per_customer_limit.
 
--- 8b. FK з orders.current_payment_attempt_id -> payment_attempts.id
---     додається ОКРЕМОЮ міграцією після створення обох таблиць
---     (циклічне посилання):
+-- 8b. Same-order integrity of payment attempts (migrations 0004, 0007, 0008).
+--     The cycle orders <-> payment_attempts is closed by a composite FK, not a
+--     simple one: the current attempt must be one of the order's own attempts,
+--     and it is never silently cleared:
 --
---     ALTER TABLE orders
---       ADD CONSTRAINT orders_current_attempt_fk
---       FOREIGN KEY (current_payment_attempt_id)
---       REFERENCES payment_attempts(id) ON DELETE SET NULL;
+--       payment_attempts   UNIQUE (id, order_id)
+--       orders             FOREIGN KEY (current_payment_attempt_id, id)
+--                          REFERENCES payment_attempts (id, order_id) ON DELETE RESTRICT
+--       payment_events, refund_operations, gift_card_transactions
+--                          FOREIGN KEY (payment_attempt_id, order_id)
+--                          REFERENCES payment_attempts (id, order_id) ON DELETE RESTRICT
+--       refund_operations  FOREIGN KEY (return_request_id, order_id)
+--                          REFERENCES return_requests (id, order_id) ON DELETE RESTRICT
+--
+--     MATCH SIMPLE skips a composite FK while any column is NULL, so
+--     payment_events and gift_card_transactions also carry
+--     CHECK (payment_attempt_id IS NULL OR order_id IS NOT NULL) (0008).
+--     order_status_history is ON DELETE RESTRICT. touch_updated_at triggers
+--     cover every table with an updated_at column (0005, 0007); a test loops
+--     over the catalog to keep it so.
 
 -- 8c. ЗВІРКА СУМ (воркер orders:reconcile-totals, ADR-15).
 --     Ці інваріанти НЕ виражаються як CHECK — вони cross-table.

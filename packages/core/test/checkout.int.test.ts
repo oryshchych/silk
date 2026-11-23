@@ -14,6 +14,7 @@ import { mergeGuestCart } from '../src/cart/merge.ts';
 import { setCartItem, startCheckout } from '../src/cart/cart.ts';
 import { getCartView } from '../src/cart/view.ts';
 import {
+  CartConvertedError,
   CodNotAllowedError,
   DeliveryInvalidError,
   PaymentMethodUnavailableError,
@@ -23,6 +24,7 @@ import {
 } from '../src/errors.ts';
 import { createOrder, type CreateOrderInput } from '../src/orders/create-order.ts';
 import { findReservedDrift, releaseExpiredOrders } from '../src/orders/expiry.ts';
+import { cancelOrder } from '../src/orders/fulfilment.ts';
 import { findOrderForTracking, getOrderByAccessToken } from '../src/orders/lookup.ts';
 import { quoteCheckout } from '../src/orders/quote.ts';
 import { searchSettlements, searchWarehouses } from '../src/shipping/np-directory.ts';
@@ -448,20 +450,16 @@ describe('payment methods and the COD guards', () => {
 });
 
 describe('promo codes at the quote', () => {
-  it('reports a refused code with its reason and prices without it', async () => {
+  it('reports a refused code without telling why (one public answer) and prices without it', async () => {
     await admin.db.execute(
       sql`INSERT INTO promo_codes (code, type, value, is_active) VALUES ('OFF', 'percent', 10, false)`,
     );
     const intent = await cart('pc1');
     const bad = await quote('pc1', intent, 'pickup', 'off');
-    expect(bad.promo).toEqual({
-      code: 'off',
-      accepted: false,
-      reason: 'inactive or outside its dates',
-    });
+    expect(bad.promo).toEqual({ code: 'off', accepted: false });
     expect(bad.pricing.discountTotal).toBe(0);
     const unknown = await quote('pc1', intent, 'pickup', 'nothing');
-    expect(unknown.promo).toMatchObject({ accepted: false, reason: 'unknown code' });
+    expect(unknown.promo).toEqual({ code: 'nothing', accepted: false });
     await expect(place(order(intent, 'pc1', { promoCode: 'off' }))).rejects.toBeInstanceOf(
       PromoRejectedError,
     );
@@ -529,7 +527,7 @@ describe('the expiry worker (ADR-3)', () => {
       sql`UPDATE stock_reservations SET expires_at = now() - interval '1 minute' WHERE order_id = ${stale.orderId}`,
     );
     const result = await releaseExpiredOrders(admin.db);
-    expect(result).toEqual({ expired: 1, skipped: 0, failed: 0, failedOrderIds: [] });
+    expect(result).toEqual({ expired: 1, skipped: 0, failed: 0, failures: [] });
 
     const [released] = (
       await admin.db.execute<{ reason: string; status: string; payment: string }>(
@@ -550,7 +548,7 @@ describe('the expiry worker (ADR-3)', () => {
       expired: 0,
       skipped: 0,
       failed: 0,
-      failedOrderIds: [],
+      failures: [],
     });
   });
 
@@ -565,7 +563,7 @@ describe('the expiry worker (ADR-3)', () => {
       expired: 0,
       skipped: 0,
       failed: 0,
-      failedOrderIds: [],
+      failures: [],
     });
     const [row] = (
       await admin.db.execute<{ status: string }>(
@@ -722,5 +720,266 @@ describe('cart view and order lookup', () => {
         ?.total,
     ).toBe(129_900);
     expect(await findOrderForTracking(admin.db, placed.orderNumber, '+380501112234')).toBeNull();
+  });
+});
+
+describe('review round 2: promo oracle, expiry safety, merge and quote edges', () => {
+  const place3 = async (name: string, provider: CreateOrderInput['paymentProvider']) => {
+    const intent = await cart(name);
+    await quote(name, intent);
+    return await place(order(intent, name, { paymentProvider: provider }));
+  };
+  const cancelExpired = async (orderId: string) =>
+    await admin.db.transaction(
+      async (tx) =>
+        await cancelOrder(tx, { orderId, source: 'test', reason: 'x', expiredOnly: true }),
+    );
+
+  it('every refusal looks the same to the buyer; the real reason only reaches the server hook', async () => {
+    await admin.db.execute(
+      sql`INSERT INTO promo_codes (code, type, value, max_uses, uses_count) VALUES ('USED', 'percent', 10, 1, 1), ('BIG', 'percent', 10, NULL, 0)`,
+    );
+    await admin.db.execute(
+      sql`UPDATE promo_codes SET min_order_total = 99999999 WHERE code = 'BIG'`,
+    );
+    const intent = await cart('oracle');
+    const reasons: string[] = [];
+    const seen = new Set<string>();
+    for (const code of ['USED', 'BIG', 'nope']) {
+      const result = await admin.db.transaction(
+        async (tx) =>
+          await quoteCheckout(tx, {
+            cartToken: tok('oracle'),
+            intentId: intent,
+            delivery: 'pickup',
+            promoCode: code,
+            onPromoRejected: (reason) => reasons.push(reason),
+          }),
+      );
+      seen.add(
+        JSON.stringify({ accepted: result.promo?.accepted, keys: Object.keys(result.promo ?? {}) }),
+      );
+    }
+    expect(seen.size).toBe(1);
+    expect(reasons).toEqual(['usage limit reached', 'order total too low', 'unknown code']);
+  });
+
+  it('a code with surrounding spaces is the same code', async () => {
+    await admin.db.execute(
+      sql`INSERT INTO promo_codes (code, type, value) VALUES ('SPACE', 'percent', 10)`,
+    );
+    const intent = await cart('trim');
+    expect((await quote('trim', intent, 'pickup', '  space ')).promo).toEqual({
+      code: 'SPACE',
+      accepted: true,
+    });
+  });
+
+  it('a client-supplied total is ignored: the order stores the database total', async () => {
+    const intent = await cart('ignore');
+    await quote('ignore', intent);
+    const input = { ...order(intent, 'ignore'), quotedTotal: 1, total: 1 };
+    await place(input);
+    const [row] = (await admin.db.execute<{ total: number }>(sql`SELECT total FROM orders`)).rows;
+    expect(row?.total).toBe(129_900);
+  });
+
+  it('quote, then the tariff or a promo changes: the order is refused until re-quoted', async () => {
+    await seedDirectory();
+    const intent = await cart('chg');
+    await quote('chg', intent, 'np_courier');
+    await admin.db
+      .insert(settings)
+      .values({ key: 'shipping_rates', value: { np_courier: 15_000 } });
+    const courier = {
+      method: 'np_courier',
+      settlementRef: 'city-kyiv',
+      address: 'Київ, вул. Центральна, 1',
+    } as const;
+    await expect(place(order(intent, 'chg', { delivery: courier }))).rejects.toBeInstanceOf(
+      PriceChangedError,
+    );
+    await quote('chg', intent, 'np_courier');
+    await admin.db.execute(
+      sql`INSERT INTO promo_codes (code, type, value) VALUES ('LATE', 'percent', 10)`,
+    );
+    await expect(
+      place(order(intent, 'chg', { delivery: courier, promoCode: 'LATE' })),
+    ).rejects.toBeInstanceOf(PriceChangedError);
+  });
+
+  it('the COD cap is inclusive: a total equal to the cap passes, one kopiyka more is refused', async () => {
+    await admin.db.insert(settings).values({ key: 'cod_max_amount', value: { amount: 129_900 } });
+    const ok = await cart('cap1');
+    await quote('cap1', ok);
+    expect((await place(order(ok, 'cap1', { paymentProvider: 'cod' }))).created).toBe(true);
+    await admin.db.update(products).set({ basePrice: 129_901 });
+    const over = await cart('cap2');
+    await quote('cap2', over);
+    await expect(
+      place(
+        order(over, 'cap2', {
+          paymentProvider: 'cod',
+          contact: { email: 'c@example.com', phone: '+380509998866', name: 'C' },
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'CHECKOUT_COD_NOT_ALLOWED' });
+  });
+
+  it('expiry re-checks the TTL under the lock: a fresh reservation is not cancelled by a direct call', async () => {
+    const fresh = await place3('due1', 'mono');
+    expect((await cancelExpired(fresh.orderId)).changed).toBe(false);
+    await admin.db.execute(
+      sql`UPDATE stock_reservations SET expires_at = now() - interval '1 minute'`,
+    );
+    expect((await cancelExpired(fresh.orderId)).changed).toBe(true);
+  });
+
+  it('a direct expiry cancel of a paid order does nothing', async () => {
+    const paid = await place3('due2', 'mono');
+    await admin.db.execute(
+      sql`UPDATE stock_reservations SET expires_at = now() - interval '1 minute'`,
+    );
+    await admin.db.execute(
+      sql`UPDATE orders SET payment_status = 'paid', captured_total = total WHERE id = ${paid.orderId}`,
+    );
+    expect((await cancelExpired(paid.orderId)).changed).toBe(false);
+    const [row] = (
+      await admin.db.execute<{ status: string }>(
+        sql`SELECT status FROM orders WHERE id = ${paid.orderId}`,
+      )
+    ).rows;
+    expect(row?.status).toBe('pending');
+  });
+
+  it('an order with an in-flight or unknown attempt is not expired until reconciled (Q27)', async () => {
+    for (const state of ['in_flight', 'unknown'] as const) {
+      const placed = await place3(`att-${state}`, 'mono');
+      await admin.db.execute(
+        sql`INSERT INTO payment_attempts (order_id, attempt_number, provider, amount, state)
+            VALUES (${placed.orderId}, 1, 'mono', 100, ${state})`,
+      );
+      await admin.db.execute(
+        sql`UPDATE stock_reservations SET expires_at = now() - interval '1 minute'`,
+      );
+      // Not even a candidate, and a direct call under the lock refuses too.
+      expect(await releaseExpiredOrders(admin.db)).toMatchObject({ expired: 0, skipped: 0 });
+      expect((await cancelExpired(placed.orderId)).changed).toBe(false);
+      await admin.db.execute(
+        sql`UPDATE payment_attempts SET state = 'failed', status = 'failed' WHERE order_id = ${placed.orderId}`,
+      );
+      expect((await releaseExpiredOrders(admin.db)).expired).toBe(1);
+    }
+  });
+
+  it('failing orders cannot starve the ones behind them, and the failure keeps its class and code', async () => {
+    const orders: string[] = [];
+    for (const name of ['p1', 'p2', 'p3']) orders.push((await place3(name, 'cod')).orderId);
+    await admin.db.execute(
+      sql`UPDATE stock_reservations SET expires_at = now() - interval '1 minute'`,
+    );
+    // Poison the first two (oldest ids): the reserved counter no longer covers them.
+    await admin.db.execute(sql`UPDATE product_variants SET reserved_quantity = 0`);
+    const sorted = [...orders].sort();
+    // With the counter at zero every cancel fails; repair it for the last order only.
+    await admin.db.execute(sql`UPDATE product_variants SET reserved_quantity = 1 WHERE id = ${v1}`);
+    const result = await releaseExpiredOrders(admin.db, { batchSize: 1 });
+    expect(result.expired + result.failed).toBe(3);
+    expect(result.failed).toBeGreaterThanOrEqual(2);
+    expect(
+      result.failures.every(
+        (f) => f.name === 'StockDriftError' && f.code === 'STOCK_COUNTER_DRIFT',
+      ),
+    ).toBe(true);
+    expect(result.expired).toBe(1);
+    expect(sorted).toHaveLength(3);
+  });
+
+  it('merging: a converted target is refused, a converted guest is left alone', async () => {
+    const guestIntent = await cart('cg', [[v1, 1]]);
+    await quote('cg', guestIntent);
+    await place(order(guestIntent, 'cg'));
+    await cart('target-ok', [[v2, 1]]);
+    const untouched = await admin.db.transaction(
+      async (tx) =>
+        await mergeGuestCart(tx, { guestToken: tok('cg'), customerCartToken: tok('target-ok') }),
+    );
+    expect(untouched).toEqual({ merged: 0 });
+    expect((await getCartView(admin.db, tok('target-ok'), 'uk')).itemCount).toBe(1);
+
+    await cart('plain-guest', [[v2, 1]]);
+    await expect(
+      admin.db.transaction(
+        async (tx) =>
+          await mergeGuestCart(tx, {
+            guestToken: tok('plain-guest'),
+            customerCartToken: tok('cg'),
+          }),
+      ),
+    ).rejects.toBeInstanceOf(CartConvertedError);
+    await expect(
+      admin.db.transaction(
+        async (tx) => await mergeGuestCart(tx, { guestToken: 'x', customerCartToken: tok('cg') }),
+      ),
+    ).rejects.toMatchObject({ code: 'CART_INVALID_TOKEN' });
+  });
+
+  it('the same guest merged twice from two connections moves the items once; swapped roles do not deadlock', async () => {
+    await cart('twice-g', [[v1, 2]]);
+    await cart('twice-m', [[v2, 1]]);
+    const merge = async (from: string, to: string) =>
+      await world
+        .connect()
+        .db.transaction(
+          async (tx) =>
+            await mergeGuestCart(tx, { guestToken: tok(from), customerCartToken: tok(to) }),
+        );
+    await Promise.all([merge('twice-g', 'twice-m'), merge('twice-g', 'twice-m')]);
+    expect((await getCartView(admin.db, tok('twice-m'), 'uk')).itemCount).toBe(3);
+
+    await cart('sw-a', [[v1, 1]]);
+    await cart('sw-b', [[v2, 1]]);
+    const swapped = await Promise.allSettled([merge('sw-a', 'sw-b'), merge('sw-b', 'sw-a')]);
+    // No deadlock; a loser may be told the other merge deleted its cart (a typed, retryable error).
+    for (const outcome of swapped) {
+      if (outcome.status === 'rejected') {
+        expect(outcome.reason).toMatchObject({ code: 'CART_MERGE_CONFLICT' });
+      }
+    }
+    const total =
+      (await getCartView(admin.db, tok('sw-a'), 'uk')).itemCount +
+      (await getCartView(admin.db, tok('sw-b'), 'uk')).itemCount;
+    expect(total).toBe(2);
+  });
+
+  it('tracking by number and phone serves a reduced view: no street address, no waybill', async () => {
+    await seedDirectory();
+    const intent = await cart('track');
+    await quote('track', intent, 'np_courier');
+    const placed = await place(
+      order(intent, 'track', {
+        delivery: {
+          method: 'np_courier',
+          settlementRef: 'city-kyiv',
+          address: 'Київ, вул. Секретна, 7',
+        },
+      }),
+    );
+    await admin.db.execute(
+      sql`UPDATE orders SET ttn = '20450000000001' WHERE id = ${placed.orderId}`,
+    );
+    const tracked = await findOrderForTracking(admin.db, placed.orderNumber, '+380501112233');
+    const json = JSON.stringify(tracked);
+    expect(json).not.toContain('Секретна');
+    expect(json).not.toContain('20450000000001');
+    expect(json).not.toMatch(/deliveryAddress|ttn/);
+    expect(tracked?.deliveryCity).toBe('Київ');
+    const full = await getOrderByAccessToken(
+      admin.db,
+      placed.orderNumber,
+      placed.accessToken ?? '',
+    );
+    expect(full?.deliveryAddress).toBe('Київ, вул. Секретна, 7');
+    expect(full?.ttn).toBe('20450000000001');
   });
 });

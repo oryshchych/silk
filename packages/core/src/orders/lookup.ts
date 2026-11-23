@@ -10,7 +10,12 @@ import { and, asc, eq } from 'drizzle-orm';
 
 import { orderItems, orders } from '@store/db/schema';
 import type { Reader } from '@store/db/types';
-import { customerOrderDto, type CustomerOrderDto } from '@store/shared/dto/order';
+import {
+  customerOrderDto,
+  trackedOrderDto,
+  type CustomerOrderDto,
+  type TrackedOrderDto,
+} from '@store/shared/dto/order';
 import { serialize } from '@store/shared/dto/serialize';
 
 const ORDER_NUMBER = /^[A-Z]{2}-\d{4}-\d{6}$/;
@@ -20,10 +25,7 @@ export const normalizeOrderNumber = (raw: string): string | null => {
   return ORDER_NUMBER.test(value) ? value : null;
 };
 
-async function loadDto(
-  reader: Reader,
-  order: typeof orders.$inferSelect,
-): Promise<CustomerOrderDto> {
+async function loadView(reader: Reader, order: typeof orders.$inferSelect) {
   const items = await reader
     .select({
       name: orderItems.nameSnapshot,
@@ -38,7 +40,7 @@ async function loadDto(
     .from(orderItems)
     .where(eq(orderItems.orderId, order.id))
     .orderBy(asc(orderItems.id));
-  return serialize(customerOrderDto, {
+  return {
     orderNumber: order.orderNumber,
     paymentProvider: order.paymentProvider,
     deliveryMethod: order.deliveryMethod,
@@ -54,7 +56,7 @@ async function loadDto(
     total: order.total,
     ttn: order.ttn,
     items,
-  });
+  };
 }
 
 /** The order for a number and its access token (stored as a SHA-256 hash), or null. */
@@ -70,7 +72,7 @@ export async function getOrderByAccessToken(
     .select()
     .from(orders)
     .where(and(eq(orders.orderNumber, number), eq(orders.accessTokenHash, hash)));
-  return order === undefined ? null : await loadDto(reader, order);
+  return order === undefined ? null : serialize(customerOrderDto, await loadView(reader, order));
 }
 
 /** The order for a number and the exact phone (already normalised) it was placed with, or null. */
@@ -78,12 +80,13 @@ export async function findOrderForTracking(
   reader: Reader,
   orderNumber: string,
   phone: string,
-): Promise<CustomerOrderDto | null> {
+): Promise<TrackedOrderDto | null> {
   const number = normalizeOrderNumber(orderNumber);
   if (number === null) return null;
   const [order] = await reader
     .select()
     .from(orders)
     .where(and(eq(orders.orderNumber, number), eq(orders.customerPhone, phone)));
-  return order === undefined ? null : await loadDto(reader, order);
+  // Reduced view: no street address, no waybill (see trackedOrderDto).
+  return order === undefined ? null : serialize(trackedOrderDto, await loadView(reader, order));
 }

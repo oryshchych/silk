@@ -1,3 +1,5 @@
+import type { Money } from '@store/shared/money';
+
 /**
  * Typed domain errors. Callers (server actions, route handlers) map `code` to
  * an HTTP status and a message key; the domain knows nothing about HTTP.
@@ -174,9 +176,9 @@ export class RefundNotAllowedError extends DomainError {
  * total and ask for confirmation again; nothing was charged or reserved.
  */
 export class PriceChangedError extends DomainError {
-  readonly newTotal: number;
+  readonly newTotal: Money;
 
-  constructor(newTotal: number) {
+  constructor(newTotal: Money) {
     super('CHECKOUT_PRICE_CHANGED', 'The total changed since it was shown; review and confirm');
     this.newTotal = newTotal;
   }
@@ -207,6 +209,13 @@ export class PaymentMethodUnavailableError extends DomainError {
 export class CodNotAllowedError extends DomainError {
   constructor(reason: 'amount' | 'pending_limit') {
     super('CHECKOUT_COD_NOT_ALLOWED', `Cash on delivery is not allowed: ${reason}`);
+  }
+}
+
+/** A cart involved in a merge was deleted by a concurrent merge; the caller may simply retry. */
+export class CartMergeConflictError extends DomainError {
+  constructor() {
+    super('CART_MERGE_CONFLICT', 'The cart was changed by another merge; retry');
   }
 }
 

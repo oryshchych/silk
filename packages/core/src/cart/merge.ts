@@ -9,15 +9,19 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import { cartItems, carts } from '@store/db/schema';
 import type { Tx } from '@store/db/types';
 
-import { CartConvertedError } from '../errors.ts';
+import { CartConvertedError, CartMergeConflictError, InvalidCartTokenError } from '../errors.ts';
 import { acquireLocks } from '../locks/acquire-locks.ts';
 
 const MAX_QUANTITY = 99;
+const CART_TOKEN = /^[A-Za-z0-9_-]{16,64}$/;
 
 export async function mergeGuestCart(
   tx: Tx,
   input: { guestToken: string; customerCartToken: string },
 ): Promise<{ merged: number }> {
+  if (!CART_TOKEN.test(input.guestToken) || !CART_TOKEN.test(input.customerCartToken)) {
+    throw new InvalidCartTokenError();
+  }
   const found = await tx
     .select({ id: carts.id, token: carts.token })
     .from(carts)
@@ -39,7 +43,7 @@ export async function mergeGuestCart(
     .select({ convertedAt: carts.convertedAt })
     .from(carts)
     .where(eq(carts.id, target.id));
-  if (state === undefined) throw new Error('customer cart disappeared after lock');
+  if (state === undefined) throw new CartMergeConflictError();
   // The storefront rotates the cart token after an order, so a converted target means a stale token.
   if (state.convertedAt !== null) throw new CartConvertedError();
   const [guestState] = await tx

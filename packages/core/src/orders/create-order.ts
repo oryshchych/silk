@@ -14,7 +14,7 @@
  * The payment attempt and the provider call are NOT here: they happen after
  * this transaction commits.
  */
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { createHash } from 'node:crypto';
 
 import { eq, sql } from 'drizzle-orm';
 
@@ -43,6 +43,7 @@ import {
   type CheckoutLine,
 } from './checkout-lines.ts';
 import { persistOrder } from './persist-order.ts';
+import { sameToken } from './token.ts';
 import type { CreateOrderInput } from './types.ts';
 import { findPromoId, resolvePromo, type ResolvedPromo } from './promo.ts';
 
@@ -71,13 +72,6 @@ export function payloadFingerprint(input: CreateOrderInput): string {
     input.promoCode?.toUpperCase() ?? '',
   ];
   return createHash('sha256').update(JSON.stringify(essential)).digest('hex');
-}
-
-/** Constant-time comparison of the cart token: it is the credential of a guest intent. */
-function sameToken(a: string, b: string): boolean {
-  const left = createHash('sha256').update(a).digest();
-  const right = createHash('sha256').update(b).digest();
-  return timingSafeEqual(left, right);
 }
 
 async function existingOrder(tx: Tx, orderId: string) {

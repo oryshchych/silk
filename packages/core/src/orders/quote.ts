@@ -25,16 +25,18 @@ import { loadShippingSettings, type DeliveryMethod } from '../shipping/rules.ts'
 import { loadCheckoutLines } from './checkout-lines.ts';
 import { priceCheckout, type PricedPromo } from './price-checkout.ts';
 import { findPromoId, resolvePromo } from './promo.ts';
+import { sameToken } from './token.ts';
 
 const CART_TOKEN = /^[A-Za-z0-9_-]{16,64}$/;
 
 export interface CheckoutQuote {
   intentId: string;
   pricing: CartPricing;
-  promo:
-    | { code: string; accepted: true }
-    | { code: string; accepted: false; reason: PromoRejectReason }
-    | null;
+  /**
+   * Accepted or not, and nothing more: a public answer that told "unknown", "used up" and
+   * "total too low" apart would let anyone probe which codes exist (docs/PROMO_CODES.md 2).
+   */
+  promo: { code: string; accepted: boolean } | null;
   /** Free-delivery progress: how much more the goods need to reach the threshold (null: none). */
   freeShippingRemaining: Money | null;
 }
@@ -46,6 +48,8 @@ export async function quoteCheckout(
     intentId: string;
     delivery: DeliveryMethod;
     promoCode: string | null;
+    /** Server-side log hook for the real reason a code was refused; never show it to the buyer. */
+    onPromoRejected?: (reason: PromoRejectReason) => void;
   },
 ): Promise<CheckoutQuote> {
   if (!CART_TOKEN.test(input.cartToken)) throw new InvalidCartTokenError();
@@ -53,7 +57,9 @@ export async function quoteCheckout(
     .select()
     .from(checkoutIntents)
     .where(eq(checkoutIntents.id, input.intentId));
-  if (intent?.ownerToken !== input.cartToken) throw new IntentNotFoundError();
+  if (intent === undefined || !sameToken(intent.ownerToken, input.cartToken)) {
+    throw new IntentNotFoundError();
+  }
 
   // Same order as createOrder: the cart first, then the intent.
   await acquireLocks(tx, { carts: [intent.cartId], checkout_intents: [intent.id] });
@@ -68,7 +74,7 @@ export async function quoteCheckout(
   let promo: PricedPromo | null = null;
   let promoView: CheckoutQuote['promo'] = null;
   if (input.promoCode !== null) {
-    const code = input.promoCode;
+    const code = input.promoCode.trim();
     try {
       const id = await findPromoId(tx, code);
       if (id === null) throw new PromoRejectedError('unknown code');
@@ -86,7 +92,8 @@ export async function quoteCheckout(
       promoView = { code: resolved.code, accepted: true };
     } catch (error) {
       if (!(error instanceof PromoRejectedError)) throw error;
-      promoView = { code, accepted: false, reason: error.reason };
+      input.onPromoRejected?.(error.reason);
+      promoView = { code, accepted: false };
     }
   }
 
@@ -104,6 +111,11 @@ export async function quoteCheckout(
     pricing,
     promo: promoView,
     freeShippingRemaining:
-      threshold !== null && goods < threshold ? subtract(threshold, goods) : null,
+      input.delivery === 'pickup' ||
+      promo?.rule.type === 'free_shipping' ||
+      threshold === null ||
+      goods >= threshold
+        ? null
+        : subtract(threshold, goods),
   };
 }

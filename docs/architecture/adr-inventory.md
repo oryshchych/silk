@@ -145,3 +145,15 @@ RETURNING quantity;
 Тест обов'язковий: два конкурентні шляхи з перетинними локами в різному
 логічному порядку, з окремих з'єднань і з бар'єром синхронізації. Плюс
 окремий тест на локи, породжені тригерами.
+
+**Not a lock level: the per-phone COD advisory lock.** `createOrder` for COD takes
+`pg_advisory_xact_lock(hash(phone))` AFTER the cart, intent, promo and variant locks, to
+serialise the per-phone limit. It sits outside the eight levels on purpose: it is taken last,
+and nothing waits for another lock while holding it, so it cannot close a cycle. A new path
+that takes it must also take it last.
+
+**Not a lock level: the per-phone COD advisory lock.** `createOrder` for COD takes
+`pg_advisory_xact_lock(hash(phone))` AFTER the cart, intent, promo and variant locks, to
+serialise the per-phone limit. It sits outside the eight levels on purpose: it is taken last,
+and nothing waits for another lock while holding it, so it cannot close a cycle. A new path
+that takes it must also take it last.
