@@ -60,6 +60,11 @@ export async function runPaymentSmoke(ctx: Context): Promise<void> {
     });
     const { ids: plenty, productPath } = await plentyVariants(base);
     check('payment smoke: found well-stocked variants', plenty.length > 0);
+    // A database kept across runs may have been drained by earlier ones: top the variants up.
+    await query(
+      `UPDATE product_variants SET stock_quantity = GREATEST(stock_quantity, 20) WHERE id = ANY($1::uuid[])`,
+      [plenty],
+    );
     let drawn = 0;
     const nextVariant = (): string => plenty[drawn++ % Math.max(plenty.length, 1)] ?? '';
 

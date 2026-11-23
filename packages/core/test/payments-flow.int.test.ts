@@ -31,6 +31,7 @@ import { cancelOrder, shipOrder } from '../src/orders/fulfilment.ts';
 import { createOrder } from '../src/orders/create-order.ts';
 import { handlePaymentWebhook } from '../src/payments/handle-webhook.ts';
 import { confirmCodOrder, confirmTransferReceived } from '../src/payments/offline.ts';
+import { resolveOrderForPayment } from '../src/orders/lookup.ts';
 import { reconcileOpenAttempts } from '../src/payments/reconcile.ts';
 import { startPayment, type StartPaymentDeps } from '../src/payments/start-payment.ts';
 import { Barrier } from './barrier.ts';
@@ -525,5 +526,36 @@ describe('bank transfer: a confirmed receipt of funds is the source (ADR-4 sourc
     await expect(
       admin.db.transaction(async (tx) => await shipOrder(tx, { orderId, source: 'test' })),
     ).rejects.toBeInstanceOf(OrderNotShippableError);
+  });
+});
+
+describe('resolveOrderForPayment: the order number alone opens nothing', () => {
+  it('needs the exact access token; another order token, a wrong token and a malformed number get null', async () => {
+    const a = await place('mono');
+    const b = await place('mono', variants[1]);
+    const stored = async (id: string): Promise<{ number: string; hash: string }> => {
+      const row = (
+        await admin.db.execute<{ order_number: string }>(
+          sql`SELECT order_number FROM orders WHERE id = ${id}`,
+        )
+      ).rows[0];
+      return { number: row?.order_number ?? '', hash: '' };
+    };
+    // Tokens are stored as SHA-256 hashes: install known ones.
+    const { createHash } = await import('node:crypto');
+    const hashOf = (token: string): string => createHash('sha256').update(token).digest('hex');
+    await admin.db.execute(
+      sql`UPDATE orders SET access_token_hash = ${hashOf('token-a')} WHERE id = ${a}`,
+    );
+    await admin.db.execute(
+      sql`UPDATE orders SET access_token_hash = ${hashOf('token-b')} WHERE id = ${b}`,
+    );
+    const numberA = (await stored(a)).number;
+    const found = await resolveOrderForPayment(admin.db, numberA, 'token-a');
+    expect(found).toMatchObject({ id: a, paymentProvider: 'mono', paymentStatus: 'pending' });
+    expect(await resolveOrderForPayment(admin.db, numberA, 'token-b')).toBeNull();
+    expect(await resolveOrderForPayment(admin.db, numberA, 'nope')).toBeNull();
+    expect(await resolveOrderForPayment(admin.db, numberA, '')).toBeNull();
+    expect(await resolveOrderForPayment(admin.db, 'not-a-number', 'token-a')).toBeNull();
   });
 });
