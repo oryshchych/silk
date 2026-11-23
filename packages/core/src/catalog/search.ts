@@ -14,7 +14,7 @@ import { listingDto, type ListingDto } from '@store/shared/dto/catalog';
 import { serialize } from '@store/shared/dto/serialize';
 
 import { fetchMainImages } from './images.ts';
-import { PAGE_SIZE } from './listing-params.ts';
+import { clampPage, PAGE_SIZE } from './listing-params.ts';
 import { availableVariant, localized, queryRows, visibleProduct, type SiteLocale } from './sql.ts';
 
 export const MIN_QUERY_LENGTH = 2;
@@ -43,7 +43,8 @@ export async function searchProducts(
   input: { query: string; locale: SiteLocale; page: number },
 ): Promise<ListingDto> {
   const query = normalizeSearchQuery(input.query);
-  const empty = { items: [], page: input.page, limit: PAGE_SIZE, total: 0, totalPages: 0 };
+  const page = clampPage(input.page);
+  const empty = { items: [], page, limit: PAGE_SIZE, total: 0, totalPages: 0 };
   if (query.length < MIN_QUERY_LENGTH) return serialize(listingDto, empty);
 
   // `<%` is word similarity (threshold 0.6), served by the GIN trigram index
@@ -66,7 +67,7 @@ export async function searchProducts(
          ORDER BY ts_rank(p.search_vector, q.uk) + ts_rank(p.search_vector, q.en)
                     + word_similarity(q.text, p.search_norm) DESC,
                   p.published_at DESC, p.id
-         LIMIT ${PAGE_SIZE} OFFSET ${(input.page - 1) * PAGE_SIZE}`,
+         LIMIT ${PAGE_SIZE} OFFSET ${(page - 1) * PAGE_SIZE}`,
   );
 
   const total = rows[0]?.total ?? 0;
@@ -89,7 +90,7 @@ export async function searchProducts(
       inStock: row.in_stock,
       image: images.get(row.id) ?? null,
     })),
-    page: input.page,
+    page,
     limit: PAGE_SIZE,
     total,
     totalPages: Math.ceil(total / PAGE_SIZE),

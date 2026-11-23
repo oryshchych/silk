@@ -322,6 +322,20 @@ describe('search', () => {
     }
   });
 
+  it('survives a negative, fractional or huge page number', async () => {
+    for (const page of [-3, 0, 1.5, 10_000_000_000]) {
+      const result = await searchProducts(db, { query: 'бюстгальтер', locale: 'uk', page });
+      expect(result.page).toBeGreaterThanOrEqual(1);
+    }
+    const bras = await getCategoryPage(db, 'bras', 'uk');
+    const listing = await listProducts(db, {
+      categoryIds: bras?.categoryIds ?? [],
+      params: params({ page: -1 }),
+      locale: 'uk',
+    });
+    expect(listing.page).toBe(1);
+  });
+
   it('returns nothing for short, unrelated or hostile input, without failing', async () => {
     expect(await find('a')).toEqual([]);
     expect(await find('   ')).toEqual([]);

@@ -33,7 +33,20 @@ export const availableVariant = sql`(
 )`;
 
 /** Localised column: `localized('p', 'name', 'uk')` is `p.name_uk`. Names are fixed literals, not user input. */
-export function localized(alias: string, column: string, locale: SiteLocale): SQL {
+export type LocalizedAlias = 'p' | 'c' | 'i' | 'a' | 'av';
+export type LocalizedColumn =
+  | 'name'
+  | 'description'
+  | 'seo_text'
+  | 'meta_title'
+  | 'meta_description'
+  | 'short_description'
+  | 'composition'
+  | 'care'
+  | 'alt'
+  | 'value';
+
+export function localized(alias: LocalizedAlias, column: LocalizedColumn, locale: SiteLocale): SQL {
   return sql.raw(`${alias}.${column}_${locale}`);
 }
 

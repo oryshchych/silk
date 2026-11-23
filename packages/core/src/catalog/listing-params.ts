@@ -13,7 +13,7 @@ export type SortKey = (typeof SORT_KEYS)[number];
 
 export const PAGE_SIZE = 24;
 const MAX_VALUES = 20;
-const MAX_PAGE = 1000;
+export const MAX_PAGE = 1000;
 const MAX_PRICE_KOPIYKAS = 100_000_000;
 
 export interface ListingParams {
@@ -84,6 +84,11 @@ function flag(raw: RawSearchParams, key: string): boolean {
   return values(raw, key).includes('1');
 }
 
+/** Page number as a safe OFFSET base: an integer from 1 to MAX_PAGE. */
+export function clampPage(page: number): number {
+  return Number.isInteger(page) ? Math.min(Math.max(page, 1), MAX_PAGE) : 1;
+}
+
 export function parseListingParams(raw: RawSearchParams): ListingParams {
   const [sort] = values(raw, 'sort');
   const [page] = values(raw, 'page');
@@ -104,7 +109,7 @@ export function parseListingParams(raw: RawSearchParams): ListingParams {
     inStock: flag(raw, 'in_stock'),
     onSale: flag(raw, 'sale'),
     sort: SORT_KEYS.find((key) => key === sort) ?? 'newest',
-    page: Math.min(Math.max(pageNumber, 1), MAX_PAGE),
+    page: clampPage(pageNumber),
   };
 }
 

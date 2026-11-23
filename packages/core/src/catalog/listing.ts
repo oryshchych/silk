@@ -22,7 +22,7 @@ import {
 } from '@store/shared/dto/catalog';
 import { serialize } from '@store/shared/dto/serialize';
 
-import { PAGE_SIZE, type ListingParams } from './listing-params.ts';
+import { clampPage, PAGE_SIZE, type ListingParams } from './listing-params.ts';
 import { fetchMainImages } from './images.ts';
 import { availableVariant, localized, queryRows, visibleProduct, type SiteLocale } from './sql.ts';
 
@@ -104,7 +104,8 @@ export async function listProducts(
   reader: Reader,
   input: { categoryIds: readonly string[]; params: ListingParams; locale: SiteLocale },
 ): Promise<ListingDto> {
-  const { categoryIds, params, locale } = input;
+  const { categoryIds, locale } = input;
+  const params = { ...input.params, page: clampPage(input.params.page) };
   if (categoryIds.length === 0) {
     return serialize(listingDto, {
       items: [],
