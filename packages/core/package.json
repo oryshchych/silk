@@ -15,7 +15,14 @@
     "./refunds": "./src/payments/refunds.ts",
     "./catalog": "./src/catalog/index.ts",
     "./product-slug": "./src/catalog/slug.ts",
-    "./bra-size": "./src/catalog/bra-size.ts"
+    "./bra-size": "./src/catalog/bra-size.ts",
+    "./quote": "./src/orders/quote.ts",
+    "./expiry": "./src/orders/expiry.ts",
+    "./order-lookup": "./src/orders/lookup.ts",
+    "./cart-view": "./src/cart/view.ts",
+    "./cart-merge": "./src/cart/merge.ts",
+    "./shipping": "./src/shipping/rules.ts",
+    "./np-directory": "./src/shipping/np-directory.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"

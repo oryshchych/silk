@@ -75,7 +75,7 @@ async function liveReservations(tx: Tx, orderId: string) {
 }
 
 /** Closes one reservation exactly once; returns the quantity only if THIS call closed it. */
-async function closeReservation(tx: Tx, id: string, reason: 'shipped' | 'cancelled') {
+async function closeReservation(tx: Tx, id: string, reason: 'shipped' | 'cancelled' | 'expired') {
   const closed = await tx.execute<{ quantity: number }>(
     sql`UPDATE stock_reservations SET released_at = now(), release_reason = ${reason}
          WHERE id = ${id} AND released_at IS NULL
@@ -185,14 +185,43 @@ export async function shipOrder(
  */
 export async function cancelOrder(
   tx: Tx,
-  input: { orderId: string; source: string; reason: string | null },
+  input: {
+    orderId: string;
+    source: string;
+    reason: string | null;
+    /**
+     * Worker expiry (ADR-3): cancel only if the order is still unpaid and pending AND every live
+     * reservation is past its TTL, judged by Postgres under the order lock. A payment or a
+     * manager's confirmation that landed since the scan makes this a no-op.
+     */
+    expiredOnly?: boolean;
+  },
 ): Promise<FulfilmentResult> {
   const order = await lockedOrder(tx, input.orderId);
   if (order === undefined) throw new OrderNotCancellableError('no such order');
   if (order.status === 'cancelled') return { orderId: order.id, changed: false };
+  if (input.expiredOnly === true) {
+    if (order.status !== 'pending' || order.paymentStatus !== 'pending') {
+      return { orderId: order.id, changed: false };
+    }
+    const due = await tx.execute<{ due: boolean }>(
+      sql`SELECT count(*) > 0 AND bool_and(expires_at IS NOT NULL AND expires_at <= now()) AS due
+            FROM stock_reservations
+           WHERE order_id = ${order.id} AND released_at IS NULL`,
+    );
+    if (due.rows[0]?.due !== true) return { orderId: order.id, changed: false };
+    // A card attempt whose result is not known (lost or late webhook) must be reconciled with the
+    // provider first (AGENTS.md 2.5, owner queue Q27): cancelling now could cancel a paid order.
+    const open = await tx.execute<{ n: number }>(
+      sql`SELECT count(*)::int AS n FROM payment_attempts
+           WHERE order_id = ${order.id} AND state IN ('in_flight', 'unknown')`,
+    );
+    if ((open.rows[0]?.n ?? 0) > 0) return { orderId: order.id, changed: false };
+  }
   if (!canTransition(order.status, 'cancelled')) {
     throw new OrderNotCancellableError(`the order is ${order.status}`);
   }
+  const releaseReason = input.expiredOnly === true ? 'expired' : 'cancelled';
 
   const reservations = await liveReservations(tx, order.id);
   const [redemption] = await tx
@@ -219,7 +248,7 @@ export async function cancelOrder(
   });
 
   for (const reservation of reservations) {
-    const quantity = await closeReservation(tx, reservation.id, 'cancelled');
+    const quantity = await closeReservation(tx, reservation.id, releaseReason);
     if (quantity === null) continue;
     const released = await tx.execute(
       sql`UPDATE product_variants SET reserved_quantity = reserved_quantity - ${quantity}
@@ -263,9 +292,23 @@ export async function cancelOrder(
 
   await tx
     .update(orders)
-    .set({ status: 'cancelled', cancelledAt: sql`now()` })
+    .set({
+      status: 'cancelled',
+      cancelledAt: sql`now()`,
+      ...(input.expiredOnly === true ? { paymentStatus: 'expired' as const } : {}),
+    })
     .where(eq(orders.id, order.id));
   await recordTransition(tx, order, 'cancelled', input.source, input.reason);
+  if (input.expiredOnly === true) {
+    await tx.insert(orderStatusHistory).values({
+      orderId: order.id,
+      fromStatus: order.paymentStatus,
+      toStatus: 'expired',
+      field: 'payment_status',
+      source: input.source,
+      comment: input.reason,
+    });
+  }
 
   // Money to give back: what was captured minus what was already refunded.
   const refundable = order.capturedTotal - (await heldRefundTotal(tx, order.id));

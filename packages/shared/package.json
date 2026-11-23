@@ -12,7 +12,8 @@
     "./schema-org": "./src/schema-org.ts",
     "./dto/serialize": "./src/dto/serialize.ts",
     "./dto/catalog": "./src/dto/catalog.ts",
-    "./dto/order": "./src/dto/order.ts"
+    "./dto/order": "./src/dto/order.ts",
+    "./phone": "./src/phone.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"

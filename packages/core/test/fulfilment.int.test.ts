@@ -62,6 +62,7 @@ async function placeMany(variantIds: string[], promoCode: string | null = null):
         paymentProvider: 'mono',
         promoCode,
         locale: 'uk',
+        allowUnquoted: true,
       }),
   );
   return placed.orderId;
@@ -379,6 +380,7 @@ describe('criterion 13: cancelling an order while a new one is being created', (
               paymentProvider: 'mono',
               promoCode: 'SHARED',
               locale: 'uk',
+              allowUnquoted: true,
             }),
         );
       })();
@@ -456,6 +458,7 @@ describe('review round: proven overlap, guards and rollback', () => {
             paymentProvider: 'mono',
             promoCode: 'SHARED',
             locale: 'uk',
+            allowUnquoted: true,
           }),
       )
       .catch((e: unknown) => e);
@@ -630,6 +633,7 @@ describe('review round 2: transitions, ship drift, ship against a checkout', () 
             paymentProvider: 'mono',
             promoCode: null,
             locale: 'uk',
+            allowUnquoted: true,
           }),
       )
       .catch((e: unknown) => e);

@@ -66,6 +66,7 @@ beforeEach(async () => {
         paymentProvider: 'mono',
         promoCode: null,
         locale: 'uk',
+        allowUnquoted: true,
       }),
   );
   orderId = placed.orderId;
@@ -677,6 +678,7 @@ describe('review round 2: double click, duplicates, foreign amounts', () => {
           paymentProvider: 'mono',
           promoCode: null,
           locale: 'uk',
+          allowUnquoted: true,
         }),
     );
     const barrier = new Barrier(2);

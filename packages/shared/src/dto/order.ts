@@ -41,6 +41,12 @@ export const customerOrderItemDto = z.object({
 
 export const customerOrderDto = z.object({
   orderNumber: z.string(),
+  paymentProvider: z.string().nullable(),
+  deliveryMethod: z.string(),
+  /** Nova Poshta city, branch name and street address as the buyer chose them. */
+  deliveryCity: z.string().nullable(),
+  deliveryPoint: z.string().nullable(),
+  deliveryAddress: z.string().nullable(),
   status: z.enum(orderStatusValues),
   paymentStatus: z.enum(paymentStatusValues),
   createdAt: z.iso.datetime({ offset: true }),
@@ -52,4 +58,12 @@ export const customerOrderDto = z.object({
   items: z.array(customerOrderItemDto),
 });
 
+/**
+ * The order as served for "order number plus phone". The number is sequential and phones are
+ * often known, so this view carries no street address and no waybill; the full DTO is only for
+ * the holder of the order's access token.
+ */
+export const trackedOrderDto = customerOrderDto.omit({ deliveryAddress: true, ttn: true });
+
 export type CustomerOrderDto = z.output<typeof customerOrderDto>;
+export type TrackedOrderDto = z.output<typeof trackedOrderDto>;

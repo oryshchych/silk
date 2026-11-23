@@ -696,7 +696,7 @@ export const orderItems = pgTable('order_items', {
 
 export const orderStatusHistory = pgTable('order_status_history', {
   id: id(),
-  orderId: uuid('order_id').notNull().references(() => orders.id, { onDelete: 'cascade' }),
+  orderId: uuid('order_id').notNull().references(() => orders.id, { onDelete: 'restrict' }),
   fromStatus: varchar('from_status', { length: 40 }),
   toStatus: varchar('to_status', { length: 40 }).notNull(),
   field: varchar('field', { length: 20 }).notNull().default('status'), // 'status' | 'payment_status'
@@ -1409,6 +1409,13 @@ export const checkoutIntents = pgTable('checkout_intents', {
   /** Власник для гостя — токен кошика. Чужий intent використати не можна */
   ownerToken: varchar('owner_token', { length: 64 }).notNull(),
   payloadFingerprint: varchar('payload_fingerprint', { length: 64 }),
+  /**
+   * Total the buyer was shown (Q12). Set by quoteCheckout each time the page
+   * prices the cart; createOrder refuses with PriceChangedError when the
+   * freshly computed total differs. It never feeds a charge: the order total
+   * always comes from the database prices.
+   */
+  quotedTotal: integer('quoted_total'),
   orderId: uuid('order_id').references(() => orders.id, { onDelete: 'set null' }),
   completedAt: timestamp('completed_at', { withTimezone: true }),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
@@ -1417,6 +1424,7 @@ export const checkoutIntents = pgTable('checkout_intents', {
   uniqueIndex('checkout_intent_cart_uq').on(t.cartId, t.cartVersion)
     .where(sql`${t.completedAt} IS NULL`),
   index('checkout_intent_expiry_idx').on(t.expiresAt).where(sql`${t.completedAt} IS NULL`),
+  check('checkout_intent_quote_nonneg', sql`${t.quotedTotal} IS NULL OR ${t.quotedTotal} >= 0`),
 ]);
 
 /* ═══════════════════════ AUTH (ADR-19) ═══════════════════════ */
@@ -1929,14 +1937,26 @@ $$ LANGUAGE plpgsql;
 -- 8. Часткові UNIQUE для ліміту промокоду на клієнта створити
 --    окремим виразом, залежно від per_customer_limit.
 
--- 8b. FK з orders.current_payment_attempt_id -> payment_attempts.id
---     додається ОКРЕМОЮ міграцією після створення обох таблиць
---     (циклічне посилання):
+-- 8b. Same-order integrity of payment attempts (migrations 0004, 0007, 0008).
+--     The cycle orders <-> payment_attempts is closed by a composite FK, not a
+--     simple one: the current attempt must be one of the order's own attempts,
+--     and it is never silently cleared:
 --
---     ALTER TABLE orders
---       ADD CONSTRAINT orders_current_attempt_fk
---       FOREIGN KEY (current_payment_attempt_id)
---       REFERENCES payment_attempts(id) ON DELETE SET NULL;
+--       payment_attempts   UNIQUE (id, order_id)
+--       orders             FOREIGN KEY (current_payment_attempt_id, id)
+--                          REFERENCES payment_attempts (id, order_id) ON DELETE RESTRICT
+--       payment_events, refund_operations, gift_card_transactions
+--                          FOREIGN KEY (payment_attempt_id, order_id)
+--                          REFERENCES payment_attempts (id, order_id) ON DELETE RESTRICT
+--       refund_operations  FOREIGN KEY (return_request_id, order_id)
+--                          REFERENCES return_requests (id, order_id) ON DELETE RESTRICT
+--
+--     MATCH SIMPLE skips a composite FK while any column is NULL, so
+--     payment_events and gift_card_transactions also carry
+--     CHECK (payment_attempt_id IS NULL OR order_id IS NOT NULL) (0008).
+--     order_status_history is ON DELETE RESTRICT. touch_updated_at triggers
+--     cover every table with an updated_at column (0005, 0007); a test loops
+--     over the catalog to keep it so.
 
 -- 8c. ЗВІРКА СУМ (воркер orders:reconcile-totals, ADR-15).
 --     Ці інваріанти НЕ виражаються як CHECK — вони cross-table.

@@ -26,7 +26,7 @@ export async function findPromoId(tx: Tx, code: string): Promise<string | null> 
   const [row] = await tx
     .select({ id: promoCodes.id })
     .from(promoCodes)
-    .where(sql`upper(${promoCodes.code}) = upper(${code})`);
+    .where(sql`upper(${promoCodes.code}) = upper(${code.trim()})`);
   return row?.id ?? null;
 }
 

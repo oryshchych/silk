@@ -14,7 +14,7 @@
  * The payment attempt and the provider call are NOT here: they happen after
  * this transaction commits.
  */
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { createHash } from 'node:crypto';
 
 import { eq, sql } from 'drizzle-orm';
 
@@ -25,12 +25,17 @@ import {
   IntentExpiredError,
   IntentNotFoundError,
   IntentPayloadMismatchError,
+  PriceChangedError,
   PromoRejectedError,
+  QuoteRequiredError,
   StaleCartError,
   UnsupportedPurchaseError,
 } from '../errors.ts';
 import { acquireLocks } from '../locks/acquire-locks.ts';
 import { calculateCart } from '../pricing/calculate-cart.ts';
+import { loadShippingSettings } from '../shipping/rules.ts';
+import { assertContact, assertPaymentAllowed, resolveDelivery } from './delivery.ts';
+import { priceCheckout } from './price-checkout.ts';
 import {
   cartVariantIds,
   loadCheckoutLines,
@@ -38,6 +43,7 @@ import {
   type CheckoutLine,
 } from './checkout-lines.ts';
 import { persistOrder } from './persist-order.ts';
+import { sameToken } from './token.ts';
 import type { CreateOrderInput } from './types.ts';
 import { findPromoId, resolvePromo, type ResolvedPromo } from './promo.ts';
 
@@ -59,18 +65,13 @@ export function payloadFingerprint(input: CreateOrderInput): string {
     input.contact.phone,
     input.contact.name,
     input.delivery.method,
+    input.delivery.settlementRef ?? '',
+    input.delivery.warehouseRef ?? '',
     input.delivery.address ?? '',
     input.paymentProvider,
     input.promoCode?.toUpperCase() ?? '',
   ];
   return createHash('sha256').update(JSON.stringify(essential)).digest('hex');
-}
-
-/** Constant-time comparison of the cart token: it is the credential of a guest intent. */
-function sameToken(a: string, b: string): boolean {
-  const left = createHash('sha256').update(a).digest();
-  const right = createHash('sha256').update(b).digest();
-  return timingSafeEqual(left, right);
 }
 
 async function existingOrder(tx: Tx, orderId: string) {
@@ -133,19 +134,24 @@ export async function createOrder(tx: Tx, input: CreateOrderInput): Promise<Crea
     throw new Error('cart lines and locked variants disagree');
   }
   const promo = await resolveOptionalPromo(tx, input.promoCode, promoId, lines);
-  const pricing = calculateCart(
-    lines.map((line) => ({
-      id: line.variantId,
-      unitPrice: line.unitPrice,
-      quantity: line.quantity,
-      eligible: promo?.eligibleVariantIds.has(line.variantId) ?? false,
-    })),
-    promo?.rule ?? null,
-  );
+  assertContact(input.contact);
+  const config = await loadShippingSettings(tx);
+  const delivery = await resolveDelivery(tx, input.delivery);
+  const pricing = priceCheckout(lines, promo, delivery.method, config);
+
+  // Q12: the buyer confirms the total they were shown. A different total is refused before
+  // anything is reserved; the order itself always stores the database total.
+  if (intent.quotedTotal === null) {
+    if (input.allowUnquoted !== true) throw new QuoteRequiredError();
+  } else if (intent.quotedTotal !== pricing.total) {
+    throw new PriceChangedError(pricing.total);
+  }
+  await assertPaymentAllowed(tx, input, pricing.total, config);
 
   await reserveStock(tx, lines);
   const persisted = await persistOrder(tx, {
     input,
+    delivery,
     intentId: intent.id,
     cartId: intent.cartId,
     fingerprint,
