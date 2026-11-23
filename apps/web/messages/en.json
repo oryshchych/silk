@@ -1,13 +1,21 @@
 {
   "meta": {
     "title": "LACE & SILK — lingerie and homewear",
-    "description": "Original lingerie and homewear delivered across Ukraine."
+    "description": "Original lingerie and homewear delivered across Ukraine.",
+    "siteName": "LACE & SILK"
   },
   "home": {
-    "brand": "LACE & SILK",
-    "tagline": "Lingerie and homewear. Original products only.",
-    "comingSoon": "The store opens soon.",
-    "switchLanguage": "Українська"
+    "heroTitle": "Lingerie and homewear that feel like you",
+    "heroCta": "Browse the catalog",
+    "categoriesTitle": "Categories",
+    "uspTitle": "Why us",
+    "usp1Title": "Original products only",
+    "usp1Text": "We work directly with verified brands.",
+    "usp2Title": "Delivery across Ukraine",
+    "usp2Text": "We ship orders all over the country.",
+    "usp3Title": "Help with your size",
+    "usp3Text": "We help you find band and cup for a perfect fit.",
+    "tagline": "Lingerie and homewear. Original products only."
   },
   "errors": {
     "notFoundTitle": "Page not found",
@@ -16,5 +24,65 @@
     "errorTitle": "Something went wrong",
     "errorText": "The page could not be loaded. Please try again.",
     "retry": "Try again"
+  },
+  "nav": {
+    "home": "Home",
+    "main": "Main navigation",
+    "search": "Search",
+    "searchPlaceholder": "Search products",
+    "searchSubmit": "Search",
+    "language": "Site language",
+    "switchTo": "Українська",
+    "skip": "Skip to content"
+  },
+  "footer": {
+    "about": "Original lingerie and homewear delivered across Ukraine."
+  },
+  "listing": {
+    "title": "Catalog",
+    "results": "Products found: {count}",
+    "emptyTitle": "Nothing found",
+    "emptyText": "Try changing or resetting the filters.",
+    "resetFilters": "Reset filters",
+    "sort": "Sort by",
+    "sortNewest": "Newest first",
+    "sortPriceAsc": "Price: low to high",
+    "sortPriceDesc": "Price: high to low",
+    "sortDiscount": "Biggest discount",
+    "loading": "Loading products",
+    "metaDescription": "{name}: original products delivered across Ukraine."
+  },
+  "filters": {
+    "title": "Filters",
+    "apply": "Apply",
+    "band": "Band",
+    "cup": "Cup",
+    "size": "Size",
+    "color": "Color",
+    "brand": "Brand",
+    "price": "Price, ₴",
+    "priceFrom": "From",
+    "priceTo": "To",
+    "inStock": "In stock only",
+    "onSale": "On sale"
+  },
+  "card": {
+    "outOfStock": "Out of stock",
+    "badgeNew": "New",
+    "badgeSale": "Sale",
+    "badgeBestseller": "Bestseller",
+    "badgeLastUnits": "Last units",
+    "noImage": "No photo",
+    "rating": "Rated {value} out of 5"
+  },
+  "pagination": {
+    "label": "Pages",
+    "previous": "Previous",
+    "next": "Next",
+    "page": "Page {page}",
+    "current": "Current page, {page}"
+  },
+  "breadcrumbs": {
+    "label": "Breadcrumb"
   }
 }

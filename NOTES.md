@@ -267,3 +267,12 @@ Left as notes:
 - **No `loading.tsx` at the locale level:** it starts the response stream before a page can call `notFound()`, so every 404 would be a streamed 200 (soft 404; checked on a real server). Skeletons go on slow regions with `<Suspense>` AFTER the page has resolved its slug and called `notFound()`; the product and category pages must do their existence check first.
 - **Staging site URL:** staging requires the runtime `SITE_URL`; compose fills it from the project's `NEXT_PUBLIC_SITE_URL` at container start, so the value is per environment and not baked into the image.
 - **Smoke test against the built app:** `pnpm smoke:web` (after `pnpm --filter web build`) asserts the locale, redirect and 404 behaviour on a real server and that `SITE_URL` is read at runtime. It is not in CI yet: adding a CI step edits a workflow, which is the owner's (queued with Q6).
+
+## Phase 1: storefront data layer and category page (2026-11-23)
+
+- **ISR needs `generateStaticParams`:** on a dynamic route (`/[locale]`) `export const revalidate` alone is not enough, Next renders per request (`Cache-Control: no-store`). Exporting `generateStaticParams` that returns `[]` prerenders nothing at build (the runtime `SITE_URL` is still read on the first request) and makes the route ISR-capable (`x-nextjs-cache: MISS` then `HIT`, `s-maxage=3600`). Every ISR page needs it (home, and the product page in its slice).
+- **ISR cache lives inside the container** (`.next/server/app`), so staging and production, which run separate containers from one image, never share rendered pages; a deploy starts empty. `smoke:web` therefore runs from a throwaway copy of the build.
+- **Category pages are not ISR:** the filters are `searchParams`, which make the page dynamic. Their data is cached with `unstable_cache` (tags `category:{id}` for every category in scope, TTL 5 minutes), as ADR-8 prescribes.
+- **Category `seo_text` is not rendered yet:** it is rich text "sanitised on save", and there is no sanitiser or admin editor yet. Render it with the admin slice (phase 4).
+- **No invalidation endpoint yet:** the tags and `revalidate` TTLs are in place; the internal `revalidateTag(tag, 'max')` endpoint reached from the outbox comes with the first admin mutation (phase 4/5). Until then caches refresh by TTL.
+- **dependency-cruiser** does not resolve the `@/` alias of apps/web, so leaf modules under `apps/web/src/components` and `lib` are exempt from the orphan rule.

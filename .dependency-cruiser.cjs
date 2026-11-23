@@ -44,6 +44,10 @@ module.exports = {
           '(^|/)(drizzle|next|postcss)\\.config\\.(ts|mjs)$',
           // Файлові конвенції App Router: їх знаходить роутер за іменем.
           '^apps/web/src/app/.*/(page|layout|route|loading|error|not-found)\\.tsx?$',
+          // apps/web imports its own modules through the `@/` alias, which depcruise
+          // does not resolve (it reads tsconfig.base.json), so a leaf component
+          // imported only that way looks orphaned.
+          '^apps/web/src/(components|lib)/',
         ],
       },
       to: {},
