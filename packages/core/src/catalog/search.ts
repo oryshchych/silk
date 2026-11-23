@@ -18,7 +18,7 @@ import { clampPage, PAGE_SIZE } from './listing-params.ts';
 import { availableVariant, localized, queryRows, visibleProduct, type SiteLocale } from './sql.ts';
 
 export const MIN_QUERY_LENGTH = 2;
-const MAX_QUERY_LENGTH = 100;
+export const MAX_QUERY_LENGTH = 100;
 
 const searchRow = z.object({
   id: z.uuid(),
@@ -35,7 +35,12 @@ const searchRow = z.object({
 });
 
 export function normalizeSearchQuery(raw: string): string {
-  return raw.replace(/\s+/g, ' ').trim().slice(0, MAX_QUERY_LENGTH);
+  // Control characters (NUL is a Postgres error) become spaces, then whitespace collapses.
+  return raw
+    .replace(/[\u0000-\u001f\u007f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, MAX_QUERY_LENGTH);
 }
 
 export async function searchProducts(

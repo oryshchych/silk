@@ -73,8 +73,9 @@ const check = (name: string, ok: boolean): void => {
 
 async function get(
   path: string,
+  init: RequestInit = {},
 ): Promise<{ status: number; location: string | null; cache: string | null; html: string }> {
-  const response = await fetch(base + path, { redirect: 'manual' });
+  const response = await fetch(base + path, { redirect: 'manual', ...init });
   return {
     status: response.status,
     location: response.headers.get('location'),
@@ -212,6 +213,79 @@ try {
 
   check('an unknown category is a real 404', (await get('/category/nope')).status === 404);
   check('a page past the end is a real 404', (await get('/category/bras?page=99')).status === 404);
+
+  const productLinks = (html: string): number =>
+    (html.match(/href="\/(en\/)?product\//g) ?? []).length;
+  const inflected = await get(`/search?q=${encodeURIComponent('бюстгальтери')}`);
+  check(
+    'search finds products for an inflected word and is noindex',
+    inflected.status === 200 &&
+      productLinks(inflected.html) > 0 &&
+      inflected.html.includes('content="noindex, follow"'),
+  );
+  const typo = await get(`/search?q=${encodeURIComponent('бюстгалтер')}`);
+  check('search finds products despite a typo', typo.status === 200 && productLinks(typo.html) > 0);
+  const nothing = await get('/en/search?q=qzxwvk');
+  check(
+    'search with no match is a 200 empty state',
+    nothing.status === 200 &&
+      productLinks(nothing.html) === 0 &&
+      nothing.html.includes('Nothing found'),
+  );
+  const short = await get('/search?q=a');
+  check(
+    'a one-character query shows the hint and no results',
+    short.status === 200 && productLinks(short.html) === 0,
+  );
+  check(
+    'a search page past the end is a real 404',
+    (await get(`/search?q=${encodeURIComponent('бюстгальтер')}&page=99`)).status === 404,
+  );
+
+  // Hostile query text: a NUL byte must not be a server error, markup must come out escaped.
+  check(
+    'a NUL byte in the query is not a server error',
+    (await get('/search?q=br%00a')).status === 200,
+  );
+  const hostileSearch = await get(`/search?q=${encodeURIComponent('<script>alert(1)</script>')}`);
+  check(
+    'a hostile query is escaped in the page',
+    hostileSearch.status === 200 &&
+      hostileSearch.html.includes('&lt;script&gt;alert(1)&lt;/script&gt;') &&
+      !hostileSearch.html.includes('<script>alert(1)</script>'),
+  );
+  check(
+    'a 500-character query is cut to 100 characters in the field',
+    /value="a{100}"/.test((await get(`/search?q=${'a'.repeat(500)}`)).html),
+  );
+
+  // The search rate limit, on the built server. The client is the address the trusted
+  // proxy appended (the last X-Forwarded-For entry); what the client sends before it
+  // is ignored, and neither the method nor the spelling of the path escapes the limit.
+  const spoofed = (i: number): RequestInit => ({
+    headers: { 'x-forwarded-for': `9.9.9.${String(i)}, 203.0.113.99` },
+  });
+  let limited = 0;
+  for (let i = 0; i < 35; i++) {
+    if ((await get('/search?q=bra', spoofed(i))).status === 429) limited += 1;
+  }
+  check('rotating X-Forwarded-For entries does not escape the search limit', limited === 5);
+  const stillLimited = async (path: string, method = 'GET'): Promise<boolean> =>
+    (await get(path, { method, ...spoofed(0) })).status === 429;
+  check(
+    'HEAD, POST and an encoded path are limited too',
+    (await stillLimited('/search?q=bra', 'HEAD')) &&
+      (await stillLimited('/search?q=bra', 'POST')) &&
+      (await stillLimited('/%73earch?q=bra')) &&
+      (await stillLimited('/%65n/search?q=bra')),
+  );
+  const refused = await fetch(`${base}/search?q=bra`, { ...spoofed(0), redirect: 'manual' });
+  check(
+    'a refused search carries Retry-After and is not cacheable',
+    refused.status === 429 &&
+      Number(refused.headers.get('retry-after')) > 0 &&
+      refused.headers.get('cache-control') === 'no-store',
+  );
 
   // The seed is deterministic: this product exists in the seeded dev database.
   const productPath = '/product/push-up-bra-aurora-1';

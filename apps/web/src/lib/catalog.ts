@@ -17,6 +17,7 @@ import {
   listShowcase,
   normalizeListingParams,
   restrictListingParams,
+  searchProducts,
   type ListingParams,
   type ShowcaseKind,
 } from '@store/core/catalog';
@@ -109,6 +110,16 @@ export async function loadListing(input: {
   if (params.page === 1) return { listing: first, params };
   if (params.page > Math.max(first.totalPages, 1)) return null;
   return { listing: await getCachedListing({ categoryIds, params, locale }), params };
+}
+
+/**
+ * Search results are NOT cached: the query is free text chosen by the client,
+ * so a cache key per query would grow without bound (and nothing can check it
+ * against a known list). The route is rate limited per client in `proxy.ts`
+ * and the query is bounded in length by `normalizeSearchQuery`.
+ */
+export async function searchCatalog(input: { query: string; locale: SiteLocale; page: number }) {
+  return await searchProducts(await getDb(), input);
 }
 
 /**

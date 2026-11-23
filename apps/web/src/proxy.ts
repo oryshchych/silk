@@ -5,8 +5,11 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { routing } from './i18n/routing';
 import { stripDefaultLocalePrefix } from './lib/locale-redirect';
+import { clientAddress, UNKNOWN_CLIENT } from './lib/client-address';
 import { missingPath, parseProductPath } from './lib/product-path';
 import { knownProductSlugs } from './lib/product-slugs';
+import { createRateLimiter } from './lib/rate-limit';
+import { isSearchPath } from './lib/search-path';
 import { isAuthorized, parseExcludeList, requiresAuth } from './lib/staging-gate';
 
 /**
@@ -30,6 +33,24 @@ const gate =
       }
     : null;
 
+// Search runs a ranked full-text and trigram query, so it is the one public read
+// route that is limited per client (per instance, in memory). Every method but
+// OPTIONS and every spelling of the path counts: the limit is on the route.
+const searchLimiter = createRateLimiter({ limit: 30, windowMs: 60_000 });
+// Reverse proxies that append to X-Forwarded-For and are trusted (Traefik: 1).
+const trustedHops = env.TRUSTED_PROXY_HOPS ?? 1;
+let unknownClientLoggedAt = Number.NEGATIVE_INFINITY;
+
+/** Requests without a trustworthy client address share one bucket; say so once a minute. */
+function noteUnknownClient(): void {
+  const now = performance.now();
+  if (now - unknownClientLoggedAt < 60_000) return;
+  unknownClientLoggedAt = now;
+  process.stderr.write(
+    `${JSON.stringify({ level: 'warn', scope: 'rate-limit', reason: 'no trustworthy client address, shared bucket', trustedHops })}\n`,
+  );
+}
+
 /** Non-production environments are never indexed (third layer after basic auth and robots.txt). */
 function withNoindex(response: NextResponse): NextResponse {
   if (env.APP_ENV !== 'production') response.headers.set('X-Robots-Tag', 'noindex, nofollow');
@@ -51,6 +72,23 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
         'X-Robots-Tag': 'noindex, nofollow',
       },
     });
+  }
+
+  if (request.method !== 'OPTIONS' && isSearchPath(pathname)) {
+    const client = clientAddress(request.headers.get('x-forwarded-for'), trustedHops);
+    if (client === UNKNOWN_CLIENT) noteUnknownClient();
+    const verdict = searchLimiter.check(client);
+    if (!verdict.allowed) {
+      return withNoindex(
+        new NextResponse('Too many requests', {
+          status: 429,
+          headers: {
+            'Retry-After': String(verdict.retryAfterSeconds),
+            'Cache-Control': 'no-store',
+          },
+        }),
+      );
+    }
   }
 
   // `/uk/...` -> `/...` permanently (308 keeps the method, search engines

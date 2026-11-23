@@ -117,5 +117,17 @@
     "calcInvalid": "Enter both measurements as numbers.",
     "calcUnderbustRange": "The underbust is outside the size table.",
     "calcCupRange": "The bust difference is outside the size table."
+  },
+  "search": {
+    "title": "Search",
+    "metaTitle": "Search: {query}",
+    "heading": "Search results",
+    "resultsFor": "Query: “{query}”",
+    "results": "Products found: {count}",
+    "tooShort": "Enter at least {min} characters.",
+    "emptyTitle": "Nothing found",
+    "emptyText": "Check the spelling or try another query.",
+    "toCatalog": "Back to home",
+    "label": "What are you looking for?"
   }
 }
