@@ -27,6 +27,12 @@ const gate =
       }
     : null;
 
+/** Non-production environments are never indexed (third layer after basic auth and robots.txt). */
+function withNoindex(response: NextResponse): NextResponse {
+  if (env.APP_ENV !== 'production') response.headers.set('X-Robots-Tag', 'noindex, nofollow');
+  return response;
+}
+
 export function proxy(request: NextRequest): NextResponse {
   const { pathname } = request.nextUrl;
 
@@ -50,17 +56,13 @@ export function proxy(request: NextRequest): NextResponse {
   if (unprefixed !== null) {
     const target = request.nextUrl.clone();
     target.pathname = unprefixed;
-    const redirect = NextResponse.redirect(target, 308);
-    if (env.APP_ENV !== 'production') redirect.headers.set('X-Robots-Tag', 'noindex, nofollow');
-    return redirect;
+    return withNoindex(NextResponse.redirect(target, 308));
   }
 
   // Мовна маршрутизація — лише для сторінок: не для API і не для файлів
   // (robots.txt, sitemap.xml), інакше next-intl перепише їх у /uk/....
   const isPage = !pathname.startsWith('/api/') && !/\.[a-z0-9]+$/i.test(pathname);
-  const response = isPage ? intl(request) : NextResponse.next();
-  if (env.APP_ENV !== 'production') response.headers.set('X-Robots-Tag', 'noindex, nofollow');
-  return response;
+  return withNoindex(isPage ? intl(request) : NextResponse.next());
 }
 
 export const config = {

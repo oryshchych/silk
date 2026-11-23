@@ -14,6 +14,7 @@ const withoutOverride = {
 const base = { ...withoutOverride, EMAIL_TO_OVERRIDE: 'dev@example.com' } as const;
 
 const productionSecrets = {
+  SITE_URL: 'https://shop.example',
   AUTH_SECRET: 'x',
   MONO_PLATA_TOKEN: 'x',
   WAYFORPAY_MERCHANT_ACCOUNT: 'x',
@@ -64,6 +65,14 @@ describe('parseEnv', () => {
       readFileSync(new URL('../../../.env.example', import.meta.url), 'utf8'),
     );
     expect(parseEnv(example).APP_ENV).toBe('local');
+  });
+
+  it('requires SITE_URL in production', () => {
+    const rest: Record<string, string> = { ...productionSecrets };
+    delete rest['SITE_URL'];
+    expect(() => parseEnv({ ...withoutOverride, APP_ENV: 'production', ...rest })).toThrow(
+      /SITE_URL/,
+    );
   });
 
   it('порожній секрет у production — відсутній, а не заданий', () => {

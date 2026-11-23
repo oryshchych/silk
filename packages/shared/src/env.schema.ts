@@ -96,6 +96,14 @@ export const envSchema = z
     }
 
     if (value.APP_ENV === 'production') {
+      if (value.SITE_URL === undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['SITE_URL'],
+          message:
+            'SITE_URL is required in production: canonical and hreflang must not fall back to localhost.',
+        });
+      }
       for (const key of secretsRequiredInProduction) {
         if (value[key] === undefined) {
           ctx.addIssue({
