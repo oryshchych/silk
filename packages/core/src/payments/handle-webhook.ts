@@ -10,6 +10,8 @@
  */
 import { createHash } from 'node:crypto';
 
+import { sql } from 'drizzle-orm';
+
 import { webhookQuarantine } from '@store/db/schema';
 import type { Tx } from '@store/db/types';
 import type { PaymentProvider } from '@store/payments/types';
@@ -20,7 +22,15 @@ export interface WebhookDeps {
   provider: PaymentProvider;
   /** Runs `fn` in a database transaction; supplied by the caller (core has no pool). */
   runInTransaction: <T>(fn: (tx: Tx) => Promise<T>) => Promise<T>;
+  /**
+   * Upper bound of rows kept in `webhook_quarantine` (default 5000). The route is public, so a
+   * flood of garbage must not grow the table without bound; past the cap a refused message is
+   * still answered 400 but no longer stored (the cleanup job frees room by age).
+   */
+  quarantineCap?: number;
 }
+
+const DEFAULT_QUARANTINE_CAP = 5000;
 
 export interface WebhookRequest {
   rawBody: Uint8Array;
@@ -65,7 +75,15 @@ async function quarantine(
     const value = req.headers.get(name);
     if (value !== null) headers[name] = sanitise(value.slice(0, 512));
   }
+  const cap = deps.quarantineCap ?? DEFAULT_QUARANTINE_CAP;
   await deps.runInTransaction(async (tx) => {
+    const [held] = await tx.select({ n: sql<number>`count(*)::int` }).from(webhookQuarantine);
+    if ((held?.n ?? 0) >= cap) {
+      process.stderr.write(
+        `${JSON.stringify({ level: 'warn', scope: 'webhook-quarantine', reason: 'cap reached, message not stored' })}\n`,
+      );
+      return;
+    }
     await tx.insert(webhookQuarantine).values({
       provider: deps.provider.code,
       rawBody: stored,

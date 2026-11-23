@@ -40,6 +40,8 @@ export interface FakeWayForPay {
   onRefund: (
     handler: (body: Record<string, unknown>) => { status: number; json?: unknown; hang?: boolean },
   ) => void;
+  /** Restores the default create and refund behaviour (tests share one fake). */
+  reset: () => void;
   close: () => Promise<void>;
 }
 
@@ -54,7 +56,7 @@ const readBody = async (req: IncomingMessage): Promise<string> => {
 export async function startFakeWayForPay(): Promise<FakeWayForPay> {
   const requests: FakeWayForPay['requests'] = [];
   const payments: FakeWayForPay['payments'] = new Map();
-  let createHandler: Parameters<FakeWayForPay['onCreate']>[0] = (body) => {
+  const defaultCreate: Parameters<FakeWayForPay['onCreate']>[0] = (body) => {
     const ref = String(body['orderReference']);
     payments.set(ref, { amount: Number(body['amount']), status: 'Created', reasonCode: 1100 });
     return {
@@ -62,7 +64,7 @@ export async function startFakeWayForPay(): Promise<FakeWayForPay> {
       json: { reason: 'Ok', reasonCode: 1100, invoiceUrl: `https://secure.example/invoice/${ref}` },
     };
   };
-  let refundHandler: Parameters<FakeWayForPay['onRefund']>[0] = (body) => {
+  const defaultRefund: Parameters<FakeWayForPay['onRefund']>[0] = (body) => {
     const ref = String(body['orderReference']);
     const fields = [FAKE_ACCOUNT, ref, 'Refunded', '1100'];
     return {
@@ -77,6 +79,9 @@ export async function startFakeWayForPay(): Promise<FakeWayForPay> {
       },
     };
   };
+
+  let createHandler = defaultCreate;
+  let refundHandler = defaultRefund;
 
   const server: Server = createServer((req, res) => {
     void (async () => {
@@ -208,6 +213,10 @@ export async function startFakeWayForPay(): Promise<FakeWayForPay> {
     },
     onRefund: (handler) => {
       refundHandler = handler;
+    },
+    reset: () => {
+      createHandler = defaultCreate;
+      refundHandler = defaultRefund;
     },
     close: async () => {
       server.closeAllConnections();

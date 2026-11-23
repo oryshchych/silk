@@ -11,6 +11,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import { orders, paymentAttempts, stockReservations } from '@store/db/schema';
 import type { Tx } from '@store/db/types';
 import type { CreatePaymentResult } from '@store/payments/types';
+import { money, type Money } from '@store/shared/money';
 
 import { AttemptStillOpenError, AttemptUnresolvedError, OrderNotPayableError } from '../errors.ts';
 import { acquireLocks } from '../locks/acquire-locks.ts';
@@ -27,7 +28,7 @@ export interface NewAttempt {
   attemptId: string;
   attemptNumber: number;
   localReference: string;
-  amount: number;
+  amount: Money;
   orderNumber: string;
 }
 
@@ -127,7 +128,7 @@ export async function createPaymentAttempt(
     attemptId: attempt.id,
     attemptNumber,
     localReference: attempt.localReference,
-    amount: order.total,
+    amount: money(order.total),
     orderNumber: order.orderNumber,
   };
 }
@@ -175,4 +176,39 @@ export async function recordAttemptResult(
       state: sql`case when ${paymentAttempts.state} = 'pending' then 'unknown'::operation_state else ${paymentAttempts.state} end`,
     })
     .where(eq(paymentAttempts.id, input.attemptId));
+}
+
+/**
+ * The provider definitely did not create the invoice (a refusal, or a lookup by our reference
+ * that finds nothing), or an invoice that never reached us has outlived its validity and cannot
+ * be paid any more. Moves a not-yet-settled attempt to `failed` so the order can be retried or
+ * expired. Forward only: a settled attempt is never touched.
+ */
+export async function recordAttemptRefused(
+  tx: Tx,
+  input: { attemptId: string; reason: string; status?: 'failed' | 'expired' },
+): Promise<boolean> {
+  const [probe] = await tx
+    .select({ orderId: paymentAttempts.orderId })
+    .from(paymentAttempts)
+    .where(eq(paymentAttempts.id, input.attemptId));
+  if (probe === undefined) return false;
+  await acquireLocks(tx, { orders: [probe.orderId], payment_attempts: [input.attemptId] });
+  const updated = await tx
+    .update(paymentAttempts)
+    .set({
+      state: 'failed',
+      status: input.status ?? 'failed',
+      failureReason: input.reason,
+      completedAt: sql`now()`,
+    })
+    .where(
+      and(
+        eq(paymentAttempts.id, input.attemptId),
+        inArray(paymentAttempts.state, ['pending', 'in_flight', 'unknown']),
+        eq(paymentAttempts.status, 'pending'),
+      ),
+    )
+    .returning({ id: paymentAttempts.id });
+  return updated.length > 0;
 }
