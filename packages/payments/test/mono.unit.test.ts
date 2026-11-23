@@ -373,8 +373,21 @@ describe('field handling', () => {
 describe('buildWebhookResponse', () => {
   it('answers 200 for a fresh message and for a duplicate alike', () => {
     const provider: PaymentProvider = mono; // through the contract: duplicates are a valid argument
-    expect(provider.buildWebhookResponse({ duplicate: true }).status).toBe(200);
-    expect(provider.buildWebhookResponse({ duplicate: true }).headers.get('content-type')).toBe(
+    const of = {
+      messageKey: 'k',
+      externalId: 'inv-1',
+      localReference: attempt.localReference,
+      eventType: 'invoice.success',
+      status: 'paid',
+      amount: money(129900),
+      capturedAmount: money(129900),
+      currency: 'UAH',
+      stateVersion: null,
+      failureReason: null,
+      rawPayload: {},
+    } as const;
+    expect(provider.buildWebhookResponse({ duplicate: true, of }).status).toBe(200);
+    expect(provider.buildWebhookResponse({ duplicate: true, of }).headers.get('content-type')).toBe(
       'application/json',
     );
   });

@@ -13,6 +13,13 @@ import type { DbHandle } from '@store/db/client';
 import { orders, paymentAttempts } from '@store/db/schema';
 import { MonoProvider } from '@store/payments/mono';
 import { startFakeMono, type FakeMono } from '@store/payments/test/fake-mono';
+import { WayForPayProvider } from '@store/payments/wayforpay';
+import {
+  FAKE_ACCOUNT,
+  FAKE_SECRET,
+  startFakeWayForPay,
+  type FakeWayForPay,
+} from '@store/payments/test/fake-wayforpay';
 import type { WebhookResult } from '@store/payments/types';
 
 import { setCartItem, startCheckout } from '../src/cart/cart.ts';
@@ -24,7 +31,7 @@ import {
 import { createOrder } from '../src/orders/create-order.ts';
 import { applyPaymentWebhook } from '../src/payments/apply-webhook.ts';
 import { createPaymentAttempt, recordAttemptResult } from '../src/payments/attempts.ts';
-import { handlePaymentWebhook } from '../src/payments/handle-webhook.ts';
+import { handlePaymentWebhook, MAX_WEBHOOK_BODY_BYTES } from '../src/payments/handle-webhook.ts';
 import { Barrier } from './barrier.ts';
 import { createWorld, type TestWorld } from './fixtures.ts';
 
@@ -765,5 +772,124 @@ describe('review round 2: double click, duplicates, foreign amounts', () => {
     ).toBe(1);
     expect(await countOf('outbox', sql`topic = 'email.payment-received'`)).toBe(1);
     expect(await countOf('outbox', sql`topic = 'alert.late-payment'`)).toBe(0);
+  });
+});
+
+describe('WayForPay through the same pipeline (database, quarantine, signed accept)', () => {
+  let wfpFake: FakeWayForPay;
+  let wfp: WayForPayProvider;
+  let wfpAttempt: { attemptId: string; localReference: string; amount: number };
+
+  beforeAll(async () => {
+    wfpFake = await startFakeWayForPay();
+    wfp = new WayForPayProvider({
+      baseUrl: wfpFake.baseUrl,
+      merchantAccount: FAKE_ACCOUNT,
+      secretKey: FAKE_SECRET,
+      merchantDomainName: 'shop.example',
+      now: () => 1_700_000_000,
+    });
+  });
+  afterAll(async () => {
+    await wfpFake.close();
+  });
+  beforeEach(async () => {
+    // A second attempt by WayForPay on the order made in the outer beforeEach: the Mono attempt
+    // is closed first (a live invoice cannot be replaced).
+    await admin.db.execute(
+      sql`UPDATE payment_attempts SET state = 'failed', status = 'failed', expires_at = now() - interval '1 minute' WHERE id = ${attempt.attemptId}`,
+    );
+    wfpAttempt = await admin.db.transaction(
+      async (tx) => await createPaymentAttempt(tx, { orderId, provider: 'wayforpay' }),
+    );
+  });
+
+  const callback = (over: Partial<Parameters<FakeWayForPay['callback']>[0]> = {}): string =>
+    wfpFake.callback({
+      orderReference: wfpAttempt.localReference,
+      amount: wfpAttempt.amount / 100,
+      transactionStatus: 'Approved',
+      ...over,
+    });
+
+  async function deliverWfp(raw: string) {
+    const db = world.connect();
+    return await handlePaymentWebhook(
+      {
+        provider: wfp,
+        runInTransaction: async (fn) => await db.db.transaction(async (tx) => await fn(tx)),
+      },
+      { rawBody: bytes(raw), headers: new Headers(), sourceIp: '203.0.113.9' },
+    );
+  }
+  const acceptOf = async (response: Response) => (await response.json()) as Record<string, unknown>;
+
+  it('garbage with the genuine reference is quarantined, then the genuine callback applies', async () => {
+    const garbage = await deliverWfp(callback({ secret: 'wrong-secret' }));
+    expect(garbage.response.status).toBe(400);
+    expect(await countOf('webhook_quarantine')).toBe(1);
+    expect(await countOf('payment_events')).toBe(0);
+    const genuine = await deliverWfp(callback());
+    expect(genuine.response.status).toBe(200);
+    expect(genuine.outcome.kind).toBe('applied');
+    const [row] = await admin.db.select().from(orders).where(eq(orders.id, orderId));
+    expect(row).toMatchObject({ paymentStatus: 'paid', capturedTotal: wfpAttempt.amount });
+  });
+
+  it('the same callback five times in parallel has one effect and every answer is a signed accept', async () => {
+    const raw = callback();
+    const barrier = new Barrier(5);
+    const results = await Promise.all(
+      Array.from({ length: 5 }, async () => {
+        await barrier.wait();
+        return await deliverWfp(raw);
+      }),
+    );
+    expect(results.filter((r) => r.outcome.kind === 'applied')).toHaveLength(1);
+    expect(results.filter((r) => r.outcome.kind === 'duplicate')).toHaveLength(4);
+    for (const result of results) {
+      const answer = await acceptOf(result.response);
+      expect(answer).toMatchObject({ status: 'accept', orderReference: wfpAttempt.localReference });
+      expect(typeof answer['signature']).toBe('string');
+    }
+    expect(await countOf('payment_events')).toBe(1);
+  });
+
+  it('a sequential redelivery is a duplicate and still gets the signed accept', async () => {
+    await deliverWfp(callback());
+    const again = await deliverWfp(callback());
+    expect(again.outcome.kind).toBe('duplicate');
+    expect(await acceptOf(again.response)).toMatchObject({ status: 'accept' });
+  });
+
+  it('a genuine callback for a reference we never issued is quarantined with the validated subset and answered 200', async () => {
+    const stranger = await deliverWfp(
+      wfpFake.callback({
+        orderReference: '0192f3a0-0000-7000-8000-00000000f00d',
+        amount: 5,
+        transactionStatus: 'Approved',
+      }),
+    );
+    expect(stranger.outcome.kind).toBe('unmatched');
+    expect(stranger.response.status).toBe(200);
+    expect(await countOf('webhook_quarantine')).toBe(1);
+    expect(await countOf('payment_events')).toBe(0);
+  });
+
+  it('an amount that differs from the attempt is rejected with an alert, never credited', async () => {
+    const result = await deliverWfp(callback({ amount: 1 }));
+    expect(result.outcome.kind).toBe('rejected');
+    const [row] = await admin.db.select().from(orders).where(eq(orders.id, orderId));
+    expect(row).toMatchObject({ paymentStatus: 'pending', capturedTotal: 0 });
+    expect(await countOf('outbox', sql`topic = 'alert.payment-mismatch'`)).toBe(1);
+  });
+
+  it('a callback over the size cap is a 413 before parsing, and is stored nowhere', async () => {
+    const huge = JSON.stringify({ pad: 'x'.repeat(MAX_WEBHOOK_BODY_BYTES + 1) });
+    const result = await deliverWfp(huge);
+    expect(result.response.status).toBe(413);
+    expect(result.outcome.kind).toBe('too_large');
+    expect(await countOf('webhook_quarantine')).toBe(0);
+    expect(await countOf('payment_events')).toBe(0);
   });
 });
