@@ -7,6 +7,7 @@ import { useId, useState } from 'react';
 import { calculateBraSize } from '@store/core/bra-size';
 import type { ColorDto, ProductImageDto } from '@store/shared/dto/catalog';
 
+import { AddToCartButton } from '@/components/add-to-cart-button';
 import {
   imagesForColor,
   initialSelection,
@@ -31,6 +32,8 @@ interface Props {
    * client render disagree with the server HTML (hydration error).
    */
   prices: { base: string; compareAt: string | null; byVariant: Record<string, string> };
+  /** Locale-prefixed cart path, for the "view cart" link. */
+  cartHref: string;
 }
 
 function Gallery({ images, name }: { images: ProductImageDto[]; name: string }) {
@@ -189,7 +192,7 @@ function SizeCalculator({
   );
 }
 
-export function ProductBuyBox({ name, images, colors, variants, prices }: Props) {
+export function ProductBuyBox({ name, images, colors, variants, prices, cartHref }: Props) {
   const t = useTranslations('product');
   const [selection, setSelection] = useState(() => initialSelection(variants));
   const sizes = variantsOfColor(variants, selection.colorSlug);
@@ -282,6 +285,11 @@ export function ProductBuyBox({ name, images, colors, variants, prices }: Props)
                 ? t('lastUnits')
                 : t('inStock')}
         </p>
+
+        <AddToCartButton
+          variantId={selected?.available === true ? selected.id : null}
+          cartHref={cartHref}
+        />
 
         {hasBras ? (
           <SizeCalculator

@@ -6,6 +6,11 @@ export const paths = {
   category: (slug: string): string => `/category/${slug}`,
   product: (slug: string): string => `/product/${slug}`,
   search: '/search',
+  cart: '/cart',
+  checkout: '/checkout',
+  orderSuccess: '/order/success',
+  orderFailed: '/order/failed',
+  orderTrack: '/order/track',
 } as const;
 
 export const href = (locale: SiteLocale, path: string, search = ''): string =>

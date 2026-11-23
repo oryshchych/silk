@@ -983,3 +983,36 @@ describe('review round 2: promo oracle, expiry safety, merge and quote edges', (
     expect(full?.ttn).toBe('20450000000001');
   });
 });
+
+describe('add to cart', () => {
+  it('adds to the existing quantity, caps a line at 99, and refuses zero or a negative add', async () => {
+    const add = async (quantity: number) =>
+      await admin.db.transaction(
+        async (tx) =>
+          await setCartItem(tx, { cartToken: tok('add'), variantId: v1, quantity, mode: 'add' }),
+      );
+    await add(2);
+    await add(3);
+    expect((await getCartView(admin.db, tok('add'), 'uk')).lines[0]?.quantity).toBe(5);
+    await add(99);
+    expect((await getCartView(admin.db, tok('add'), 'uk')).lines[0]?.quantity).toBe(99);
+    await expect(add(0)).rejects.toMatchObject({ code: 'CART_INVALID_QUANTITY' });
+    await expect(add(-1)).rejects.toMatchObject({ code: 'CART_INVALID_QUANTITY' });
+  });
+
+  it('parallel adds from separate connections are all counted', async () => {
+    await Promise.all(
+      Array.from({ length: 6 }, async () => {
+        await world.connect().db.transaction(async (tx) => {
+          await setCartItem(tx, {
+            cartToken: tok('par-add'),
+            variantId: v1,
+            quantity: 1,
+            mode: 'add',
+          });
+        });
+      }),
+    );
+    expect((await getCartView(admin.db, tok('par-add'), 'uk')).lines[0]?.quantity).toBe(6);
+  });
+});

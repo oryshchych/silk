@@ -34,14 +34,18 @@ async function cartByToken(tx: Tx, token: string): Promise<{ id: string } | unde
   return row;
 }
 
-/** Sets a line to `quantity` (0 removes it). Returns the new cart version. */
+/**
+ * Sets a line to `quantity` (0 removes it), or with `mode: 'add'` adds `quantity` (1 or more) to
+ * what the line already holds, capped at the per-line maximum. Returns the new cart version.
+ */
 export async function setCartItem(
   tx: Tx,
-  input: { cartToken: string; variantId: string; quantity: number },
+  input: { cartToken: string; variantId: string; quantity: number; mode?: 'set' | 'add' },
 ): Promise<{ cartId: string; version: number }> {
   const { cartToken, variantId, quantity } = input;
+  const adding = input.mode === 'add';
   assertToken(cartToken);
-  if (!Number.isInteger(quantity) || quantity < 0 || quantity > MAX_QUANTITY) {
+  if (!Number.isInteger(quantity) || quantity < (adding ? 1 : 0) || quantity > MAX_QUANTITY) {
     throw new InvalidQuantityError();
   }
 
@@ -65,7 +69,16 @@ export async function setCartItem(
     .where(eq(carts.id, cart.id));
   if (locked?.convertedAt !== null) throw new CartConvertedError();
 
-  if (quantity === 0) {
+  if (adding) {
+    // The parent cart row is locked, so this line cannot change under us.
+    await tx
+      .insert(cartItems)
+      .values({ cartId: cart.id, variantId, quantity })
+      .onConflictDoUpdate({
+        target: [cartItems.cartId, cartItems.variantId],
+        set: { quantity: sql`least(${cartItems.quantity} + ${quantity}, ${MAX_QUANTITY})` },
+      });
+  } else if (quantity === 0) {
     await tx
       .delete(cartItems)
       .where(and(eq(cartItems.cartId, cart.id), eq(cartItems.variantId, variantId)));

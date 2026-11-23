@@ -20,6 +20,7 @@
   --accent: #1a1a1a;
   --accent-contrast: #ffffff;
   --focus-ring: #8a5a44;
+  --danger: #b3261e;
 
   --font-sans:
     ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
@@ -35,6 +36,7 @@
   --color-accent: var(--accent);
   --color-accent-contrast: var(--accent-contrast);
   --color-focus-ring: var(--focus-ring);
+  --color-danger: var(--danger);
   --font-sans: var(--font-sans);
   --font-display: var(--font-display);
 }

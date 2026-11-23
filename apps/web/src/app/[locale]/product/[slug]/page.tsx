@@ -141,6 +141,7 @@ export default async function ProductPage({ params }: Props) {
       </div>
       <div className="mt-6">
         <ProductBuyBox
+          cartHref={href(locale, paths.cart)}
           name={product.name}
           images={product.images}
           colors={product.colors}
