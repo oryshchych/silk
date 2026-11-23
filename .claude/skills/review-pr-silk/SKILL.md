@@ -194,6 +194,7 @@ Verdict: PASS | FAIL (b blockers, s should-fix)
 - **SHOULD-FIX**: violates the definition of done or a convention, or an unclear PR description.
 - **NIT**: style or taste. Listed, optional.
 - **PASS** needs zero blockers, zero should-fix, every gate and CI check green.
+  Under autonomous mode the orchestrator may merge with named, owner-queued should-fix items that are not reachable in production yet (docs/AUTONOMOUS_MODE.md, "Accepted risk").
 - A finding you believe is wrong is not silently ignored: say why in the report.
 - A finding that needs an owner decision (`AGENTS.md` section 5): stop and ask.
 
