@@ -27,7 +27,7 @@ import {
 
 import { FiscalRetryError } from '../src/errors.ts';
 import { issueFiscalReceipt, MAX_FISCAL_ATTEMPTS, type FiscalDeps } from '../src/fiscal/issue.ts';
-import { buildReceiptLines, lineTotalOf } from '../src/fiscal/receipts.ts';
+import { buildReceiptLines, enqueueSaleReceipt, lineTotalOf } from '../src/fiscal/receipts.ts';
 import { shipOrder } from '../src/orders/fulfilment.ts';
 import { confirmCodOrder, confirmTransferReceived } from '../src/payments/offline.ts';
 import { handlePaymentWebhook } from '../src/payments/handle-webhook.ts';
@@ -273,6 +273,12 @@ describe('cash on delivery and bank transfer', () => {
       await count(sql`SELECT count(*)::int AS n FROM outbox WHERE topic = 'fiscal.issue-receipt'`),
     ).toBe(0);
     expect(checkbox.receipts.size).toBe(0);
+    // Even when asked directly, a transfer order is never queued for a receipt.
+    const direct = await admin.db.transaction(
+      async (tx) => await enqueueSaleReceipt(tx, { orderId, paymentForm: 'card' }),
+    );
+    expect(direct).toBe('not_required');
+    expect(await docsOf(orderId)).toHaveLength(0);
   });
 });
 
