@@ -75,6 +75,36 @@ Limits, stated honestly:
 Only merge PRs that were reviewed with the skill; leave anything else (for
 example a dependency bot's PR) in the queue.
 
+## Review tiers (speed and cost)
+
+Approved by the owner on 2026-11-23 after phase 1 took hours. The review effort
+follows the risk of the change; the gate (CI, PASS for the current head, pinned
+commit) applies to every tier.
+
+| Tier | Change | Review |
+|---|---|---|
+| T0 | docs, CI-only, config text | CI green and the orchestrator reads the diff. No worktree run, no specialist |
+| T1 | small code change that touches no cache, rate limit, proxy, DTO, auth, money, schema or webhook | CI green; the orchestrator runs `pnpm verify` (and `test:int` while CI has no integration job) in a worktree. At most one specialist, only if the diff is not trivial |
+| T2 | money, stock, payments, DTOs, caching keys, rate limits, `proxy.ts`, schema, webhooks, auth | the matching specialists (`money-reviewer`, `security-auditor`, `seo-reviewer`), 3 to 5 mutations of the critical protections, the orchestrator's own run |
+
+Rules that apply across tiers:
+
+- **Re-review is scoped.** After fixes, a specialist re-checks only what changed
+  (and any new attack surface the fixes created), not the whole PR. If the fix is
+  mechanical and its tests pass in the orchestrator's run, no re-review.
+- **Cheaper models for read-heavy reviewers** where the review is mostly reading
+  and measuring; keep the strongest model for design-heavy work.
+- **Bigger slices.** Prefer one coherent PR per slice over many tiny ones; each PR
+  costs a full review round.
+- **Do not duplicate CI.** If CI already ran a check on the head commit, the
+  orchestrator does not repeat it unless CI does not cover it. CI has no
+  integration job yet (owner queue Q6), so `test:int` is still run by hand for
+  T1 and T2 until it does.
+- **Findings go into a durable PR comment first.** Cross-session messages can sit
+  in a queue for a long time; a comment on the PR cannot be lost.
+- **Measure the right thing.** For cache growth count every store (`.next/server`,
+  `.next/cache`), not one directory.
+
 ## Hard stops: never, in any mode
 
 - Anything on production: deploys, DDL, data, environment, secrets.
