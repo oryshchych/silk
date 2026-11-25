@@ -26,6 +26,7 @@ COPY packages/shared/package.json packages/shared/
 COPY packages/db/package.json packages/db/
 COPY packages/core/package.json packages/core/
 COPY packages/payments/package.json packages/payments/
+COPY packages/media/package.json packages/media/
 # --ignore-scripts: postinstall не потрібні (бінарники — optional-пакети
 # платформи), а `prepare` (lefthook) без .git впав би.
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
@@ -40,6 +41,7 @@ COPY packages/shared packages/shared
 COPY packages/db packages/db
 COPY packages/core packages/core
 COPY packages/payments packages/payments
+COPY packages/media packages/media
 COPY apps/web apps/web
 RUN pnpm --filter web build
 

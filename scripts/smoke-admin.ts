@@ -522,15 +522,23 @@ export async function runAdminSmoke({
     await get(`/product/${oldSlug}`);
     await get(`/product/${bystander.slug}`);
     const bystanderBefore = await get(`/product/${bystander.slug}`);
+    // A price just BELOW the current one: valid whatever old price (compare-at) the product has.
+    const newBase = (original?.basePrice ?? 0) - 123;
+    if (newBase < 100) throw new Error('the target price is too low for the revalidation check');
+    const newBaseText = `${String(Math.floor(newBase / 100))}.${String(newBase % 100).padStart(2, '0')}`;
+    const newBaseShown = new Intl.NumberFormat('uk-UA', {
+      style: 'currency',
+      currency: 'UAH',
+    }).format(newBase / 100);
     const priced = await form(
       'updateProductPricingAction',
-      { productId: target.id, basePrice: '7777.77' },
+      { productId: target.id, basePrice: newBaseText },
       cookie(adminToken),
       '/admin/products',
     );
     let shown = false;
     for (let attempt = 0; attempt < 40 && !shown; attempt += 1) {
-      shown = (await get(`/product/${oldSlug}`)).html.includes('777,77');
+      shown = (await get(`/product/${oldSlug}`)).html.includes(newBaseShown);
       if (!shown) await new Promise((resolve) => setTimeout(resolve, 500));
     }
     check(
