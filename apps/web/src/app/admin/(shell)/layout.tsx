@@ -39,6 +39,12 @@ export default async function AdminShellLayout({ children }: { children: React.R
           <a href="/admin/products" className="ml-4 inline-flex min-h-11 items-center underline">
             {t('products')}
           </a>
+          <a
+            href="/admin/import-export"
+            className="ml-4 inline-flex min-h-11 items-center underline"
+          >
+            {t('importExport')}
+          </a>
           <a href="/admin/categories" className="ml-4 inline-flex min-h-11 items-center underline">
             {t('categories')}
           </a>

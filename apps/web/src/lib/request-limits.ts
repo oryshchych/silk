@@ -65,6 +65,12 @@ export async function checkRequestLimit(
   );
 }
 
+/** The client address of a route-handler request, or null when it cannot be trusted. */
+export async function clientAddressOf(request: Request): Promise<string | null> {
+  const client = await requestClient(request);
+  return client === UNKNOWN_CLIENT ? null : client;
+}
+
 /** The client key of a route-handler request (same trusted hop as every other limit). */
 export async function requestClient(request: Request): Promise<string> {
   return clientAddress(request.headers.get('x-forwarded-for'), await trustedHopsOf());

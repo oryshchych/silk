@@ -60,7 +60,9 @@ confirmed TOTP before a session counts; so must anyone who enrolled one.
 | Create, edit and move a category (slug change leaves a 301) | `categories.edit` | `createCategoryAction`, `updateCategoryAction`, `moveCategoryAction` (`actions/admin-taxonomy.ts`) |
 | Colours, sizes, attributes and their values | `dictionaries.edit` | `saveColorAction`, `saveSizeAction`, `saveAttributeAction`, `saveAttributeValueAction` |
 | Assign attribute values to a product | `catalog.edit` | `setProductAttributesAction` |
-| Stock, media, import, export | see the table above | their actions arrive with their screens in the next slices |
+| Preview and commit a CSV import | `catalog.import` | `previewImportAction` (writes nothing), `commitImportAction` (`actions/admin-import.ts`): a column the role may not write (price without `catalog.price`, cost without `catalog.cost.view`) turns the row into an error; each written row has its own audit row |
+| Download the product CSV | `catalog.export` | `GET /admin/export/products` (`app/admin/export/products/route.ts`): the cost column only for `catalog.cost.view`, every export audited |
+| Stock, media | see the table above | their actions arrive with their screens in the next slices |
 
 ## Authentication facts
 
@@ -117,6 +119,17 @@ of its category chain and the showcase, nothing else.
 - **Credential work is bounded.** At most 3 password hashes or TOTP transactions run at once and 6
   wait; more are refused at once ("too many attempts"), so a login flood cannot starve the site.
   The cap over all clients counts credential attempts (POST), not page loads.
+
+## Import and export
+
+CSV only (XLSX needs a library: owner queue). The parser is bounded (2 MB, 1000 rows, 30 columns,
+20 000 characters a cell) and a file goes through a server action, so `proxy.ts`'s 64 KB body
+limit applies, and it is a limit in BYTES (the screen and the action check UTF-8 bytes, 56 000): about 250 rows per file. An import is PREVIEWED first (every row validated, nothing
+written), then committed; each row is written in its own savepoint through the same domain
+functions as the editor, so one bad row never undoes the good ones and every rule (unique slug and
+SKU, old price over price, 301 on a renamed slug) holds. An empty cell on an update changes
+nothing. The export neutralises formulas (a cell starting with `=`, `+`, `-`, `@`, tab or CR gets
+a leading apostrophe, removed again when the same file is imported) and reads the cost into the file only for a role that may see it. A file with a NUL byte, invalid UTF-8 or a repeated header is refused whole. A catalogue larger than one file (10 000 rows) is exported in parts (`?after=<sku>`; the screen lists them and a cut file answers `X-Export-Truncated`).
 
 ## Responses
 

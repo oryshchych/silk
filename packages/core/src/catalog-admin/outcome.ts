@@ -18,6 +18,8 @@ export interface AuditDraft {
 export interface AdminOutcome<T> {
   data: T;
   audit: AuditDraft;
+  /** More audit rows written in the same transaction (a batch writes one per item plus the summary). */
+  extraAudits?: AuditDraft[];
   tags: string[];
 }
 

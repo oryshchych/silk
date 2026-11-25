@@ -15,7 +15,7 @@ import {
   revokeAllSessions,
   startTotpEnrolment,
 } from '../packages/core/src/auth/service.ts';
-import { products } from '../packages/db/src/schema.ts';
+import { auditLog, categories, products } from '../packages/db/src/schema.ts';
 import { codeAt, stepOf } from '../packages/core/src/auth/totp.ts';
 
 interface Context {
@@ -537,6 +537,97 @@ export async function runAdminSmoke({
     check(
       'catalog: changing one product leaves another product page in the cache',
       bystanderBefore.nextCache === 'HIT' && bystanderAfter.nextCache === 'HIT',
+    );
+
+    // 5f. CSV import and export: 100 rows with 3 broken, the cost only for a role that may see it.
+    const importHeader = 'sku,slug,brand,category,name_uk,name_en,price,cost_price';
+    const categorySlugOfTarget =
+      (await db.select().from(categories)).find((c) => c.id === original?.categoryId)?.slug ?? '';
+    const importRows = Array.from({ length: 100 }, (_, i) => {
+      const n = i + 1;
+      return `IMP${suffix}-${String(n)},imp${suffix}-${String(n)},Brand,${categorySlugOfTarget},Товар ${String(n)},Product ${String(n)},199.00,80.00`;
+    });
+    importRows[9] = `IMP${suffix}-10,imp${suffix}-10,Brand,${categorySlugOfTarget},Товар,Product,abc,80.00`;
+    importRows[49] = `IMP${suffix}-50,imp${suffix}-50,Brand,no-such-category,Товар,Product,199.00,80.00`;
+    importRows[89] = `,imp${suffix}-90,Brand,${categorySlugOfTarget},Товар,Product,199.00,80.00`;
+    const csv = [importHeader, ...importRows].join('\n');
+    const contentImport = await form(
+      'previewImportAction',
+      { csv },
+      cookie(contentToken),
+      '/admin/import-export',
+    );
+    check(
+      'import: a content role cannot import (FORBIDDEN)',
+      contentImport.body.includes('FORBIDDEN'),
+    );
+    const preview = await form(
+      'previewImportAction',
+      { csv },
+      cookie(adminToken),
+      '/admin/import-export',
+    );
+    const previewBad = [
+      ...preview.body.matchAll(/"line":(\d+),"sku":"[^"]*","action":"error"/g),
+    ].map((m) => Number(m[1]));
+    const countBefore = (await db.select().from(products)).filter((p) =>
+      p.sku.startsWith(`IMP${suffix}-`),
+    ).length;
+    check(
+      'import: the preview names the three broken lines (11, 51, 91) and writes nothing',
+      JSON.stringify(previewBad) === JSON.stringify([11, 51, 91]) && countBefore === 0,
+    );
+    const committed = await form(
+      'commitImportAction',
+      { csv },
+      cookie(adminToken),
+      '/admin/import-export',
+    );
+    const imported = (await db.select().from(products)).filter((p) =>
+      p.sku.startsWith(`IMP${suffix}-`),
+    );
+    check(
+      'import: the commit imports 97 and reports 3 errors with their line numbers',
+      committed.body.includes('"created":97') &&
+        committed.body.includes('"failed":3') &&
+        imported.length === 97,
+    );
+    const exportFor = async (token: string | null) => {
+      const response = await fetch(`${base}/admin/export/products`, {
+        redirect: 'manual',
+        headers: { 'X-Forwarded-For': nextClient(), ...(token === null ? {} : cookie(token)) },
+      });
+      return {
+        status: response.status,
+        type: response.headers.get('content-type') ?? '',
+        disposition: response.headers.get('content-disposition') ?? '',
+        cache: response.headers.get('cache-control') ?? '',
+        truncated: response.headers.get('x-export-truncated'),
+        body: await response.text(),
+      };
+    };
+    const exportAdmin = await exportFor(adminToken);
+    const exportManager = await exportFor(managerToken);
+    const exportAnon = await exportFor(null);
+    const exportAudits = (await db.select().from(auditLog)).filter(
+      (row) => row.action === 'export',
+    );
+    check(
+      'export: every download is audited (who, rows, whether the cost was included)',
+      exportAudits.some((row) => JSON.stringify(row.diff).includes('"includedCost":true')) &&
+        exportAudits.every((row) => row.userId !== null),
+    );
+    check('export: a small catalogue is not marked truncated', exportAdmin.truncated === null);
+    check(
+      'export: an admin gets a CSV download (no-store) with the cost column; a manager is 403; no session is refused (the proxy redirects to the login; the route itself answers 401)',
+      exportAdmin.status === 200 &&
+        exportAdmin.type.includes('text/csv') &&
+        exportAdmin.disposition.includes('attachment') &&
+        exportAdmin.cache.includes('no-store') &&
+        exportAdmin.body.includes('cost_price') &&
+        exportManager.status === 403 &&
+        !exportManager.body.includes('cost_price') &&
+        (exportAnon.status === 401 || exportAnon.status === 307),
     );
 
     // 5c. Taxonomy: categories need categories.edit, dictionaries need dictionaries.edit.

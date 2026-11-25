@@ -43,7 +43,10 @@
     "./admin-redirects": "./src/catalog-admin/redirects.ts",
     "./admin-outcome": "./src/catalog-admin/outcome.ts",
     "./stock": "./src/stock/adjust-stock.ts",
-    "./admin-errors": "./src/catalog-admin/errors.ts"
+    "./admin-errors": "./src/catalog-admin/errors.ts",
+    "./admin-import": "./src/catalog-admin/import.ts",
+    "./admin-export": "./src/catalog-admin/export.ts",
+    "./admin-csv": "./src/catalog-admin/csv.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"
