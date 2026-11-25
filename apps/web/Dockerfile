@@ -26,6 +26,7 @@ COPY packages/shared/package.json packages/shared/
 COPY packages/db/package.json packages/db/
 COPY packages/core/package.json packages/core/
 COPY packages/payments/package.json packages/payments/
+COPY packages/media/package.json packages/media/
 # --ignore-scripts: postinstall не потрібні (бінарники — optional-пакети
 # платформи), а `prepare` (lefthook) без .git впав би.
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
@@ -40,12 +41,19 @@ COPY packages/shared packages/shared
 COPY packages/db packages/db
 COPY packages/core packages/core
 COPY packages/payments packages/payments
+COPY packages/media packages/media
 COPY apps/web apps/web
 RUN pnpm --filter web build
 
 # ── 3. Запуск ────────────────────────────────────────────────────────────
 FROM node:${NODE_VERSION}-slim AS runner
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0
+# glibc keeps a malloc arena per thread; sharp/libvips decode threads would hold freed image memory
+# in several arenas and the container would not give it back between uploads. Two arenas.
+ENV MALLOC_ARENA_MAX=2
+# Image buffers are large: mmap them (and give them back at once) instead of growing the heap, and
+# trim the heap top early, so memory freed after an upload is returned to the system.
+ENV MALLOC_MMAP_THRESHOLD_=1048576 MALLOC_TRIM_THRESHOLD_=4194304
 WORKDIR /app
 
 # standalone містить server.js і лише ті файли node_modules, які трасувались.

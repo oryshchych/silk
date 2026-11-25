@@ -6,6 +6,7 @@ import {
   listAdminSizes,
   listProductAttributeValueIds,
 } from '@store/core/admin-read';
+import { listAdminImages } from '@store/core/admin-images';
 import { can } from '@store/core/auth-permissions';
 import { toHryvniasText, money } from '@store/shared/money';
 import { getTranslations } from 'next-intl/server';
@@ -13,6 +14,7 @@ import { cookies } from 'next/headers';
 import { notFound } from 'next/navigation';
 import { z } from 'zod';
 
+import { ImagesPanel } from '@/components/admin/images-panel';
 import { ProductAttributes } from '@/components/admin/product-attributes';
 import { ProductContentForm } from '@/components/admin/product-content-form';
 import { ProductPricingForm } from '@/components/admin/product-pricing-form';
@@ -34,12 +36,13 @@ export default async function ProductEditorPage({ params }: { params: Promise<{ 
   // The DTO for THIS role: the cost key does not exist for a role that may not see it.
   const product = await getAdminProduct(db, parsedId.data, canSeeCost);
   if (product === null) notFound();
-  const [categories, sizes, colors, attributes, selectedValues] = await Promise.all([
+  const [categories, sizes, colors, attributes, selectedValues, images] = await Promise.all([
     listAdminCategories(db),
     listAdminSizes(db),
     listAdminColors(db),
     listAdminAttributes(db),
     listProductAttributeValueIds(db, parsedId.data),
+    listAdminImages(db, parsedId.data),
   ]);
   const locale = parseAdminLocale((await cookies()).get(LOCALE_COOKIE)?.value);
   const t = await getTranslations({ locale, namespace: 'admin.editor' });
@@ -95,6 +98,21 @@ export default async function ProductEditorPage({ params }: { params: Promise<{ 
           siteHost={siteHost}
         />
       ) : null}
+      <ImagesPanel
+        productId={product.id}
+        canEdit={can(session.role, 'media.upload')}
+        colors={colors}
+        images={images.map((image) => ({
+          id: image.id,
+          thumbUrl: image.thumbUrl,
+          altUk: image.altUk,
+          altEn: image.altEn,
+          colorId: image.colorId,
+          sortOrder: image.sortOrder,
+          width: image.width,
+          height: image.height,
+        }))}
+      />
       <ProductAttributes
         productId={product.id}
         canEdit={canEdit}

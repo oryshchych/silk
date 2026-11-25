@@ -25,6 +25,8 @@ vi.mock('@/lib/admin/catalog-action', () => ({
   },
 }));
 
+vi.mock('@/lib/media', () => ({ mediaConfig: () => Promise.resolve(null) }));
+
 const actions = await import('./admin-catalog');
 
 /** What `docs/SECURITY.md` says each catalog action requires. */
@@ -36,6 +38,8 @@ const EXPECTED: Record<string, keyof typeof PERMISSIONS> = {
   generateVariantsAction: 'catalog.edit',
   updateVariantContentAction: 'catalog.edit',
   updateVariantPricingAction: 'catalog.price',
+  updateProductImageAction: 'media.upload',
+  deleteProductImageAction: 'media.upload',
 };
 
 describe('catalog actions name the permission that docs/SECURITY.md lists', () => {

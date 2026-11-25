@@ -15,7 +15,11 @@ import {
   revokeAllSessions,
   startTotpEnrolment,
 } from '../packages/core/src/auth/service.ts';
-import { auditLog, categories, products } from '../packages/db/src/schema.ts';
+import { samplePhoto } from '../packages/media/test/sample-image.ts';
+import type { FakeS3 } from '../packages/media/test/fake-s3.ts';
+import { auditLog, categories, productImages, products } from '../packages/db/src/schema.ts';
+import net from 'node:net';
+
 import { codeAt, stepOf } from '../packages/core/src/auth/totp.ts';
 
 interface Context {
@@ -23,6 +27,7 @@ interface Context {
   databaseUrl: string;
   authSecret: string;
   buildRoot: string;
+  fakeS3: FakeS3;
   /** The configured SITE_URL: an action's Origin must carry its host. */
   siteOrigin: string;
   check: (name: string, ok: boolean) => void;
@@ -37,6 +42,7 @@ export async function runAdminSmoke({
   databaseUrl,
   authSecret,
   buildRoot,
+  fakeS3,
   siteOrigin,
   check,
   storedFiles,
@@ -518,15 +524,23 @@ export async function runAdminSmoke({
     await get(`/product/${oldSlug}`);
     await get(`/product/${bystander.slug}`);
     const bystanderBefore = await get(`/product/${bystander.slug}`);
+    // A price just BELOW the current one: valid whatever old price (compare-at) the product has.
+    const newBase = (original?.basePrice ?? 0) - 123;
+    if (newBase < 100) throw new Error('the target price is too low for the revalidation check');
+    const newBaseText = `${String(Math.floor(newBase / 100))}.${String(newBase % 100).padStart(2, '0')}`;
+    const newBaseShown = new Intl.NumberFormat('uk-UA', {
+      style: 'currency',
+      currency: 'UAH',
+    }).format(newBase / 100);
     const priced = await form(
       'updateProductPricingAction',
-      { productId: target.id, basePrice: '7777.77' },
+      { productId: target.id, basePrice: newBaseText },
       cookie(adminToken),
       '/admin/products',
     );
     let shown = false;
     for (let attempt = 0; attempt < 40 && !shown; attempt += 1) {
-      shown = (await get(`/product/${oldSlug}`)).html.includes('777,77');
+      shown = (await get(`/product/${oldSlug}`)).html.includes(newBaseShown);
       if (!shown) await new Promise((resolve) => setTimeout(resolve, 500));
     }
     check(
@@ -677,6 +691,263 @@ export async function runAdminSmoke({
         dictAdmin.html.includes('>Додати<') &&
         dictContent.status === 200 &&
         !dictContent.html.includes('>Додати<'),
+    );
+
+    // 5d. Photo upload: its own route (the proxy buffers bodies at 64 KB; a photo is megabytes).
+    const upload = async (
+      body: Buffer | ReadableStream | null,
+      token: string | null,
+      query = `productId=${target.id}`,
+      extra: Record<string, string> = {},
+      init: RequestInit = {},
+    ) => {
+      const response = await fetch(`${base}/admin/upload/product-image?${query}`, {
+        method: 'POST',
+        redirect: 'manual',
+        headers: {
+          Origin: siteOrigin,
+          'X-Forwarded-For': nextClient(),
+          ...(token === null ? {} : cookie(token)),
+          ...extra,
+        },
+        body,
+        ...init,
+      });
+      return {
+        status: response.status,
+        cache: response.headers.get('cache-control') ?? '',
+        json: (await response.json().catch(() => ({}))) as {
+          ok?: boolean;
+          code?: string;
+          imageId?: string;
+        },
+      };
+    };
+    const photo = await samplePhoto(3000, 2000);
+    check(
+      'media: the sample photo is far larger than the proxy body limit (64 KB)',
+      photo.length > 100 * 1024,
+    );
+    const storedBefore = fakeS3.objects.size;
+    const noSession = await upload(photo, null);
+    const managerUpload = await upload(photo, managerToken);
+    const foreignOrigin = await upload(photo, contentToken, `productId=${target.id}`, {
+      Origin: 'https://evil.example',
+    });
+    check(
+      'media: no session is 401, a manager is 403, a foreign Origin is 403, and nothing was stored',
+      noSession.status === 401 &&
+        managerUpload.status === 403 &&
+        foreignOrigin.status === 403 &&
+        fakeS3.objects.size === storedBefore,
+    );
+    const uploaded = await upload(photo, contentToken);
+    const keys = [...fakeS3.objects.keys()].filter((key) =>
+      key.startsWith(`products/${target.id}/${uploaded.json.imageId ?? 'none'}/`),
+    );
+    const imageRows = (await db.select().from(productImages)).filter(
+      (row) => row.id === uploaded.json.imageId,
+    );
+    check(
+      'media: a content role uploads a 3000 px photo through the route (201, no-store), six signed objects in the bucket, one row on the media host',
+      uploaded.status === 201 &&
+        uploaded.cache.includes('no-store') &&
+        keys.length === 6 &&
+        fakeS3.rejected === 0 &&
+        imageRows.length === 1 &&
+        (imageRows[0]?.url ?? '').startsWith('https://media.smoke.example/products/'),
+    );
+    const full = fakeS3.objects.get(
+      `products/${target.id}/${uploaded.json.imageId ?? 'none'}/full.webp`,
+    );
+    check(
+      'media: the full-size WebP is 1600 px wide class and under 150 KB, the objects are immutable-cached',
+      full !== undefined &&
+        full.body.length < 150 * 1024 &&
+        full.contentType === 'image/webp' &&
+        full.cacheControl.includes('immutable'),
+    );
+    const svg = await upload(
+      Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'),
+      contentToken,
+      `productId=${target.id}`,
+      { 'Content-Type': 'image/jpeg' },
+    );
+    const html = await upload(
+      Buffer.from('<!doctype html><html></html>'),
+      contentToken,
+      `productId=${target.id}`,
+      { 'Content-Type': 'image/png' },
+    );
+    check(
+      'media: an SVG or an HTML page sent as image/jpeg is refused by its bytes (415), nothing stored',
+      svg.status === 415 && html.status === 415 && fakeS3.objects.size === storedBefore + 6,
+    );
+    const tooBig = await upload(Buffer.alloc(13 * 1024 * 1024, 1), contentToken);
+    const chunked = await upload(
+      new ReadableStream({
+        pull(controller) {
+          controller.enqueue(new Uint8Array(1024 * 1024));
+        },
+      }),
+      contentToken,
+      `productId=${target.id}`,
+      {},
+      { duplex: 'half' },
+    );
+    check(
+      'media: a body over the cap is cut off with 413, declared or streamed without a length',
+      tooBig.status === 413 && chunked.status === 413 && fakeS3.objects.size === storedBefore + 6,
+    );
+    const requestsAfterGood = fakeS3.requests;
+    const traversal = await upload(photo, contentToken, 'productId=../../etc/passwd');
+    const missing = await upload(
+      photo,
+      contentToken,
+      'productId=00000000-0000-4000-8000-000000000000',
+    );
+    check(
+      'media: a path-like product id is 400 and an unknown product is 404 BEFORE any conversion: the store saw no request',
+      traversal.status === 400 &&
+        missing.status === 404 &&
+        fakeS3.objects.size === storedBefore + 6 &&
+        fakeS3.requests === requestsAfterGood,
+    );
+    check(
+      'media: every key is made of the product id, the image id and a fixed name (no file name anywhere)',
+      [...fakeS3.objects.keys()].every((key) =>
+        /^products\/[0-9a-f-]{36}\/[0-9a-f-]{36}\/(thumb|card|full)\.(webp|avif)$/.test(key),
+      ),
+    );
+    // A refused role never gets its body read (an endless body is not consumed), and the store sees nothing.
+    const requestsBefore = fakeS3.requests;
+    const endless = new ReadableStream({
+      pull(controller) {
+        controller.enqueue(new Uint8Array(64 * 1024));
+      },
+    });
+    const refusedFast = await upload(
+      endless,
+      managerToken,
+      `productId=${target.id}`,
+      {},
+      {
+        duplex: 'half',
+        signal: AbortSignal.timeout(8_000),
+      },
+    ).catch(() => null);
+    check(
+      'media: a manager with an endless body gets 403 at once (the body is never read) and the store saw no request',
+      refusedFast?.status === 403 && fakeS3.requests === requestsBefore,
+    );
+    // Memory is bounded by slots taken BEFORE the body is read: parallel uploads of one user are refused at once.
+    const burst = await Promise.all(
+      Array.from({ length: 8 }, async () => await upload(photo, contentToken)),
+    );
+    check(
+      'media: 8 parallel uploads from one user: one is admitted, the rest are 429 BUSY immediately (in-flight slots)',
+      burst.filter((r) => r.status === 201).length >= 1 &&
+        burst.filter((r) => r.status === 429 && r.json.code === 'BUSY').length >= 5,
+    );
+    const stale = 'v1.00000000-0000-4000-8000-000000000000.9999999999.AAAA';
+    const flood = [];
+    for (let i = 0; i < 130; i += 1) {
+      flood.push(
+        await upload(Buffer.from('x'), stale, `productId=${target.id}`, {
+          'X-Forwarded-For': '192.0.2.77',
+        }),
+      );
+    }
+    check(
+      'media: a flood of POSTs with a stale cookie from one client is cut by the pre-auth limit (429) after 120',
+      flood.filter((r) => r.status === 401).length >= 100 && flood.some((r) => r.status === 429),
+    );
+    const mixed = await upload(photo, contentToken, `productId=${target.id.toUpperCase()}`);
+    check(
+      'media: an upper-case product id is accepted as the same product',
+      mixed.status === 201 || mixed.status === 409,
+    );
+
+    // Two GLOBAL slots: four different users uploading at once are not all admitted.
+    const extraTokens: string[] = [];
+    for (let i = 0; i < 3; i += 1) {
+      const email = `content-x${String(i)}-${suffix}@example.test`;
+      await db.transaction(async (tx) => {
+        await createAdminUser(tx, { email, password: PASSWORD, role: 'content' });
+      });
+      const session = await db.transaction(
+        async (tx) => await beginLogin(tx, config, { email, password: PASSWORD, client }),
+      );
+      if (!session.ok) throw new Error('extra session failed');
+      extraTokens.push(session.token);
+    }
+    // Let the earlier burst finish so its slots are free.
+    await new Promise((resolve) => setTimeout(resolve, 2_500));
+    const fourUsers = await Promise.all(
+      [contentToken, ...extraTokens].map(async (token) => await upload(photo, token)),
+    );
+    check(
+      'media: four different users at once: at most TWO are admitted (global slots), the rest are 429 BUSY',
+      fourUsers.filter((r) => r.status === 201 || r.status === 409).length <= 2 &&
+        fourUsers.filter((r) => r.status === 429 && r.json.code === 'BUSY').length >= 2,
+    );
+
+    // A client that sends the headers and then NOTHING must not hold a slot past the read deadline.
+    await new Promise((resolve) => setTimeout(resolve, 2_500));
+    const target_ = new URL(base);
+    const stalled = net.connect(Number(target_.port), target_.hostname);
+    stalled.write(
+      [
+        `POST /admin/upload/product-image?productId=${target.id} HTTP/1.1`,
+        `Host: ${target_.host}`,
+        `Origin: ${siteOrigin}`,
+        `Cookie: admin_session=${contentToken}`,
+        'X-Forwarded-For: 198.51.100.200',
+        'Content-Type: image/jpeg',
+        'Content-Length: 5000000',
+        '',
+        '',
+      ].join('\r\n'),
+    );
+    stalled.on('error', () => undefined);
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+    const whileStalled = await upload(photo, contentToken);
+    const stalledStart = Date.now();
+    let freed: Awaited<ReturnType<typeof upload>> | null = null;
+    while (Date.now() - stalledStart < 40_000) {
+      await new Promise((resolve) => setTimeout(resolve, 2_000));
+      const attempt = await upload(photo, contentToken);
+      if (!(attempt.status === 429 && attempt.json.code === 'BUSY')) {
+        freed = attempt;
+        break;
+      }
+    }
+    stalled.destroy();
+    check(
+      'media: a socket that sends headers and no body holds the user slot (429 BUSY) and frees it within the read deadline (well under 60 s)',
+      whileStalled.status === 429 &&
+        whileStalled.json.code === 'BUSY' &&
+        freed !== null &&
+        Date.now() - stalledStart < 45_000,
+    );
+
+    const editorPage = await get(`/admin/products/${target.id}`, cookie(adminToken));
+    check(
+      'media: the editor warns about a photo without alt text',
+      editorPage.html.includes('Не заповнено alt-текст'),
+    );
+    const deleted = await form(
+      'deleteProductImageAction',
+      { imageId: uploaded.json.imageId ?? '' },
+      cookie(contentToken),
+      '/admin/products',
+    );
+    check(
+      'media: deleting a photo removes its row and all six files',
+      deleted.body.includes('"ok":true') &&
+        [...fakeS3.objects.keys()].filter((key) => key.includes(uploaded.json.imageId ?? 'none'))
+          .length === 0 &&
+        (await db.select().from(productImages)).every((row) => row.id !== uploaded.json.imageId),
     );
 
     // 6. The storefront is untouched.

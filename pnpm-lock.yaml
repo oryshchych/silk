@@ -166,6 +166,9 @@ importers:
       '@store/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@store/media':
+        specifier: workspace:*
+        version: link:../../packages/media
       '@store/payments':
         specifier: workspace:*
         version: link:../../packages/payments
@@ -305,6 +308,19 @@ importers:
       tsx:
         specifier: 4.23.13
         version: 4.23.13
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+
+  packages/media:
+    dependencies:
+      sharp:
+        specifier: 0.35.5
+        version: 0.35.5(@types/node@24.19.2)
+    devDependencies:
+      '@types/node':
+        specifier: ^24.13.3
+        version: 24.19.2
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -4497,8 +4513,7 @@ snapshots:
 
   '@humanwhocodes/retry@0.4.3': {}
 
-  '@img/colour@1.1.0':
-    optional: true
+  '@img/colour@1.1.0': {}
 
   '@img/sharp-darwin-arm64@0.35.5':
     optionalDependencies:
@@ -6733,7 +6748,6 @@ snapshots:
       '@img/sharp-win32-ia32': 0.35.5
       '@img/sharp-win32-x64': 0.35.5
       '@types/node': 24.19.2
-    optional: true
 
   shebang-command@2.0.0:
     dependencies:

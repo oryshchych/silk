@@ -60,9 +60,11 @@ confirmed TOTP before a session counts; so must anyone who enrolled one.
 | Create, edit and move a category (slug change leaves a 301) | `categories.edit` | `createCategoryAction`, `updateCategoryAction`, `moveCategoryAction` (`actions/admin-taxonomy.ts`) |
 | Colours, sizes, attributes and their values | `dictionaries.edit` | `saveColorAction`, `saveSizeAction`, `saveAttributeAction`, `saveAttributeValueAction` |
 | Assign attribute values to a product | `catalog.edit` | `setProductAttributesAction` |
+| Upload a product photo | `media.upload` | `POST /admin/upload/product-image` (`app/admin/upload/product-image/route.ts`): its own route, see "Uploads" below |
+| Edit a photo's alt text, colour, order; delete it | `media.upload` | `updateProductImageAction`, `deleteProductImageAction` |
 | Preview and commit a CSV import | `catalog.import` | `previewImportAction` (writes nothing), `commitImportAction` (`actions/admin-import.ts`): a column the role may not write (price without `catalog.price`, cost without `catalog.cost.view`) turns the row into an error; each written row has its own audit row |
 | Download the product CSV | `catalog.export` | `GET /admin/export/products` (`app/admin/export/products/route.ts`): the cost column only for `catalog.cost.view`, every export audited |
-| Stock, media | see the table above | their actions arrive with their screens in the next slices |
+| Stock | `stock.adjust` | its action arrives with the stock screen in the next slice |
 
 ## Authentication facts
 
@@ -120,6 +122,21 @@ of its category chain and the showcase, nothing else.
   wait; more are refused at once ("too many attempts"), so a login flood cannot starve the site.
   The cap over all clients counts credential attempts (POST), not page loads.
 
+## Uploads
+
+A photo is megabytes, and `proxy.ts` buffers the body of every request it handles (64 KB cap), so the
+upload route is excluded from the proxy's matcher and does everything itself, in this order, before it
+reads a byte of the body: Origin (CSRF), a full admin session from the database, the `media.upload`
+permission, a per-client and a per-user limit. Then: the declared length, then the size cap (12 MB)
+enforced WHILE the body streams (a missing or false length cannot get past it), the type from the
+BYTES (JPEG, PNG or WebP only: an SVG, an HTML page or a GIF sent as `image/jpeg` is refused, 415), the
+pixel cap (40 MP, checked from the header before decoding: a decompression bomb is refused, not
+decoded), no animation, EXIF orientation applied and all metadata (EXIF, GPS) stripped, never enlarged, the source decoded ONCE down to a 1600 px master from which every rendition is made (a JPEG is shrunk while it loads),
+at most 2 uploads in flight over everybody and 1 per user (a slot is taken BEFORE the body is read and held to the end, the rest get 429 at once: this is what bounds memory), the body streamed into ONE buffer allocated from its declared length under a read deadline (15 s without data, 60 s in total: 408, the slot is released), the product and the photo count checked before the conversion. Storage keys are `products/<product id>/<image id>/<size>.<format>`:
+ids and fixed words, never a file name (`assertSafeKey` refuses anything else). The row and its audit
+entry are written in one transaction after the files are stored; a failure removes the files again.
+The row, its order number and the 30-photo cap are decided under a per-product advisory lock. Files whose removal fails after a failed write stay in the bucket as ORPHANS (nothing references them; there is no sweeper and the storage client has no list call); every such case and every storage failure is logged at warn level with the object key prefix and a status only (owner queue Q47). Because the route bypasses the proxy it does not get the staging basic-auth gate: it answers 401
+without an admin session, and every response is `private, no-store`.
 ## Import and export
 
 CSV only (XLSX needs a library: owner queue). The parser is bounded (2 MB, 1000 rows, 30 columns,

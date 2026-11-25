@@ -42,8 +42,9 @@
     "./admin-read": "./src/catalog-admin/read.ts",
     "./admin-redirects": "./src/catalog-admin/redirects.ts",
     "./admin-outcome": "./src/catalog-admin/outcome.ts",
-    "./stock": "./src/stock/adjust-stock.ts",
+    "./admin-images": "./src/catalog-admin/images.ts",
     "./admin-errors": "./src/catalog-admin/errors.ts",
+    "./stock": "./src/stock/adjust-stock.ts",
     "./admin-import": "./src/catalog-admin/import.ts",
     "./admin-export": "./src/catalog-admin/export.ts",
     "./admin-csv": "./src/catalog-admin/csv.ts"

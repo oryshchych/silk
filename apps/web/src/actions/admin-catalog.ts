@@ -1,5 +1,6 @@
 'use server';
 
+import { deleteProductImage, updateProductImage } from '@store/core/admin-images';
 import {
   createProduct,
   setProductActive,
@@ -8,10 +9,12 @@ import {
 } from '@store/core/admin-products';
 import {
   createProductSchema,
+  deleteImageSchema,
   generateVariantsSchema,
   productContentSchema,
   productPricingSchema,
   setActiveSchema,
+  updateImageSchema,
   variantContentSchema,
   variantPricingSchema,
 } from '@store/core/admin-schemas';
@@ -25,6 +28,7 @@ import { can } from '@store/core/auth-permissions';
 import { ForbiddenError } from '@store/core/admin-errors';
 
 import { catalogAction } from '@/lib/admin/catalog-action';
+import { mediaConfig } from '@/lib/media';
 
 /**
  * Every catalog mutation names ONE permission (docs/SECURITY.md) and goes through `catalogAction`
@@ -103,4 +107,34 @@ export async function updateVariantPricingAction(input: unknown) {
     input,
     op: updateVariantPricing,
   });
+}
+
+export async function updateProductImageAction(input: unknown) {
+  return await catalogAction({
+    permission: 'media.upload',
+    schema: updateImageSchema,
+    input,
+    op: updateProductImage,
+  });
+}
+
+/** Deletes the row, then (after the commit) the files. A storage failure leaves orphan files, never a broken page. */
+export async function deleteProductImageAction(input: unknown) {
+  const result = await catalogAction({
+    permission: 'media.upload',
+    schema: deleteImageSchema,
+    input,
+    op: deleteProductImage,
+  });
+  if (result.ok) {
+    const media = await mediaConfig();
+    if (media !== null) {
+      await Promise.allSettled(
+        result.data.keys.map(async (key) => {
+          await media.storage.remove(key);
+        }),
+      );
+    }
+  }
+  return result.ok ? { ok: true as const } : result;
 }

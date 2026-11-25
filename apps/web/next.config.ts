@@ -27,7 +27,15 @@ const nextConfig: NextConfig = {
   // form), so the buffer is small. This is the FIRST defence; the webhook cap is the second.
   experimental: { globalNotFound: true, proxyClientMaxBodySize: '64kb' },
   // Пакети монорепо — TypeScript-джерела, їх компілює Next.
-  transpilePackages: ['@store/shared', '@store/db', '@store/core', '@store/payments'],
+  transpilePackages: [
+    '@store/shared',
+    '@store/db',
+    '@store/core',
+    '@store/payments',
+    '@store/media',
+  ],
+  // sharp is a native module: it stays outside the bundle.
+  serverExternalPackages: ['sharp'],
   headers: () =>
     Promise.resolve([
       {

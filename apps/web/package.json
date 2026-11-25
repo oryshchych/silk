@@ -13,6 +13,7 @@
   "dependencies": {
     "@store/core": "workspace:*",
     "@store/db": "workspace:*",
+    "@store/media": "workspace:*",
     "@store/payments": "workspace:*",
     "@store/shared": "workspace:*",
     "next": "16.4.6",

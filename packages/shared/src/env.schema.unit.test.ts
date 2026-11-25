@@ -25,6 +25,7 @@ const productionSecrets = {
   R2_ACCESS_KEY_ID: 'x',
   R2_SECRET_ACCESS_KEY: 'x',
   R2_BUCKET_MEDIA: 'media',
+  MEDIA_PUBLIC_BASE_URL: 'https://media.example.com',
 } as const;
 
 describe('parseEnv', () => {
@@ -109,6 +110,31 @@ describe('parseEnv', () => {
     expect(parseEnv({ ...production, AUTH_SECRET: 'y'.repeat(32) }).APP_ENV).toBe('production');
     // Elsewhere a short value boots; the admin then fails closed (crypto.unit.test.ts).
     expect(parseEnv({ ...base, AUTH_SECRET: 'short' }).APP_ENV).toBe('local');
+  });
+
+  it('R2_ENDPOINT must be https (loopback may be http) and MEDIA_PUBLIC_BASE_URL a plain https address', () => {
+    expect(() => parseEnv({ ...base, R2_ENDPOINT: 'http://r2.example.com' })).toThrow(
+      /R2_ENDPOINT/,
+    );
+    expect(parseEnv({ ...base, R2_ENDPOINT: 'http://127.0.0.1:9000' }).R2_ENDPOINT).toBe(
+      'http://127.0.0.1:9000',
+    );
+    expect(
+      parseEnv({ ...base, R2_ENDPOINT: 'https://acct.r2.cloudflarestorage.com' }).APP_ENV,
+    ).toBe('local');
+    for (const bad of [
+      'https://user:pw@media.example.com',
+      'https://media.example.com/?x=1',
+      'https://media.example.com/#f',
+      'http://media.example.com',
+    ]) {
+      expect(() => parseEnv({ ...base, MEDIA_PUBLIC_BASE_URL: bad }), bad).toThrow(
+        /MEDIA_PUBLIC_BASE_URL/,
+      );
+    }
+    expect(
+      parseEnv({ ...base, MEDIA_PUBLIC_BASE_URL: 'https://media.example.com/photos' }).APP_ENV,
+    ).toBe('local');
   });
 
   it('reads TRUSTED_PROXY_HOPS as a small non-negative integer', () => {

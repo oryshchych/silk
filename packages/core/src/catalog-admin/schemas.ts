@@ -206,3 +206,13 @@ export const setProductAttributesSchema = z.object({
   productId: id,
   attributeValueIds: z.array(id).max(100),
 });
+
+export const updateImageSchema = z.object({
+  imageId: id,
+  altUk: optionalText(300).optional(),
+  altEn: optionalText(300).optional(),
+  colorId: id.nullable().optional(),
+  sortOrder: z.number().int().min(0).max(1000).optional(),
+});
+
+export const deleteImageSchema = z.object({ imageId: id });
