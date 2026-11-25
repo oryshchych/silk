@@ -320,3 +320,7 @@ Left as notes:
 - **The seed placeholder photo (`/placeholder.svg`) is allowed in `Product` JSON-LD and `og:image`:** SVG is an image format Google supports, and the placeholder exists only in seed data, which refuses production. A real product without any photo has no `image`, hence no `Product` markup and no `og:image`.
 - **`og:image` follows the opening colour** like the JSON-LD images.
 - **The home showcases keep the last good list per kind and locale** when the database flaps (empty only before the first success).
+
+## Phase 4: flaky candidate (2026-11-25)
+
+- `packages/core/test/auth.int.test.ts` "unknown account costs about as much time as a wrong password" failed once under full-suite load and passes alone. A timing comparison is sensitive to a loaded machine; if it fails again in CI, widen the tolerance or repeat the samples instead of skipping it.

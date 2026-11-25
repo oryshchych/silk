@@ -5,56 +5,54 @@
 
 ## Current phase
 
-**Phase 3, "payments": 13 of 16 acceptance criteria verified by execution** (2026-11-23), three
-left UNCHECKED (and the Checkbox-sandbox half of the receipts criterion) because they need real
-sandboxes or clients. Evidence per criterion, with test
-names: `docs/plan/phase-03-payments.md`. Phase 4 starts in a NEW session. Standing rules
-(`AGENTS.md` section 0): technical text in English; one phase per session.
+**Phase 4, "admin: access control and catalog": 9 of 11 acceptance criteria verified by execution**
+(2026-11-25); two left unchecked (below) plus scope items not built. Evidence: smoke names in
+`scripts/smoke-admin.ts` and the tests named below. Phase 5 starts in a NEW session after the
+owner's go-ahead. Standing rules (`AGENTS.md` section 0): technical text in English; one phase per session.
 
 Infra: staging `https://staging.damazla.com` (basic auth), Hetzner CAX11, Dokploy. Next 16.4.6.
 
-## Done (phase 3, merged PRs)
+## Done (phase 4, merged PRs)
 
-- #58 providers: WayForPay (HMAC_MD5, signed accept) and Checkbox `FiscalProvider`, local fakes
-- #59 payment flow: start payment (new attempt on the same order), `reconcileOpenAttempts`, COD and
-  transfer confirmation, webhook routes `/api/webhooks/mono` and `/wayforpay`, card step, payments smoke
-- #60 fiscal and worker: receipts in the payment transaction (card, COD at handover, return that points
-  at the sale, transfer `not_required`), payment and refund emails (dark-mode shell), jobs
-  `payments.reconcile-open`, `quarantine.cleanup`, `fiscal.reconcile`; the expiry job is now scheduled
-- On `main` (814e591): `pnpm verify` 627 unit, `pnpm test:int` 400, `pnpm smoke:web` 139 checks,
-  knip, boundaries, `db:check` clean. One test (`fulfilment` "no deadlock over 12 rounds") hits its 30 s
-  limit on a loaded laptop and passes on a re-run; CI is green
+- #62 Q35 migration; #63 auth (own session layer, TOTP, roles, `adminAction`, SECURITY.md tables held to
+  code by tests); #64 stock history; #65 catalog write layer, editor, 301s, trusted tag invalidation
+- #66 categories, dictionaries, attributes; #67 CSV import and export; #68 media; #69 stock screen
+- On `main` (b5ce820): CI 15/15 on every PR; `pnpm test:int` 500 tests in 24 files; smoke-web covers the
+  admin, catalog, import, export, taxonomy and media checks
 
 ## Next step
 
-1. Phase 4 (admin catalog) in a NEW session. FIRST: the fiscal uniqueness migration (Q35: partial unique
-   indexes for one sale per order and one return per refund, `last_reconciled_at` on
-   `payment_attempts`) through `/new-migration` with `migration-reviewer`.
-2. Owner: Q31 worker entrypoint, Dockerfile, compose service and env var (nothing runs the jobs until then),
-   then the sandboxes: Q3 Checkbox, Q13 Mono token, Q32 WayForPay and the unconfirmed facts, Q33 dark-mode
-   emails, Q36, Q37. Open too: Q1, Q2, Q8, Q19, Q24, Q34.
+1. Owner: Q40 (set `AUTH_SECRET`, create the first owner with `scripts/admin-user.ts`, sign in on staging),
+   Q45 (real R2), then Q38, Q39, Q41 to Q47. Earlier open: Q1, Q2, Q3, Q8, Q13, Q19, Q24, Q31 to Q34, Q36, Q37.
+2. Phase 5 (admin orders) in a NEW session, after the go-ahead.
 
-## UNCHECKED criteria (reason, queue entry)
+## Acceptance criteria
 
-- Sandbox payment end to end on staging, both providers: no credentials (Q13, Q32)
-- Emails in dark mode in Gmail (iOS, web) and Outlook: needs the clients (Q33); contrast and colour
-  scheme tests pass
-- Receipts against the Checkbox sandbox (the second half of the receipts criterion; the first half, against
-  the fake, is checked): no account (Q3, Q32)
-- Return receipt carries the primary's fiscal number: the document points at the sale and waits for
-  it, but the adapter does not send the number and the real return shape is unconfirmed (Q32)
+- [x] `content` gets 403 on a price change, UI and direct POST: smoke "catalog: a content role POSTing a price"
+- [x] 100 rows with 3 broken: 97 imported, 3 errors with line numbers: `catalog-import.int.test.ts`, smoke "import"
+- [x] Slug change gives a 301, both locales, a draft is not revealed: smoke "catalog: renaming a product"
+- [x] Every mutation audited with author and diff: `MissingAuditError`; `stock-action.int.test.ts`
+- [x] Edit visible at once in the admin, on the storefront within a revalidation: smoke "a price change shows"
+- [x] Theme without flash (cookie sets `data-theme` on the first HTML): smoke
+- [x] Admin theme does not touch storefront HTML or cache: smoke "storefront: no admin theme attribute"
+- [x] One product change leaves other pages cached: smoke "changing one product leaves another"
+- [x] `SECURITY.md` matches the code: permission and mutation tables are tested against it
+- [ ] 3 colours x 12 sizes in under 10 minutes: 36 variants are made once (`catalog-admin.int.test.ts`); no timed run
+- [ ] 4000 px photo as WebP <= 150 KB on the PDP: a 3000 px photo through the real route gives a 1600 px WebP
+  under 150 KB against a signing fake store (smoke); no real R2, no 4000 px sample, the PDP ignores renditions (Q45)
+
+## Not built or not verified
+
+- Drag and drop category tree; XLSX (Q46); bulk actions in the product list; photos linked to a colour on
+  the PDP; live SEO snippet preview not checked; staging sign-in (Q40)
 
 ## Caveats
 
-- Worker not deployed (Q31): reconcile, expiry, receipts, emails and cleanup run only from tests
-- Fakes sign like the adapters: consistency, not correctness; a recorded real sample is still missing
-- Cards are off in `payment_providers` and no provider credentials exist on staging, so no card is offered
+- Local smoke shows storefront and checkout FAILs on a stale dev database; CI is authoritative
+- `auth.int.test.ts` timing test failed once under full-suite load, passes alone: flaky candidate (`NOTES.md`)
 
 ## Deviations from the plan
-- `payments.reconcile-open` every 10 minutes (plan: hourly), so the expiry job holds stock briefly
-- A live invoice is reused, never cancelled at the provider; "another card" works after a failed or
-  expired attempt (Q34). Reconcile closes a not-found attempt only if it never had an invoice (Q36)
-- Receipts: a duplicate charge refund gives a full-sale return receipt (Q37); gift cards get none (ADR-20)
-- Added env vars `MONO_API_BASE_URL`, `WAYFORPAY_API_BASE_URL`, `WAYFORPAY_MERCHANT_DOMAIN`,
-  `PAYMENT_PAGE_HOSTS`; `proxyClientMaxBodySize` 64 KB, web `mem_limit` 1g
-- Earlier phase deviations stand (see their phase files)
+- Own session layer instead of Auth.js (Q38); mobile refresh rotation deferred (Q39); no revalidate endpoint
+- Stocktake below reserved is refused (Q44); upload route outside the proxy matcher with in-flight slots, a
+  read deadline and malloc tuning; hand-signed S3 client
+- Owner queue entries added: Q38 to Q47
