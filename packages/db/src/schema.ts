@@ -353,6 +353,34 @@ export const productVariants = pgTable('product_variants', {
   check('variants_price_positive', sql`${t.priceOverride} IS NULL OR ${t.priceOverride} > 0`),
 ]);
 
+/**
+ * History of manual stock changes (phase 4, admin "stock"). One row per change made through
+ * `adjustStock`: the quantity before and after, who did it and why. Orders do not write here:
+ * their effect on stock is in `stock_reservations` and `order_status_history` (ADR-18).
+ * The row is written in the same transaction as the change; `quantity_after = quantity_before +
+ * delta` is a CHECK so a row that does not add up cannot exist.
+ */
+export const stockAdjustments = pgTable('stock_adjustments', {
+  id: hotId(),   // uuidv7: insert-heavy, read by variant and time
+  variantId: uuid('variant_id').notNull().references(() => productVariants.id, { onDelete: 'restrict' }),
+  /** The admin who made the change (auth_users.id); kept when the user is deleted */
+  userId: uuid('user_id').references(() => authUsers.id, { onDelete: 'set null' }),
+  /** receipt | writeoff | stocktake | correction | import */
+  reason: varchar('reason', { length: 20 }).notNull(),
+  delta: integer('delta').notNull(),
+  quantityBefore: integer('quantity_before').notNull(),
+  quantityAfter: integer('quantity_after').notNull(),
+  note: varchar('note', { length: 500 }),
+  createdAt: createdAt(),
+}, (t) => [
+  index('stock_adjustments_variant_idx').on(t.variantId, t.createdAt),
+  index('stock_adjustments_created_idx').on(t.createdAt),
+  check('stock_adjustments_reason', sql`${t.reason} IN ('receipt', 'writeoff', 'stocktake', 'correction', 'import')`),
+  check('stock_adjustments_adds_up', sql`${t.quantityAfter} = ${t.quantityBefore} + ${t.delta}`),
+  check('stock_adjustments_nonneg', sql`${t.quantityBefore} >= 0 AND ${t.quantityAfter} >= 0`),
+  check('stock_adjustments_delta_nonzero', sql`${t.delta} <> 0`),
+]);
+
 /* ─── гнучкі атрибути (тип чашки, push-up, тканина, рівень підтримки) ─── */
 
 export const attributes = pgTable('attributes', {

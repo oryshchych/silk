@@ -71,6 +71,13 @@
       "when": 1795591900080,
       "tag": "0009_fiscal_uniqueness_reconcile_rotation",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1795595821391,
+      "tag": "0010_stock_adjustments",
+      "breakpoints": true
     }
   ]
 }
