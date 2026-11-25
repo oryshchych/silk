@@ -20,7 +20,9 @@ export async function adjustVariantStock(
     .where(eq(productVariants.id, input.variantId));
   return {
     data: { before: result.before, after: result.after, replayed: result.replayed },
-    audit: result.audit,
+    // A replay or a no-op changed nothing: an EMPTY diff makes the action skip the audit row, so the
+    // audit log never records a change that did not happen (or one that happened once, twice).
+    audit: result.changed ? result.audit : { ...result.audit, diff: {} },
     // A replay or a no-op changed nothing: nothing to refresh.
     tags:
       owner === undefined || !result.changed
