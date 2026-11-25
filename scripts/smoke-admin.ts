@@ -17,7 +17,13 @@ import {
 } from '../packages/core/src/auth/service.ts';
 import { samplePhoto } from '../packages/media/test/sample-image.ts';
 import type { FakeS3 } from '../packages/media/test/fake-s3.ts';
-import { auditLog, categories, productImages, products } from '../packages/db/src/schema.ts';
+import {
+  auditLog,
+  categories,
+  productImages,
+  productVariants,
+  products,
+} from '../packages/db/src/schema.ts';
 import net from 'node:net';
 
 import { codeAt, stepOf } from '../packages/core/src/auth/totp.ts';
@@ -948,6 +954,66 @@ export async function runAdminSmoke({
         [...fakeS3.objects.keys()].filter((key) => key.includes(uploaded.json.imageId ?? 'none'))
           .length === 0 &&
         (await db.select().from(productImages)).every((row) => row.id !== uploaded.json.imageId),
+    );
+
+    // 5e. Stock: manager and admin may adjust, content may not; below-reserved is refused; a repeat is harmless.
+    const variantRow = (await db.select().from(productVariants)).find(
+      (row) => row.productId === target.id,
+    );
+    if (variantRow === undefined) throw new Error('the target product has no variant');
+    const stockBefore = variantRow.stockQuantity;
+    const rid = (n: number) => `5e9d0c1a-7b2f-4c3d-8a4e-0000000000${String(10 + n)}`;
+    const contentStock = await form(
+      'adjustStockAction',
+      { variantId: variantRow.id, mode: 'delta', amount: 1, reason: 'receipt', requestId: rid(1) },
+      cookie(contentToken),
+      '/admin/stock',
+    );
+    const managerStock = await form(
+      'adjustStockAction',
+      { variantId: variantRow.id, mode: 'delta', amount: 4, reason: 'receipt', requestId: rid(2) },
+      cookie(managerToken),
+      '/admin/stock',
+    );
+    const managerAgain = await form(
+      'adjustStockAction',
+      { variantId: variantRow.id, mode: 'delta', amount: 4, reason: 'receipt', requestId: rid(2) },
+      cookie(managerToken),
+      '/admin/stock',
+    );
+    const afterStock = (await db.select().from(productVariants)).find(
+      (row) => row.id === variantRow.id,
+    );
+    check(
+      'stock: content is FORBIDDEN, a manager adds 4, the same request id again adds nothing',
+      contentStock.body.includes('FORBIDDEN') &&
+        managerStock.body.includes('"ok":true') &&
+        managerAgain.body.includes('"replayed":true') &&
+        afterStock?.stockQuantity === stockBefore + 4,
+    );
+    const below = await form(
+      'adjustStockAction',
+      { variantId: variantRow.id, mode: 'set', amount: 0, reason: 'stocktake', requestId: rid(3) },
+      cookie(adminToken),
+      '/admin/stock',
+    );
+    const reservedNow = afterStock?.reservedQuantity ?? 0;
+    check(
+      'stock: a stocktake below the reserved quantity is refused (only when something is reserved), stock untouched',
+      reservedNow === 0 ||
+        (below.body.includes('STOCK_BELOW_RESERVED') &&
+          (await db.select().from(productVariants)).find((row) => row.id === variantRow.id)
+            ?.stockQuantity ===
+            stockBefore + 4),
+    );
+    const stockPage = await get('/admin/stock', cookie(managerToken));
+    const historyPage = await get(`/admin/stock/${variantRow.id}`, cookie(managerToken));
+    check(
+      'stock: the screens render for a manager (list with the adjust form, history with the change)',
+      stockPage.status === 200 &&
+        stockPage.html.includes('Склад') &&
+        historyPage.status === 200 &&
+        historyPage.html.includes('+4'),
     );
 
     // 6. The storefront is untouched.

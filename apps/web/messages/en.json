@@ -336,7 +336,8 @@
       "products": "Products",
       "categories": "Categories",
       "dictionaries": "Dictionaries",
-      "importExport": "Import and export"
+      "importExport": "Import and export",
+      "stock": "Stock"
     },
     "dashboard": {
       "title": "Overview",
@@ -389,7 +390,17 @@
       "ADMIN_INVALID_PRICE": "The old price must be higher than the price.",
       "ADMIN_NOT_PUBLISHABLE": "To publish, the product needs an active variant and an active category.",
       "ADMIN_TOO_MANY_VARIANTS": "At most 200 variants can be created at once.",
-      "ADMIN_DUPLICATE": "This entry already exists."
+      "ADMIN_DUPLICATE": "This entry already exists.",
+      "STOCK_BELOW_ZERO": "The stock cannot be negative.",
+      "STOCK_BELOW_RESERVED": "The stock cannot be lower than what is reserved for orders. Cancel or release the orders first.",
+      "STOCK_ABOVE_MAX": "The stock exceeds the maximum.",
+      "STOCK_REQUEST_REUSED": "This request was already used for another variant.",
+      "STOCK_VARIANT_NOT_FOUND": "Variant not found.",
+      "STOCK_INVALID_CHANGE": "Enter a whole number, not zero for a change.",
+      "ADMIN_BARCODE_TAKEN": "This barcode is already used.",
+      "ADMIN_TOO_MANY_IMAGES": "The product already has the maximum number of photos.",
+      "ADMIN_CATEGORY_CYCLE": "A category cannot be moved into itself or its descendant.",
+      "ADMIN_CATEGORY_TOO_DEEP": "The category tree is at most 4 levels deep."
     },
     "editor": {
       "newTitle": "New product",
@@ -576,6 +587,45 @@
         "UNAUTHENTICATED": "Your session ended. Sign in again.",
         "STORAGE_FAILED": "Could not save to storage."
       }
+    },
+    "stock": {
+      "title": "Stock",
+      "search": "Search (SKU, name)",
+      "lowOnly": "Low stock",
+      "filter": "Show",
+      "total": "Variants: {count}",
+      "empty": "Nothing found.",
+      "product": "Product",
+      "variant": "Variant",
+      "stock": "Stock",
+      "reserved": "Reserved",
+      "available": "Available",
+      "adjust": "Adjust",
+      "history": "History",
+      "historyTitle": "Stock change history",
+      "noHistory": "No changes yet.",
+      "back": "Back to stock",
+      "pages": "Pages",
+      "previous": "Previous",
+      "next": "Next",
+      "pageOf": "Page {page} of {total}",
+      "mode": "Action",
+      "modeDelta": "Change by",
+      "modeSet": "Set to",
+      "amount": "Quantity",
+      "reason": "Reason",
+      "reasonReceipt": "Receipt",
+      "reasonWriteoff": "Write-off",
+      "reasonStocktake": "Stocktake",
+      "reasonCorrection": "Correction",
+      "note": "Note",
+      "apply": "Apply",
+      "saved": "Saved.",
+      "when": "When",
+      "change": "Change",
+      "before": "Before",
+      "after": "After",
+      "by": "By"
     }
   }
 }

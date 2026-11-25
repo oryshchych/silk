@@ -38,6 +38,8 @@ import {
   TooManyImagesError,
   updateProductImage,
 } from '../src/catalog-admin/images.ts';
+import { adjustVariantStock } from '../src/catalog-admin/stock.ts';
+import { listStock, listStockHistory } from '../src/catalog-admin/stock-read.ts';
 import { createCategory, moveCategory, updateCategory } from '../src/catalog-admin/categories.ts';
 import { saveColor, saveSize } from '../src/catalog-admin/dictionaries.ts';
 import {
@@ -778,5 +780,91 @@ describe('review round 1: slugs, the category tree, barcodes', () => {
   it('a NUL byte in the list search is dropped, not sent to Postgres', async () => {
     const result = await listAdminProducts(handle.db, { q: 'SKU\u0000-1' }, false);
     expect(result.total).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe('stock screen reads and the admin stock mutation', () => {
+  it('lists variants lowest available first, filters low stock, and a stock change tags only its product', async () => {
+    const { data } = await newProduct();
+    const sizeIds: string[] = [];
+    const colorIds: string[] = [];
+    await handle.db.transaction(async (tx) => {
+      sizeIds.push(
+        (
+          await saveSize(tx, {
+            system: 'apparel',
+            label: `ST${String(counter)}`,
+            band: null,
+            cup: null,
+            euLabel: null,
+            usLabel: null,
+            sortOrder: 0,
+          })
+        ).data.sizeId,
+      );
+      colorIds.push(
+        (
+          await saveColor(tx, {
+            slug: `st-${String(counter)}`,
+            nameUk: 'c',
+            nameEn: 'c',
+            hex: '#030303',
+            sortOrder: 0,
+          })
+        ).data.colorId,
+      );
+    });
+    await run(
+      async (tx) => await generateVariants(tx, { productId: data.productId, sizeIds, colorIds }),
+    );
+    const product = await getAdminProduct(handle.db, data.productId, false);
+    const variantId = product?.variants[0]?.id ?? '';
+    const outcome = await run<Awaited<ReturnType<typeof adjustVariantStock>>>(
+      async (tx) =>
+        await adjustVariantStock(tx, {
+          variantId,
+          change: { kind: 'delta', delta: 9 },
+          reason: 'receipt',
+          userId: null,
+          requestId: randomUUID(),
+        }),
+    );
+    expect(outcome.data).toMatchObject({ before: 0, after: 9, replayed: false });
+    expect(new Set(outcome.tags)).toEqual(
+      new Set([
+        productTag(data.productId),
+        listingTag(rootCategory),
+        categoryTag(rootCategory),
+        SHOWCASE_TAG,
+      ]),
+    );
+    const all = await listStock(handle.db, { q: `ST${String(counter)}` });
+    expect(all.items.map((i) => [i.variantId, i.stock, i.available])).toEqual([[variantId, 9, 9]]);
+    expect(
+      (await listStock(handle.db, { q: `ST${String(counter)}`, lowOnly: true })).items,
+    ).toHaveLength(0);
+    const history = await listStockHistory(handle.db, variantId);
+    expect(history).toHaveLength(1);
+    expect(history[0]).toMatchObject({ delta: 9, before: 0, after: 9, reason: 'receipt' });
+    // The same request id again: nothing changes and nothing is tagged.
+    const again = await run<Awaited<ReturnType<typeof adjustVariantStock>>>(
+      async (tx) =>
+        await adjustVariantStock(tx, {
+          variantId,
+          change: { kind: 'delta', delta: 9 },
+          reason: 'receipt',
+          userId: null,
+          requestId:
+            history[0] === undefined
+              ? randomUUID()
+              : ((
+                  await handle.db.execute<{ r: string }>(
+                    sql`SELECT request_id AS r FROM stock_adjustments WHERE variant_id = ${variantId}::uuid LIMIT 1`,
+                  )
+                ).rows[0]?.r ?? randomUUID()),
+        }),
+    );
+    expect(again.data.replayed).toBe(true);
+    expect(again.tags).toEqual([]);
   });
 });

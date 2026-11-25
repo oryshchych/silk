@@ -216,3 +216,19 @@ export const updateImageSchema = z.object({
 });
 
 export const deleteImageSchema = z.object({ imageId: id });
+
+export const adjustStockSchema = z
+  .object({
+    variantId: id,
+    mode: z.enum(['delta', 'set']),
+    /** A whole number: a signed change for `delta`, the counted quantity for `set`. */
+    amount: z.number().int().min(-1_000_000).max(1_000_000),
+    reason: z.enum(['receipt', 'writeoff', 'stocktake', 'correction']),
+    note: optionalText(500).optional(),
+    /** One per submitted form: a retry or a double click changes the stock once. */
+    requestId: id,
+  })
+  .refine(
+    (value) => value.mode === 'delta' || value.amount >= 0,
+    'a counted quantity is not negative',
+  );

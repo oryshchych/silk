@@ -47,7 +47,9 @@
     "./stock": "./src/stock/adjust-stock.ts",
     "./admin-import": "./src/catalog-admin/import.ts",
     "./admin-export": "./src/catalog-admin/export.ts",
-    "./admin-csv": "./src/catalog-admin/csv.ts"
+    "./admin-csv": "./src/catalog-admin/csv.ts",
+    "./admin-stock-read": "./src/catalog-admin/stock-read.ts",
+    "./admin-stock": "./src/catalog-admin/stock.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"
