@@ -122,6 +122,6 @@ sizes:
 History of MANUAL stock changes made through `adjustStock` (`packages/core/src/stock`): receipt,
 write-off, stocktake, correction, import. One row per change in the same transaction as the atomic
 `UPDATE` of `product_variants.stock_quantity`: variant, author, reason, delta, quantity before and
-after (`after = before + delta` is a CHECK). Orders do not write here (ADR-18: reservations and
+after (`after = before + delta` is a CHECK), plus an optional unique `request_id` (a retried request changes nothing). The table is append-only: the app role has no UPDATE, DELETE or TRUNCATE, and a trigger stops every role. A change that would leave less than the reserved quantity is refused (Q44). Orders do not write here (ADR-18: reservations and
 shipping have their own records). The variant cannot be deleted while it has history (RESTRICT):
 products are deactivated, not deleted.

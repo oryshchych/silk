@@ -78,6 +78,13 @@
       "when": 1795595821391,
       "tag": "0010_stock_adjustments",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1795598426097,
+      "tag": "0011_stock_history_hardening",
+      "breakpoints": true
     }
   ]
 }

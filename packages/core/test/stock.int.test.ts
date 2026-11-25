@@ -1,18 +1,21 @@
 /**
  * Manual stock changes on real Postgres: the number and its history always agree, the guard
  * against a negative result holds under parallel callers on separate connections, and a stocktake
- * below the reserved quantity is reported, not refused.
+ * below the reserved quantity is REFUSED (queue Q44), a retried request id changes nothing once.
  */
 import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import type { DbHandle } from '@store/db/client';
-import { productVariants, stockAdjustments } from '@store/db/schema';
+import { auditLog, productVariants, stockAdjustments } from '@store/db/schema';
 
 import {
   adjustStock,
   InvalidStockChangeError,
+  StockAboveMaxError,
+  StockBelowReservedError,
   StockBelowZeroError,
+  StockRequestReusedError,
   StockVariantNotFoundError,
 } from '../src/stock/adjust-stock.ts';
 import { Barrier } from './barrier.ts';
@@ -91,19 +94,193 @@ describe('adjustStock', () => {
     expect((await historyOf(variantId)).length).toBe(before);
   });
 
-  it('a stocktake sets the counted quantity; below the reserved quantity it is reported, not refused', async () => {
+  it('a write-off that would leave less than is reserved is refused: nothing changes, no history', async () => {
+    await setStock(variantId, 10, 8);
+    const before = (await historyOf(variantId)).length;
+    await expect(
+      admin.db.transaction(
+        async (tx) =>
+          await adjustStock(tx, {
+            variantId,
+            change: { kind: 'delta', delta: -5 },
+            reason: 'writeoff',
+            userId: null,
+          }),
+      ),
+    ).rejects.toBeInstanceOf(StockBelowReservedError);
+    expect(await stockOf(variantId)).toMatchObject({ stockQuantity: 10, reservedQuantity: 8 });
+    expect((await historyOf(variantId)).length).toBe(before);
+    // Down to exactly the reserved quantity is fine.
+    await admin.db.transaction(async (tx) => {
+      await adjustStock(tx, {
+        variantId,
+        change: { kind: 'delta', delta: -2 },
+        reason: 'writeoff',
+        userId: null,
+      });
+    });
+    expect((await stockOf(variantId))?.stockQuantity).toBe(8);
+  });
+
+  it('a stocktake below the reserved quantity is refused too; at the reserved quantity it is accepted', async () => {
     await setStock(variantId, 8, 5);
-    const result = await admin.db.transaction(
+    await expect(
+      admin.db.transaction(
+        async (tx) =>
+          await adjustStock(tx, {
+            variantId,
+            change: { kind: 'set', quantity: 3 },
+            reason: 'stocktake',
+            userId: null,
+          }),
+      ),
+    ).rejects.toBeInstanceOf(StockBelowReservedError);
+    expect((await stockOf(variantId))?.stockQuantity).toBe(8);
+    const ok = await admin.db.transaction(
       async (tx) =>
         await adjustStock(tx, {
           variantId,
-          change: { kind: 'set', quantity: 3 },
+          change: { kind: 'set', quantity: 5 },
           reason: 'stocktake',
           userId: null,
         }),
     );
-    expect(result).toMatchObject({ before: 8, after: 3, reserved: 5, belowReserved: true });
-    expect((await stockOf(variantId))?.stockQuantity).toBe(3);
+    expect(ok).toMatchObject({ before: 8, after: 5, reserved: 5 });
+  });
+
+  it('an increase releases nothing and leaves the reserved quantity as it is', async () => {
+    await setStock(variantId, 4, 4);
+    await admin.db.transaction(async (tx) => {
+      await adjustStock(tx, {
+        variantId,
+        change: { kind: 'delta', delta: 6 },
+        reason: 'receipt',
+        userId: null,
+      });
+    });
+    expect(await stockOf(variantId)).toMatchObject({ stockQuantity: 10, reservedQuantity: 4 });
+  });
+
+  it('the stock cannot be pushed past the maximum by repeated receipts', async () => {
+    await setStock(variantId, 999_999);
+    await expect(
+      admin.db.transaction(
+        async (tx) =>
+          await adjustStock(tx, {
+            variantId,
+            change: { kind: 'delta', delta: 5 },
+            reason: 'receipt',
+            userId: null,
+          }),
+      ),
+    ).rejects.toBeInstanceOf(StockAboveMaxError);
+    expect((await stockOf(variantId))?.stockQuantity).toBe(999_999);
+  });
+
+  it('the same request id twice changes the stock once and returns the first result', async () => {
+    await setStock(variantId, 10);
+    const requestId = '3f2a9c10-7d3e-4a55-9b1e-0c2d4e6f8a01';
+    const call = async () =>
+      await admin.db.transaction(
+        async (tx) =>
+          await adjustStock(tx, {
+            variantId,
+            change: { kind: 'delta', delta: 5 },
+            reason: 'receipt',
+            userId: null,
+            requestId,
+          }),
+      );
+    const first = await call();
+    const second = await call();
+    expect(first).toMatchObject({ before: 10, after: 15, replayed: false, changed: true });
+    expect(second).toMatchObject({ before: 10, after: 15, replayed: true, changed: false });
+    expect((await stockOf(variantId))?.stockQuantity).toBe(15);
+    expect((await historyOf(variantId)).filter((h) => h.requestId === requestId)).toHaveLength(1);
+  });
+
+  it('two parallel submissions of one request id on separate connections apply once', async () => {
+    await setStock(variantId, 0);
+    const requestId = '9d1b7e22-4c6f-4b8a-8e0d-5a7c3b1f2e02';
+    const barrier = new Barrier(2);
+    const results = await Promise.all(
+      [0, 1].map(async () => {
+        const other = world.connect(1);
+        await barrier.wait();
+        return await other.db.transaction(
+          async (tx) =>
+            await adjustStock(tx, {
+              variantId,
+              change: { kind: 'delta', delta: 7 },
+              reason: 'receipt',
+              userId: null,
+              requestId,
+            }),
+        );
+      }),
+    );
+    expect(results.filter((r) => r.replayed)).toHaveLength(1);
+    expect((await stockOf(variantId))?.stockQuantity).toBe(7);
+  });
+
+  it('one request id on ANOTHER variant is an error, not a silent replay', async () => {
+    const other = world.fixture.variantIds[1];
+    await setStock(variantId, 5);
+    await setStock(other, 5);
+    const requestId = 'c4e8a1b3-2f6d-4d90-a7b5-1e3f5a7c9b03';
+    await admin.db.transaction(async (tx) => {
+      await adjustStock(tx, {
+        variantId,
+        change: { kind: 'delta', delta: 1 },
+        reason: 'receipt',
+        userId: null,
+        requestId,
+      });
+    });
+    await expect(
+      admin.db.transaction(
+        async (tx) =>
+          await adjustStock(tx, {
+            variantId: other,
+            change: { kind: 'delta', delta: 1 },
+            reason: 'receipt',
+            userId: null,
+            requestId,
+          }),
+      ),
+    ).rejects.toBeInstanceOf(StockRequestReusedError);
+  });
+
+  it('the result carries the audit draft, and the change, the history and the audit row roll back together', async () => {
+    await setStock(variantId, 10);
+    const historyBefore = (await historyOf(variantId)).length;
+    const auditBefore = await admin.db.execute<{ n: number }>(
+      sql`SELECT count(*)::int AS n FROM audit_log`,
+    );
+    await expect(
+      admin.db.transaction(async (tx) => {
+        const result = await adjustStock(tx, {
+          variantId,
+          change: { kind: 'delta', delta: 3 },
+          reason: 'receipt',
+          userId: null,
+        });
+        expect(result.audit).toEqual({
+          action: 'update',
+          entity: 'product_variant',
+          entityId: variantId,
+          diff: { stock: { from: 10, to: 13 }, reason: 'receipt' },
+        });
+        await tx.insert(auditLog).values({ userId: null, ...result.audit });
+        throw new Error('abort after everything was written');
+      }),
+    ).rejects.toThrow('abort');
+    expect((await stockOf(variantId))?.stockQuantity).toBe(10);
+    expect((await historyOf(variantId)).length).toBe(historyBefore);
+    const auditAfter = await admin.db.execute<{ n: number }>(
+      sql`SELECT count(*)::int AS n FROM audit_log`,
+    );
+    expect(auditAfter.rows[0]?.n).toBe(auditBefore.rows[0]?.n);
   });
 
   it('a stocktake to the current quantity changes nothing and writes no history', async () => {

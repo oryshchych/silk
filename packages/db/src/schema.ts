@@ -363,8 +363,10 @@ export const productVariants = pgTable('product_variants', {
 export const stockAdjustments = pgTable('stock_adjustments', {
   id: hotId(),   // uuidv7: insert-heavy, read by variant and time
   variantId: uuid('variant_id').notNull().references(() => productVariants.id, { onDelete: 'restrict' }),
-  /** The admin who made the change (auth_users.id); kept when the user is deleted */
-  userId: uuid('user_id').references(() => authUsers.id, { onDelete: 'set null' }),
+  /** The admin who made the change (auth_users.id). RESTRICT: users are deactivated, never deleted, so history never loses its author */
+  userId: uuid('user_id').references(() => authUsers.id, { onDelete: 'restrict' }),
+  /** Idempotency key of the admin request: a repeat of the same request changes nothing (NULL = none given) */
+  requestId: uuid('request_id'),
   /** receipt | writeoff | stocktake | correction | import */
   reason: varchar('reason', { length: 20 }).notNull(),
   delta: integer('delta').notNull(),
@@ -375,6 +377,7 @@ export const stockAdjustments = pgTable('stock_adjustments', {
 }, (t) => [
   index('stock_adjustments_variant_idx').on(t.variantId, t.createdAt),
   index('stock_adjustments_created_idx').on(t.createdAt),
+  uniqueIndex('stock_adjustments_request_uq').on(t.requestId),
   check('stock_adjustments_reason', sql`${t.reason} IN ('receipt', 'writeoff', 'stocktake', 'correction', 'import')`),
   check('stock_adjustments_adds_up', sql`${t.quantityAfter} = ${t.quantityBefore} + ${t.delta}`),
   check('stock_adjustments_nonneg', sql`${t.quantityBefore} >= 0 AND ${t.quantityAfter} >= 0`),

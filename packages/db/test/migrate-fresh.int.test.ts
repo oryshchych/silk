@@ -772,7 +772,7 @@ describe('0009_fiscal_uniqueness_reconcile_rotation', () => {
   });
 });
 
-describe('0010_stock_adjustments', () => {
+describe('0010 and 0011: stock_adjustments', () => {
   async function variant(): Promise<string> {
     const stamp = String(Date.now()) + String(Math.random()).slice(2, 6);
     const { id: category } = await one<{ id: string }>(
@@ -818,13 +818,81 @@ describe('0010_stock_adjustments', () => {
       [variantId, reason, delta, before, after],
     );
 
-  it('accepts a row that adds up and rejects one that does not, goes negative, is zero or has an unknown reason', async () => {
+  const rejectedBy = async (constraint: string, run: Promise<unknown>): Promise<void> => {
+    await expect(run).rejects.toMatchObject({ code: '23514', constraint });
+  };
+
+  it('accepts a row that adds up', async () => {
     const id = await variant();
     await insert(id, 3, 5, 8);
-    await expect(insert(id, 3, 5, 9)).rejects.toMatchObject({ code: '23514' });
-    await expect(insert(id, -6, 5, -1)).rejects.toMatchObject({ code: '23514' });
-    await expect(insert(id, 0, 5, 5)).rejects.toMatchObject({ code: '23514' });
-    await expect(insert(id, 1, 5, 6, 'gift')).rejects.toMatchObject({ code: '23514' });
+  });
+  it('stock_adjustments_adds_up rejects a row whose after is not before plus delta', async () => {
+    await rejectedBy('stock_adjustments_adds_up', insert(await variant(), 3, 5, 9));
+  });
+  it('stock_adjustments_nonneg rejects a negative quantity', async () => {
+    await rejectedBy('stock_adjustments_nonneg', insert(await variant(), -6, 5, -1));
+  });
+  it('stock_adjustments_delta_nonzero rejects a zero delta', async () => {
+    await rejectedBy('stock_adjustments_delta_nonzero', insert(await variant(), 0, 5, 5));
+  });
+  it('stock_adjustments_reason rejects an unknown reason', async () => {
+    await rejectedBy('stock_adjustments_reason', insert(await variant(), 1, 5, 6, 'gift'));
+  });
+
+  it('request_id is unique, several rows without one are fine', async () => {
+    const id = await variant();
+    const key = async () =>
+      await app.query(
+        `INSERT INTO stock_adjustments (variant_id, reason, delta, quantity_before, quantity_after, request_id)
+         VALUES ($1, 'receipt', 1, 5, 6, '5b6c7d8e-9f01-4a23-8b45-6c7d8e9f0a11')`,
+        [id],
+      );
+    await key();
+    await expect(key()).rejects.toMatchObject({
+      code: '23505',
+      constraint: 'stock_adjustments_request_uq',
+    });
+    await insert(id, 1, 5, 6);
+    await insert(id, 1, 5, 6);
+  });
+
+  it('is append-only: the app role is denied UPDATE, DELETE and TRUNCATE (42501), and a trigger stops every role', async () => {
+    const id = await variant();
+    await insert(id, 1, 5, 6);
+    await expect(
+      app.query(`UPDATE stock_adjustments SET note = 'x' WHERE variant_id = $1`, [id]),
+    ).rejects.toMatchObject({ code: '42501' });
+    await expect(
+      app.query(`DELETE FROM stock_adjustments WHERE variant_id = $1`, [id]),
+    ).rejects.toMatchObject({ code: '42501' });
+    await expect(app.query(`TRUNCATE stock_adjustments`)).rejects.toMatchObject({ code: '42501' });
+    // The owner role is not stopped by privileges, only by the trigger.
+    await expect(
+      migrator.query(`UPDATE stock_adjustments SET note = 'x' WHERE variant_id = $1`, [id]),
+    ).rejects.toMatchObject({ code: '23001' });
+    await expect(
+      migrator.query(`DELETE FROM stock_adjustments WHERE variant_id = $1`, [id]),
+    ).rejects.toMatchObject({ code: '23001' });
+    await expect(migrator.query(`TRUNCATE stock_adjustments`)).rejects.toMatchObject({
+      code: '23001',
+    });
+  });
+
+  it('a user with stock history cannot be deleted (RESTRICT): history keeps its author', async () => {
+    const id = await variant();
+    const { id: user } = await one<{ id: string }>(
+      app,
+      `INSERT INTO auth_users (email) VALUES ($1) RETURNING id`,
+      [`history-${String(Date.now())}@example.test`],
+    );
+    await app.query(
+      `INSERT INTO stock_adjustments (variant_id, user_id, reason, delta, quantity_before, quantity_after)
+       VALUES ($1, $2, 'receipt', 1, 5, 6)`,
+      [id, user],
+    );
+    await expect(app.query(`DELETE FROM auth_users WHERE id = $1`, [user])).rejects.toMatchObject({
+      code: '23001',
+    });
   });
 
   it('a variant with history cannot be deleted (RESTRICT)', async () => {
