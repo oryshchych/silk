@@ -285,6 +285,41 @@ describe('cash on delivery and bank transfer', () => {
   });
 });
 
+describe('Q35: the unique index is the guarantee, not the select before the insert', () => {
+  it('two connections racing to write the sale document: one queued, one exists, never a throw', async () => {
+    const orderId = await placeOrder(admin, variants[0] ?? '', 'wayforpay');
+    const other = world.connect(3);
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let firstWrote: () => void = () => undefined;
+    const written = new Promise<void>((resolve) => {
+      firstWrote = resolve;
+    });
+    // The first transaction writes the document and stays open; the second one's SELECT cannot see
+    // it, so only the unique index (with ON CONFLICT) stands between it and a duplicate.
+    const first = admin.db.transaction(async (tx) => {
+      const result = await enqueueSaleReceipt(tx, { orderId, paymentForm: 'card' });
+      firstWrote();
+      await gate;
+      return result;
+    });
+    await written;
+    const second = other.db.transaction(
+      async (tx) => await enqueueSaleReceipt(tx, { orderId, paymentForm: 'card' }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    release();
+    const results = await Promise.all([first, second]);
+    expect(results).toEqual(['queued', 'exists']);
+    expect(await docsOf(orderId)).toHaveLength(1);
+    expect(
+      await count(sql`SELECT count(*)::int AS n FROM outbox WHERE topic = 'fiscal.issue-receipt'`),
+    ).toBe(1);
+  });
+});
+
 describe('refund: the return receipt points at the primary one', () => {
   async function refundAll(orderId: string, amount?: number): Promise<string> {
     const providers = { wayforpay: wfp };

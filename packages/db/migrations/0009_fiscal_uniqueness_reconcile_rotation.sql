@@ -1,0 +1,4 @@
+ALTER TABLE "payment_attempts" ADD COLUMN "last_reconciled_at" timestamp with time zone;--> statement-breakpoint
+CREATE UNIQUE INDEX "fiscal_docs_one_sale_uq" ON "fiscal_documents" USING btree ("order_id") WHERE "fiscal_documents"."kind" = 'sale';--> statement-breakpoint
+CREATE UNIQUE INDEX "fiscal_docs_one_return_per_refund_uq" ON "fiscal_documents" USING btree ("refund_operation_id") WHERE "fiscal_documents"."refund_operation_id" IS NOT NULL;--> statement-breakpoint
+CREATE INDEX "payment_attempts_reconcile_idx" ON "payment_attempts" USING btree ("last_reconciled_at" NULLS FIRST,"created_at","id") WHERE "payment_attempts"."state" IN ('pending', 'in_flight', 'unknown');

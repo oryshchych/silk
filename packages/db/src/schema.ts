@@ -788,6 +788,12 @@ export const paymentAttempts = pgTable('payment_attempts', {
   failureReason: text('failure_reason'),
   expiresAt: timestamp('expires_at', { withTimezone: true }),
   completedAt: timestamp('completed_at', { withTimezone: true }),
+  /**
+   * When reconciliation last asked the provider about this attempt. NULL = never asked. The
+   * reconcile job walks open attempts least recently asked first, so a pile of attempts that
+   * never settle cannot starve a new payment (owner queue Q35).
+   */
+  lastReconciledAt: timestamp('last_reconciled_at', { withTimezone: true }),
   createdAt: createdAt(),
 }, (t) => [
   uniqueIndex('payment_attempts_order_num_uq').on(t.orderId, t.attemptNumber),
@@ -797,6 +803,10 @@ export const paymentAttempts = pgTable('payment_attempts', {
   index('payment_attempts_order_idx').on(t.orderId, t.createdAt),
   /** Для воркера звірки незавершених спроб */
   index('payment_attempts_open_idx').on(t.createdAt)
+    .where(sql`${t.state} IN ('pending', 'in_flight', 'unknown')`),
+  /** Rotation order of the reconcile job: least recently asked first, never asked before all. */
+  index('payment_attempts_reconcile_idx')
+    .on(sql`${t.lastReconciledAt} NULLS FIRST`, t.createdAt, t.id)
     .where(sql`${t.state} IN ('pending', 'in_flight', 'unknown')`),
   check('payment_attempts_num_positive', sql`${t.attemptNumber} > 0`),
   check('payment_attempts_amount_positive', sql`${t.amount} > 0`),
@@ -1658,6 +1668,10 @@ export const fiscalDocuments = pgTable('fiscal_documents', {
 }, (t) => [
   uniqueIndex('fiscal_docs_local_ref_uq').on(t.localReference),
   index('fiscal_docs_order_idx').on(t.orderId),
+  /** One sale document per order and one return document per refund operation (Q35). */
+  uniqueIndex('fiscal_docs_one_sale_uq').on(t.orderId).where(sql`${t.kind} = 'sale'`),
+  uniqueIndex('fiscal_docs_one_return_per_refund_uq').on(t.refundOperationId)
+    .where(sql`${t.refundOperationId} IS NOT NULL`),
   /** Екран «замовлення без чека» в адмінці */
   index('fiscal_docs_open_idx').on(t.createdAt)
     .where(sql`${t.state} IN ('pending', 'in_flight', 'unknown', 'failed')`),

@@ -90,11 +90,13 @@ const deps = (): StartPaymentDeps => ({
 const run = async (
   batch?: number,
   providers: ProviderMap = { mono: monoProvider, wayforpay: wfpProvider },
+  maxPerRun?: number,
 ) =>
   await reconcileOpenAttempts({
     db: admin.db,
     providers,
     ...(batch === undefined ? {} : { batch }),
+    ...(maxPerRun === undefined ? {} : { maxPerRun }),
   });
 
 const count = async (query: ReturnType<typeof sql>): Promise<number> =>
@@ -232,6 +234,39 @@ describe('S1: poison attempts do not starve the rest (a cursor)', () => {
     });
     const result = await run(1);
     expect(result.checked).toBe(3);
+    expect(await orderRow(good.orderId)).toMatchObject({ paymentStatus: 'paid' });
+  });
+});
+
+describe('Q35: rotation, a backlog of stuck attempts cannot starve a new payment', () => {
+  it('with room for two attempts per run, the newest payment is reached on the second run', async () => {
+    const poison: string[] = [];
+    for (const variantId of [variants[0] ?? '', variants[1] ?? '', variants[0] ?? '']) {
+      const { attempt } = await liveWfp(variantId);
+      poison.push(attempt.id);
+      await age(attempt.id, 200 - poison.length);
+      wfp.payments.set(attempt.localReference, { amount: 1, status: 'Approved', reasonCode: 1100 });
+    }
+    const good = await liveWfp(variants[0] ?? '');
+    await age(good.attempt.id, 10);
+    wfp.payments.set(good.attempt.localReference, {
+      amount: uah(good.attempt.amount),
+      status: 'Approved',
+      reasonCode: 1100,
+    });
+    // Oldest first with no rotation, the same two poison attempts fill every run forever.
+    await run(1, undefined, 2);
+    expect(await orderRow(good.orderId)).toMatchObject({ paymentStatus: 'pending' });
+    const stamped = await count(
+      sql`SELECT count(*)::int AS n FROM payment_attempts WHERE last_reconciled_at IS NOT NULL
+          AND id IN (${sql.join(
+            poison.slice(0, 2).map((id) => sql`${id}::uuid`),
+            sql`, `,
+          )})`,
+    );
+    expect(stamped).toBe(2);
+    await run(1, undefined, 2);
+    await run(1, undefined, 2);
     expect(await orderRow(good.orderId)).toMatchObject({ paymentStatus: 'paid' });
   });
 });
