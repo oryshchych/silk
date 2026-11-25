@@ -49,7 +49,11 @@ export async function listAdminProducts(
   canSeeCost: boolean,
 ): Promise<AdminPage<AdminProductRowDto | AdminProductRowWithCostDto>> {
   const page = Math.max(1, Math.min(filters.page ?? 1, 10_000));
-  const term = (filters.q ?? '').trim().slice(0, MAX_QUERY);
+  // A NUL byte would make Postgres refuse the query (22021): it cannot be part of a search term.
+  const term = (filters.q ?? '')
+    .replace(/\u0000/g, '')
+    .trim()
+    .slice(0, MAX_QUERY);
   const conditions = [
     term === ''
       ? undefined

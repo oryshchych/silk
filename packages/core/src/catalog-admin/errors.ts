@@ -47,3 +47,16 @@ export class DuplicateEntryError extends DomainError {
     super('ADMIN_DUPLICATE', 'This entry already exists');
   }
 }
+
+export class BarcodeTakenError extends DomainError {
+  constructor() {
+    super('ADMIN_BARCODE_TAKEN', 'This barcode is already used');
+  }
+}
+
+/** A permission the action itself did not name but the input needs (e.g. writing a cost). */
+export class ForbiddenError extends DomainError {
+  constructor() {
+    super('FORBIDDEN', 'You do not have permission for this change');
+  }
+}

@@ -21,6 +21,9 @@ import {
   updateVariantPricing,
 } from '@store/core/admin-variants';
 
+import { can } from '@store/core/auth-permissions';
+import { ForbiddenError } from '@store/core/admin-errors';
+
 import { catalogAction } from '@/lib/admin/catalog-action';
 
 /**
@@ -43,7 +46,8 @@ export async function updateProductContentAction(input: unknown) {
     permission: 'catalog.edit',
     schema: productContentSchema,
     input,
-    touchesRedirects: true,
+    // A new slug: the proxy's redirect table and visible-slug set must see it at once.
+    dropped: (data) => (data.changed.includes('slug') ? { redirects: true, slugs: true } : {}),
     op: updateProductContent,
   });
 }
@@ -53,7 +57,13 @@ export async function updateProductPricingAction(input: unknown) {
     permission: 'catalog.price',
     schema: productPricingSchema,
     input,
-    op: updateProductPricing,
+    // Writing the cost needs `catalog.cost.view` too: whoever may not SEE it may not set it blind.
+    op: async (tx, parsed, session) => {
+      if (parsed.costPrice !== undefined && !can(session.role, 'catalog.cost.view')) {
+        throw new ForbiddenError();
+      }
+      return await updateProductPricing(tx, parsed);
+    },
   });
 }
 
@@ -62,6 +72,8 @@ export async function setProductActiveAction(input: unknown) {
     permission: 'catalog.publish',
     schema: setActiveSchema,
     input,
+    // Publishing or unpublishing changes which product slugs the storefront serves.
+    dropped: () => ({ slugs: true }),
     op: setProductActive,
   });
 }

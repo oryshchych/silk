@@ -19,6 +19,7 @@ import {
 
 import {
   AdminNotFoundError,
+  BarcodeTakenError,
   CategoryCycleError,
   CategoryTooDeepError,
   DuplicateEntryError,
@@ -37,7 +38,12 @@ import {
   updateProductPricing,
 } from '../src/catalog-admin/products.ts';
 import { getAdminProduct, listAdminProducts } from '../src/catalog-admin/read.ts';
-import { generateVariants, updateVariantPricing } from '../src/catalog-admin/variants.ts';
+import {
+  generateVariants,
+  updateVariantContent,
+  updateVariantPricing,
+} from '../src/catalog-admin/variants.ts';
+import { Barrier } from './barrier.ts';
 import { createWorld, type TestWorld } from './fixtures.ts';
 
 let world: TestWorld;
@@ -472,5 +478,173 @@ describe('admin reads are serialised per role', () => {
     expect(low.items.length).toBeGreaterThan(0);
     const huge = await listAdminProducts(handle.db, { page: 9_999_999 }, false);
     expect(huge.items).toEqual([]);
+  });
+});
+
+describe('review round 1: slugs, the category tree, barcodes', () => {
+  it('a slug given away and then REUSED by a new product or category stops redirecting (the redirect would shadow the live page)', async () => {
+    const old = await newProduct();
+    const [row] = await handle.db
+      .select()
+      .from(products)
+      .where(eq(products.id, old.data.productId));
+    const oldSlug = row?.slug ?? '';
+    await handle.db.transaction(
+      async (tx) =>
+        await updateProductContent(tx, { productId: old.data.productId, slug: `moved-${oldSlug}` }),
+    );
+    const pathsBefore = (await handle.db.select().from(redirects)).map((r) => r.fromPath);
+    expect(pathsBefore).toContain(`/product/${oldSlug}`);
+    await handle.db.transaction(
+      async (tx) =>
+        await createProduct(tx, {
+          sku: `REUSE-${oldSlug}`.slice(0, 60),
+          slug: oldSlug,
+          brand: 'b',
+          categoryId: rootCategory,
+          nameUk: 'x',
+          nameEn: 'x',
+          basePrice: money(100),
+          weightGrams: 100,
+        }),
+    );
+    const after = (await handle.db.select().from(redirects)).map((r) => r.fromPath);
+    expect(after).not.toContain(`/product/${oldSlug}`);
+    expect(after).not.toContain(`/en/product/${oldSlug}`);
+    // The same for a category.
+    const cat = await run<Awaited<ReturnType<typeof createCategory>>>(
+      async (tx) =>
+        await createCategory(tx, {
+          parentId: null,
+          slug: 'cat-gives-away',
+          nameUk: 'a',
+          nameEn: 'a',
+        }),
+    );
+    await run(
+      async (tx) =>
+        await updateCategory(tx, { categoryId: cat.data.categoryId, slug: 'cat-moved-on' }),
+    );
+    expect((await handle.db.select().from(redirects)).map((r) => r.fromPath)).toContain(
+      '/category/cat-gives-away',
+    );
+    await run(
+      async (tx) =>
+        await createCategory(tx, {
+          parentId: null,
+          slug: 'cat-gives-away',
+          nameUk: 'b',
+          nameEn: 'b',
+        }),
+    );
+    expect((await handle.db.select().from(redirects)).map((r) => r.fromPath)).not.toContain(
+      '/category/cat-gives-away',
+    );
+  });
+
+  it('two category moves racing to make a cycle (A under B, B under A): exactly one wins, never a cycle', async () => {
+    for (let round = 0; round < 8; round += 1) {
+      const a = await run<Awaited<ReturnType<typeof createCategory>>>(
+        async (tx) =>
+          await createCategory(tx, {
+            parentId: null,
+            slug: `race-a-${String(round)}`,
+            nameUk: 'a',
+            nameEn: 'a',
+          }),
+      );
+      const b = await run<Awaited<ReturnType<typeof createCategory>>>(
+        async (tx) =>
+          await createCategory(tx, {
+            parentId: null,
+            slug: `race-b-${String(round)}`,
+            nameUk: 'b',
+            nameEn: 'b',
+          }),
+      );
+      const barrier = new Barrier(2);
+      const outcomes = await Promise.all(
+        [
+          { categoryId: a.data.categoryId, parentId: b.data.categoryId },
+          { categoryId: b.data.categoryId, parentId: a.data.categoryId },
+        ].map(async (input) => {
+          const other = world.connect(1);
+          await barrier.wait();
+          return await other.db
+            .transaction(async (tx) => await moveCategory(tx, input))
+            .then(() => 'ok' as const)
+            .catch((error: unknown) => (error instanceof CategoryCycleError ? 'cycle' : 'broken'));
+        }),
+      );
+      expect(outcomes.filter((o) => o === 'ok')).toHaveLength(1);
+      expect(outcomes.filter((o) => o === 'cycle')).toHaveLength(1);
+      const rows = await handle.db.select().from(categories);
+      const parentOf = (id: string) => rows.find((r) => r.id === id)?.parentId;
+      expect(
+        parentOf(a.data.categoryId) === b.data.categoryId &&
+          parentOf(b.data.categoryId) === a.data.categoryId,
+      ).toBe(false);
+    }
+  }, 60_000);
+
+  it('a barcode belongs to one variant; several variants without a barcode are fine', async () => {
+    const sizeIds: string[] = [];
+    const colorIds: string[] = [];
+    await handle.db.transaction(async (tx) => {
+      for (let i = 0; i < 2; i += 1) {
+        sizeIds.push(
+          (
+            await saveSize(tx, {
+              system: 'apparel',
+              label: `BC${String(counter)}${String(i)}`,
+              band: null,
+              cup: null,
+              euLabel: null,
+              usLabel: null,
+              sortOrder: 0,
+            })
+          ).data.sizeId,
+        );
+      }
+      colorIds.push(
+        (
+          await saveColor(tx, {
+            slug: `bc-${String(counter)}`,
+            nameUk: 'c',
+            nameEn: 'c',
+            hex: '#010203',
+            sortOrder: 0,
+          })
+        ).data.colorId,
+      );
+    });
+    const { data } = await newProduct();
+    await run(
+      async (tx) => await generateVariants(tx, { productId: data.productId, sizeIds, colorIds }),
+    );
+    const product = await getAdminProduct(handle.db, data.productId, false);
+    const [first, second] = product?.variants ?? [];
+    await run(
+      async (tx) =>
+        await updateVariantContent(tx, { variantId: first?.id ?? '', barcode: '4006381333931' }),
+    );
+    await expect(
+      handle.db.transaction(
+        async (tx) =>
+          await updateVariantContent(tx, { variantId: second?.id ?? '', barcode: '4006381333931' }),
+      ),
+    ).rejects.toBeInstanceOf(BarcodeTakenError);
+    // No barcode is NULL (the action schema turns an empty field into null), and any number coexist.
+    await run(
+      async (tx) => await updateVariantContent(tx, { variantId: first?.id ?? '', barcode: null }),
+    );
+    await run(
+      async (tx) => await updateVariantContent(tx, { variantId: second?.id ?? '', barcode: null }),
+    );
+  });
+
+  it('a NUL byte in the list search is dropped, not sent to Postgres', async () => {
+    const result = await listAdminProducts(handle.db, { q: 'SKU\u0000-1' }, false);
+    expect(result.total).toBeGreaterThanOrEqual(0);
   });
 });

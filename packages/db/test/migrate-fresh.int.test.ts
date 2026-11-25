@@ -906,3 +906,45 @@ describe('0010 and 0011: stock_adjustments', () => {
     });
   });
 });
+
+describe('0012_variant_barcode_unique', () => {
+  it('a barcode is unique among variants that have one; any number may have none', async () => {
+    const stamp = String(Date.now());
+    const { id: category } = await one<{ id: string }>(
+      app,
+      `INSERT INTO categories (slug, name_uk, name_en) VALUES ($1, 'k', 'c') RETURNING id`,
+      [`bc-cat-${stamp}`],
+    );
+    const { id: product } = await one<{ id: string }>(
+      app,
+      `INSERT INTO products (sku, slug, brand, category_id, name_uk, name_en, base_price)
+       VALUES ($1, $2, 'b', $3, 'n', 'n', 100) RETURNING id`,
+      [`BC-${stamp}`, `bc-${stamp}`, category],
+    );
+    const { id: color } = await one<{ id: string }>(
+      app,
+      `INSERT INTO colors (slug, name_uk, name_en, hex) VALUES ($1, 'c', 'c', '#000000') RETURNING id`,
+      [`bc-col-${stamp}`],
+    );
+    const variant = async (sku: string, label: string, barcode: string | null) => {
+      const { id: size } = await one<{ id: string }>(
+        app,
+        `INSERT INTO sizes (system, label) VALUES ('apparel', $1) RETURNING id`,
+        [label],
+      );
+      await app.query(
+        `INSERT INTO product_variants (product_id, size_id, color_id, sku, barcode) VALUES ($1, $2, $3, $4, $5)`,
+        [product, size, color, sku, barcode],
+      );
+    };
+    await variant(`BC-V1-${stamp}`, `Z1${stamp}`.slice(0, 20), '5901234123457');
+    await expect(
+      variant(`BC-V2-${stamp}`, `Z2${stamp}`.slice(0, 20), '5901234123457'),
+    ).rejects.toMatchObject({
+      code: '23505',
+      constraint: 'variants_barcode_uq',
+    });
+    await variant(`BC-V3-${stamp}`, `Z3${stamp}`.slice(0, 20), null);
+    await variant(`BC-V4-${stamp}`, `Z4${stamp}`.slice(0, 20), null);
+  });
+});

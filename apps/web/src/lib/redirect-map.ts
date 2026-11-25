@@ -94,9 +94,16 @@ export function createRedirectMap(
 /** The process-wide map, loaded lazily from the database. */
 export const redirectMap = createRedirectMap(
   async () => {
-    const { listRedirects } = await import('@store/core/admin-redirects');
+    const { listRedirects, REDIRECT_LIMIT } = await import('@store/core/admin-redirects');
     const { getDb } = await import('./db');
-    return await listRedirects(await getDb());
+    const rows = await listRedirects(await getDb());
+    if (rows.length >= REDIRECT_LIMIT) {
+      // The oldest redirects past the cap stop working: say so.
+      process.stderr.write(
+        `${JSON.stringify({ level: 'warn', scope: 'redirect-map', reason: 'redirect cap reached', cap: REDIRECT_LIMIT })}\n`,
+      );
+    }
+    return rows;
   },
   {
     onError: (error) => {

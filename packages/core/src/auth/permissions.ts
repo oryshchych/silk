@@ -5,7 +5,7 @@
  * two drift apart.
  *
  * Roles: owner (everything), admin (everything except users and roles), manager (orders, stock,
- * customers), content (catalog text and media, never prices or money).
+ * customers), content (catalog text and media; may read prices, never write them or see the cost).
  */
 export const ROLES = ['owner', 'admin', 'manager', 'content'] as const;
 export type AdminRole = (typeof ROLES)[number];

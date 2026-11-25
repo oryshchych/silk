@@ -10,5 +10,12 @@ const MAX_TAGS = 1_000;
  * HTTP endpoint that can be called to invalidate the cache. Admin reads are not cached at all.
  */
 export function invalidateTags(tags: readonly string[]): void {
-  for (const tag of [...new Set(tags)].slice(0, MAX_TAGS)) revalidateTag(tag, 'max');
+  const unique = [...new Set(tags)];
+  if (unique.length > MAX_TAGS) {
+    // Never silently: pages past the cap stay stale until their TTL, and somebody should know.
+    process.stderr.write(
+      `${JSON.stringify({ level: 'warn', scope: 'cache-invalidation', reason: 'tag cap reached', tags: unique.length, cap: MAX_TAGS })}\n`,
+    );
+  }
+  for (const tag of unique.slice(0, MAX_TAGS)) revalidateTag(tag, 'max');
 }
