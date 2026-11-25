@@ -57,9 +57,12 @@ confirmed TOTP before a session counts; so must anyone who enrolled one.
 | Generate variants, edit a variant's SKU, barcode, active | `catalog.edit` | `generateVariantsAction`, `updateVariantContentAction` |
 | A variant's price override | `catalog.price` | `updateVariantPricingAction` |
 | Read the product list and editor | `admin.view` (+ `catalog.cost.view` for the cost) | `lib/admin` pages call `listAdminProducts` / `getAdminProduct` with the role's cost permission; the DTO schema for a role without it has no cost key |
+| Create, edit and move a category (slug change leaves a 301) | `categories.edit` | `createCategoryAction`, `updateCategoryAction`, `moveCategoryAction` (`actions/admin-taxonomy.ts`) |
+| Colours, sizes, attributes and their values | `dictionaries.edit` | `saveColorAction`, `saveSizeAction`, `saveAttributeAction`, `saveAttributeValueAction` |
+| Assign attribute values to a product | `catalog.edit` | `setProductAttributesAction` |
 | Preview and commit a CSV import | `catalog.import` | `previewImportAction` (writes nothing), `commitImportAction` (`actions/admin-import.ts`): a column the role may not write (price without `catalog.price`, cost without `catalog.cost.view`) turns the row into an error; each written row has its own audit row |
 | Download the product CSV | `catalog.export` | `GET /admin/export/products` (`app/admin/export/products/route.ts`): the cost column only for `catalog.cost.view`, every export audited |
-| Categories, colours, sizes, attributes, stock, media | see the table above | their actions arrive with their screens in the next slices |
+| Stock, media | see the table above | their actions arrive with their screens in the next slices |
 
 ## Authentication facts
 

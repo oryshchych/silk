@@ -620,6 +620,55 @@ export async function runAdminSmoke({
         (exportAnon.status === 401 || exportAnon.status === 307),
     );
 
+    // 5c. Taxonomy: categories need categories.edit, dictionaries need dictionaries.edit.
+    const slugOf = (name: string) => `${name}-${suffix}`;
+    const managerCategory = await form(
+      'createCategoryAction',
+      { parentId: null, slug: slugOf('mgr-cat'), nameUk: 'x', nameEn: 'x' },
+      cookie(managerToken),
+      '/admin/categories',
+    );
+    check(
+      'taxonomy: a manager cannot create a category',
+      managerCategory.body.includes('FORBIDDEN'),
+    );
+    const contentCategory = await form(
+      'createCategoryAction',
+      { parentId: null, slug: slugOf('cnt-cat'), nameUk: 'Тест', nameEn: 'Test' },
+      cookie(contentToken),
+      '/admin/categories',
+    );
+    check(
+      'taxonomy: a content role may create a category',
+      contentCategory.body.includes('"ok":true'),
+    );
+    const contentColor = await form(
+      'saveColorAction',
+      { slug: slugOf('cnt-color'), nameUk: 'x', nameEn: 'x', hex: '#112233', sortOrder: 0 },
+      cookie(contentToken),
+      '/admin/dictionaries',
+    );
+    check(
+      'taxonomy: a content role cannot save a colour (FORBIDDEN)',
+      contentColor.body.includes('FORBIDDEN'),
+    );
+    const adminColor = await form(
+      'saveColorAction',
+      { slug: slugOf('adm-color'), nameUk: 'Тест', nameEn: 'Test', hex: '#112233', sortOrder: 0 },
+      cookie(adminToken),
+      '/admin/dictionaries',
+    );
+    check('taxonomy: an admin saves a colour', adminColor.body.includes('"ok":true'));
+    const dictAdmin = await get('/admin/dictionaries', cookie(adminToken));
+    const dictContent = await get('/admin/dictionaries', cookie(contentToken));
+    check(
+      'taxonomy: the dictionaries page has the add form for an admin and is read-only for a content role',
+      dictAdmin.status === 200 &&
+        dictAdmin.html.includes('>Додати<') &&
+        dictContent.status === 200 &&
+        !dictContent.html.includes('>Додати<'),
+    );
+
     // 6. The storefront is untouched.
     const store = await get('/');
     check(

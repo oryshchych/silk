@@ -1,8 +1,10 @@
 import {
   getAdminProduct,
+  listAdminAttributes,
   listAdminCategories,
   listAdminColors,
   listAdminSizes,
+  listProductAttributeValueIds,
 } from '@store/core/admin-read';
 import { can } from '@store/core/auth-permissions';
 import { toHryvniasText, money } from '@store/shared/money';
@@ -11,6 +13,7 @@ import { cookies } from 'next/headers';
 import { notFound } from 'next/navigation';
 import { z } from 'zod';
 
+import { ProductAttributes } from '@/components/admin/product-attributes';
 import { ProductContentForm } from '@/components/admin/product-content-form';
 import { ProductPricingForm } from '@/components/admin/product-pricing-form';
 import { ProductPublish } from '@/components/admin/product-publish';
@@ -31,10 +34,12 @@ export default async function ProductEditorPage({ params }: { params: Promise<{ 
   // The DTO for THIS role: the cost key does not exist for a role that may not see it.
   const product = await getAdminProduct(db, parsedId.data, canSeeCost);
   if (product === null) notFound();
-  const [categories, sizes, colors] = await Promise.all([
+  const [categories, sizes, colors, attributes, selectedValues] = await Promise.all([
     listAdminCategories(db),
     listAdminSizes(db),
     listAdminColors(db),
+    listAdminAttributes(db),
+    listProductAttributeValueIds(db, parsedId.data),
   ]);
   const locale = parseAdminLocale((await cookies()).get(LOCALE_COOKIE)?.value);
   const t = await getTranslations({ locale, namespace: 'admin.editor' });
@@ -90,6 +95,21 @@ export default async function ProductEditorPage({ params }: { params: Promise<{ 
           siteHost={siteHost}
         />
       ) : null}
+      <ProductAttributes
+        productId={product.id}
+        canEdit={canEdit}
+        selected={selectedValues}
+        attributes={attributes
+          .filter((attribute) => attribute.values.length > 0)
+          .map((attribute) => ({
+            id: attribute.id,
+            name: locale === 'en' ? attribute.nameEn : attribute.nameUk,
+            values: attribute.values.map((value) => ({
+              id: value.id,
+              label: locale === 'en' ? value.valueEn : value.valueUk,
+            })),
+          }))}
+      />
       {canPrice ? (
         <ProductPricingForm
           productId={product.id}
