@@ -30,6 +30,7 @@
     "secrets": "./scripts/gitleaks.sh detect --redact --no-banner",
     "smoke:web": "node scripts/smoke-web.ts",
     "admin:seed-local": "pnpm --filter @store/db exec node --env-file-if-exists=../../.env --import tsx ../../scripts/admin-user.ts seed-local",
+    "admin:unlock": "pnpm --filter @store/db exec node --env-file-if-exists=../../.env --import tsx ../../scripts/admin-user.ts unlock",
     "admin:create": "pnpm --filter @store/db exec node --env-file-if-exists=../../.env --import tsx ../../scripts/admin-user.ts create",
     "ai:sync": "node scripts/sync-ai-config.ts",
     "ai:check": "node scripts/sync-ai-config.ts --check",

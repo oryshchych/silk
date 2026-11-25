@@ -2,6 +2,7 @@
  * Admin accounts from the command line (there is no public sign-up and no user screen yet).
  *
  *   pnpm admin:seed-local                       a local owner for development (refuses anything but APP_ENV=local)
+ *   pnpm admin:unlock --email=a@b.c             lifts a lockout (the owner's recovery; audited)
  *   printf %s "$PASSWORD" | pnpm admin:create --email=a@b.c --role=owner|admin|manager|content
  *
  * The password of `admin:create` is read from standard input (never from an argument, which ends
@@ -9,12 +10,16 @@
  * values for a developer's own machine; they are refused outside APP_ENV=local.
  */
 // Relative imports: the repository root does not depend on the workspace packages.
-import { adminUserExists, createAdminUser } from '../packages/core/src/auth/service.ts';
+import {
+  adminUserExists,
+  createAdminUser,
+  unlockAccount,
+} from '../packages/core/src/auth/service.ts';
 import { ROLES, type AdminRole } from '../packages/core/src/auth/permissions.ts';
 import { createDb } from '../packages/db/src/client.ts';
 import { env } from '../packages/shared/src/env.server.ts';
 
-const LOCAL_OWNER = { email: 'owner@example.test', password: 'local-owner-password-change-me' };
+const LOCAL_OWNER = { email: 'owner@example.test', password: 'local-dev-password-1234' };
 
 function argument(name: string): string | undefined {
   const prefix = `--${name}=`;
@@ -51,8 +56,15 @@ try {
       await createAdminUser(tx, { email, password, role });
     });
     process.stdout.write(`created ${email} (${role})\n`);
+  } else if (command === 'unlock') {
+    const email = argument('email');
+    if (email === undefined) throw new Error('usage: admin-user.ts unlock --email=...');
+    const found = await db.transaction(async (tx) => await unlockAccount(tx, { email }));
+    process.stdout.write(found ? `unlocked ${email}\n` : 'no such account\n');
   } else {
-    throw new Error('usage: admin-user.ts seed-local | create --email=... --role=...');
+    throw new Error(
+      'usage: admin-user.ts seed-local | create --email=... --role=... | unlock --email=...',
+    );
   }
 } finally {
   await close();

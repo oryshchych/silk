@@ -19,6 +19,7 @@ import { SESSION_COOKIE, sessionCookieOptions } from '@/lib/admin/cookies';
 import { currentSession } from '@/lib/admin/session';
 import { getDb } from '@/lib/db';
 import { createRateLimiter } from '@/lib/rate-limit';
+import { createSemaphore } from '@/lib/semaphore';
 import { checkLimit, currentClient } from '@/lib/request-limits';
 
 /**
@@ -38,6 +39,13 @@ export type EnrolConfirmState =
   | { status: 'idle' }
   | { status: 'error'; code: 'invalid' | 'rateLimited' | 'error' }
   | { status: 'done'; recoveryCodes: string[] };
+
+/**
+ * A password hash and a locked transaction are the expensive part of a sign-in. At most 3 run at
+ * once and 6 may wait; beyond that the attempt is refused at once, so a login flood cannot starve
+ * the database pool and the event loop of the storefront.
+ */
+const credentialWork = createSemaphore(3, 6);
 
 const loginLimiter = createRateLimiter({ limit: 10, windowMs: 10 * 60_000 });
 const stepLimiter = createRateLimiter({ limit: 20, windowMs: 10 * 60_000 });
@@ -85,13 +93,19 @@ export async function loginAction(input: unknown): Promise<AuthFormState> {
   const config = await authConfig();
   const db = await getDb();
   const client = await clientInfo();
-  const result = await db.transaction(
-    async (tx) => await beginLogin(tx, config, { ...parsed.data, client }),
+  const result = await credentialWork.run(
+    async () =>
+      await db.transaction(async (tx) => await beginLogin(tx, config, { ...parsed.data, client })),
   );
-  if (!result.ok) return { status: 'error', code: 'invalid' };
-  await setSession(result.token, result.expiresAt);
+  if (!result.ran) return { status: 'error', code: 'rateLimited' };
+  if (!result.value.ok) return { status: 'error', code: 'invalid' };
+  await setSession(result.value.token, result.value.expiresAt);
   redirect(
-    result.next === 'done' ? '/admin' : result.next === 'totp' ? '/admin/verify' : '/admin/enroll',
+    result.value.next === 'done'
+      ? '/admin'
+      : result.value.next === 'totp'
+        ? '/admin/verify'
+        : '/admin/enroll',
   );
 }
 
@@ -104,15 +118,18 @@ export async function verifyAction(input: unknown): Promise<AuthFormState> {
   const config = await authConfig();
   const client = await clientInfo();
   const recovery = parsed.data.mode === 'recovery';
-  const result = await (
-    await getDb()
-  ).transaction(async (tx) =>
-    recovery
-      ? await verifyRecoveryLogin(tx, config, { token, code: parsed.data.code, client })
-      : await verifyTotpLogin(tx, config, { token, code: parsed.data.code, client }),
+  const db = await getDb();
+  const result = await credentialWork.run(
+    async () =>
+      await db.transaction(async (tx) =>
+        recovery
+          ? await verifyRecoveryLogin(tx, config, { token, code: parsed.data.code, client })
+          : await verifyTotpLogin(tx, config, { token, code: parsed.data.code, client }),
+      ),
   );
-  if (!result.ok) return { status: 'error', code: 'invalid' };
-  await setSession(result.token, result.expiresAt);
+  if (!result.ran) return { status: 'error', code: 'rateLimited' };
+  if (!result.value.ok) return { status: 'error', code: 'invalid' };
+  await setSession(result.value.token, result.value.expiresAt);
   redirect('/admin');
 }
 
@@ -121,12 +138,15 @@ export async function startEnrolAction(): Promise<EnrolStartState> {
   if (!allowed.ok) return { status: 'error', code: allowed.code };
   const token = await pendingToken();
   if (token === null) return { status: 'error', code: 'error' };
-  const started = await (
-    await getDb()
-  ).transaction(async (tx) => await startTotpEnrolment(tx, await authConfig(), { token }));
-  return started === null
+  const config = await authConfig();
+  const db = await getDb();
+  const started = await credentialWork.run(
+    async () => await db.transaction(async (tx) => await startTotpEnrolment(tx, config, { token })),
+  );
+  if (!started.ran) return { status: 'error', code: 'rateLimited' };
+  return started.value === null
     ? { status: 'error', code: 'error' }
-    : { status: 'ready', secret: started.secret, uri: started.uri };
+    : { status: 'ready', secret: started.value.secret, uri: started.value.uri };
 }
 
 export async function confirmEnrolAction(input: unknown): Promise<EnrolConfirmState> {
@@ -137,14 +157,18 @@ export async function confirmEnrolAction(input: unknown): Promise<EnrolConfirmSt
   if (token === null || !parsed.success) return { status: 'error', code: 'invalid' };
   const config = await authConfig();
   const client = await clientInfo();
-  const result = await (
-    await getDb()
-  ).transaction(
-    async (tx) => await confirmTotpEnrolment(tx, config, { token, code: parsed.data.code, client }),
+  const db = await getDb();
+  const result = await credentialWork.run(
+    async () =>
+      await db.transaction(
+        async (tx) =>
+          await confirmTotpEnrolment(tx, config, { token, code: parsed.data.code, client }),
+      ),
   );
-  if (!result.ok) return { status: 'error', code: 'invalid' };
-  await setSession(result.token, result.expiresAt);
-  return { status: 'done', recoveryCodes: result.recoveryCodes ?? [] };
+  if (!result.ran) return { status: 'error', code: 'rateLimited' };
+  if (!result.value.ok) return { status: 'error', code: 'invalid' };
+  await setSession(result.value.token, result.value.expiresAt);
+  return { status: 'done', recoveryCodes: result.value.recoveryCodes ?? [] };
 }
 
 export async function logoutAction(): Promise<void> {

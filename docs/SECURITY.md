@@ -58,9 +58,10 @@ confirmed TOTP before a session counts; so must anyone who enrolled one.
   spends one password hash. Per-account serialisation is a transaction advisory lock, so a burst of
   parallel guesses cannot out-run the counter. A per-client limit sits in `proxy.ts` (30 a minute on
   the credential pages, 600 a minute over all clients) and again in the actions.
-- TOTP secrets are AES-256-GCM encrypted at rest; keys are derived (HKDF) from `AUTH_SECRET`, one
-  per purpose. A code is good once (`last_used_step`). Recovery codes are shown once, stored as
-  SHA-256, single use.
+- TOTP secrets are AES-256-GCM encrypted at rest with the user id as associated data (a copied
+  ciphertext does not decrypt in another account); keys are derived (HKDF) from `AUTH_SECRET`, one
+  per purpose (session, totp, recovery). A code is good once (`last_used_step`). Recovery codes (80 bits) are shown once, stored
+  as HMAC-SHA256 under their own key, single use.
 - A password-only session is PENDING (10 minutes) and opens only the TOTP page; completing the
   second step issues a NEW session (the pending one is revoked: no fixation).
 - Cookie `admin_session`: HttpOnly, SameSite=Strict, Secure outside local, `Path=/admin` (the browser
@@ -70,6 +71,22 @@ confirmed TOTP before a session counts; so must anyone who enrolled one.
 - `audit_log` rows redact any key that looks like a credential (`password`, `secret`, `token`,
   `hash`, `code`, `key`, `cookie`, `authorization`). Authentication events are audited without the
   email or any secret.
+
+## Operating the lockout, and what the design does not cover
+
+- **Locked out?** Five wrong passwords or codes lock an account for 15 minutes, and an attacker who
+  knows the email can renew that lock (a known trade-off of per-account lockout). The recovery is
+  `pnpm admin:unlock --email=...`, run by the owner on the server (audited as `auth.unlocked`).
+  A per-address component and a second-owner unlock are queued (Q43).
+- **Every page and action checks the session itself.** The shell layout calls `requireFullSession`,
+  but Next renders a page in parallel with its layout, so a page must never rely on the layout
+  having run: every page under `app/admin` calls `requireFullSession()` and every mutation goes
+  through `adminAction`.
+- **TOTP enrolment is first come.** An owner or admin who has not enrolled yet can be enrolled by
+  whoever holds the password first. Create the account, then enrol at once (Q40).
+- **Credential work is bounded.** At most 3 password hashes or TOTP transactions run at once and 6
+  wait; more are refused at once ("too many attempts"), so a login flood cannot starve the site.
+  The cap over all clients counts credential attempts (POST), not page loads.
 
 ## Responses
 

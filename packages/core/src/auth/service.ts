@@ -34,7 +34,7 @@ import {
   deriveKey,
   encryptSecret,
   hashPassword,
-  sha256Hex,
+  recoveryHash,
   verifyPassword,
 } from './crypto.ts';
 import { MFA_REQUIRED_ROLES, type AdminRole } from './permissions.ts';
@@ -84,6 +84,7 @@ export type ResolvedSession =
 const nowOf = (config: AuthConfig): number => (config.nowMs ?? Date.now)();
 const sessionKey = (config: AuthConfig): Buffer => deriveKey(config.secret, 'session');
 const totpKey = (config: AuthConfig): Buffer => deriveKey(config.secret, 'totp');
+const recoveryKey = (config: AuthConfig): Buffer => deriveKey(config.secret, 'recovery');
 const needsMfa = (role: AdminRole, totpConfirmed: boolean): boolean =>
   MFA_REQUIRED_ROLES.includes(role) || totpConfirmed;
 
@@ -300,9 +301,12 @@ export async function beginLogin(
     await recordFailure(tx, row.userId, input.client);
     return { ok: false };
   }
-  await clearFailures(tx, row.userId);
   const totpConfirmed = row.totpConfirmed;
   const mfa = needsMfa(row.role, totpConfirmed);
+  // A correct password must NOT reset the counter when a second step follows: otherwise "right
+  // password, four wrong codes" repeated forever never locks anything. `promote` clears it once
+  // the second step has passed.
+  if (!mfa) await clearFailures(tx, row.userId);
   const opened = await openSession(tx, config, {
     userId: row.userId,
     client: input.client,
@@ -417,7 +421,7 @@ async function consumeTotpStep(
     .from(authTotp)
     .where(eq(authTotp.userId, userId));
   if (totp === undefined || (requireConfirmed && totp.confirmedAt === null)) return false;
-  const secret = decryptSecret(totp.secretEncrypted, totpKey(config));
+  const secret = decryptSecret(totp.secretEncrypted, totpKey(config), userId);
   if (secret === null) return false;
   const step = matchTotp(secret, code, nowOf(config), totp.lastUsedStep);
   if (step === null) return false;
@@ -448,10 +452,10 @@ export async function verifyTotpLogin(
   return { ok: true, ...(await promote(tx, config, context, input.client)) };
 }
 
-/** `xxxxx-xxxxx`, lower-case hex: 40 bits each, hashed at rest, single use. */
+/** `xxxxx-xxxxx-xxxxx-xxxxx`, lower-case hex: 80 bits each, HMAC'd at rest, single use. */
 function newRecoveryCode(): string {
-  const hex = randomBytes(5).toString('hex');
-  return `${hex.slice(0, 5)}-${hex.slice(5)}`;
+  const hex = randomBytes(10).toString('hex');
+  return [0, 5, 10, 15].map((i) => hex.slice(i, i + 5)).join('-');
 }
 const normalizeRecovery = (code: string): string => code.trim().toLowerCase().replace(/\s+/g, '');
 
@@ -468,7 +472,10 @@ export async function verifyRecoveryLogin(
     .where(
       and(
         eq(authRecoveryCodes.userId, context.userId),
-        eq(authRecoveryCodes.codeHash, sha256Hex(normalizeRecovery(input.code))),
+        eq(
+          authRecoveryCodes.codeHash,
+          recoveryHash(normalizeRecovery(input.code), recoveryKey(config)),
+        ),
         isNull(authRecoveryCodes.usedAt),
       ),
     )
@@ -513,11 +520,14 @@ export async function startTotpEnrolment(
     .insert(authTotp)
     .values({
       userId: context.userId,
-      secretEncrypted: encryptSecret(secret, totpKey(config)),
+      secretEncrypted: encryptSecret(secret, totpKey(config), context.userId),
     })
     .onConflictDoUpdate({
       target: authTotp.userId,
-      set: { secretEncrypted: encryptSecret(secret, totpKey(config)), lastUsedStep: null },
+      set: {
+        secretEncrypted: encryptSecret(secret, totpKey(config), context.userId),
+        lastUsedStep: null,
+      },
       setWhere: isNull(authTotp.confirmedAt),
     })
     .returning({ userId: authTotp.userId });
@@ -549,9 +559,12 @@ export async function confirmTotpEnrolment(
     .where(eq(adminUsers.userId, context.userId));
   await tx.delete(authRecoveryCodes).where(eq(authRecoveryCodes.userId, context.userId));
   const recoveryCodes = Array.from({ length: RECOVERY_CODE_COUNT }, newRecoveryCode);
-  await tx
-    .insert(authRecoveryCodes)
-    .values(recoveryCodes.map((code) => ({ userId: context.userId, codeHash: sha256Hex(code) })));
+  await tx.insert(authRecoveryCodes).values(
+    recoveryCodes.map((code) => ({
+      userId: context.userId,
+      codeHash: recoveryHash(code, recoveryKey(config)),
+    })),
+  );
   await writeAudit(tx, {
     userId: context.userId,
     action: 'auth.totp_enrolled',
@@ -589,7 +602,9 @@ export async function createAdminUser(
   const password = passwordSchema.safeParse(input.password);
   if (!password.success)
     throw new WeakPasswordError(password.error.issues[0]?.message ?? 'invalid');
-  if (input.password.toLowerCase().includes(email.split('@')[0] ?? email)) {
+  const namePart = email.split('@')[0] ?? email;
+  // Only a name long enough to mean something: a one-letter name would refuse most passwords.
+  if (namePart.length >= 4 && input.password.toLowerCase().includes(namePart)) {
     throw new WeakPasswordError('must not contain the email name');
   }
   const [user] = await tx.insert(authUsers).values({ email }).returning({ id: authUsers.id });
@@ -606,6 +621,28 @@ export async function createAdminUser(
     diff: { role: input.role },
   });
   return { userId: user.id };
+}
+
+/**
+ * Lifts a lock (the owner's recovery from a lockout, `pnpm admin:unlock`). Audited; the failure
+ * counter restarts. Returns false when no such account exists.
+ */
+export async function unlockAccount(tx: Tx, input: { email: string }): Promise<boolean> {
+  const email = input.email.trim().toLowerCase();
+  const [user] = await tx
+    .select({ id: authUsers.id })
+    .from(authUsers)
+    .where(sql`lower(${authUsers.email}) = ${email}`);
+  if (user === undefined) return false;
+  await lockAccount(tx, user.id);
+  await clearFailures(tx, user.id);
+  await writeAudit(tx, {
+    userId: null,
+    action: 'auth.unlocked',
+    entity: 'auth_user',
+    entityId: user.id,
+  });
+  return true;
 }
 
 /** Constant-time check that a posted value equals an expected one (CSRF tokens, origins). */

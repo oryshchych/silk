@@ -13,6 +13,7 @@ import {
   createCipheriv,
   createDecipheriv,
   createHash,
+  createHmac,
   hkdfSync,
   randomBytes,
   timingSafeEqual,
@@ -22,7 +23,7 @@ const MIN_SECRET_LENGTH = 32;
 const ARGON = { memory: 19_456, passes: 2, parallelism: 1, tagLength: 32 } as const;
 const ARGON_PREFIX = 'argon2id$v1';
 
-export type KeyPurpose = 'session' | 'totp';
+export type KeyPurpose = 'session' | 'totp' | 'recovery';
 
 /** A 32-byte key for one purpose. Throws (fails closed) when the server secret is missing or weak. */
 export function deriveKey(secret: string | undefined, purpose: KeyPurpose): Buffer {
@@ -88,22 +89,27 @@ export async function verifyPassword(password: string, stored: string | null): P
   return stored !== null && actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
-/** `v1.nonce.ciphertext+tag`, base64url. */
-export function encryptSecret(plain: string, key: Buffer): string {
+/**
+ * `v2.nonce.ciphertext+tag`, base64url. `aad` (the owner's user id) is authenticated but not
+ * stored: a ciphertext copied into another account's row no longer decrypts.
+ */
+export function encryptSecret(plain: string, key: Buffer, aad: string): string {
   const nonce = randomBytes(12);
   const cipher = createCipheriv('aes-256-gcm', key, nonce);
+  cipher.setAAD(Buffer.from(aad, 'utf8'));
   const body = Buffer.concat([cipher.update(plain, 'utf8'), cipher.final(), cipher.getAuthTag()]);
-  return `v1.${nonce.toString('base64url')}.${body.toString('base64url')}`;
+  return `v2.${nonce.toString('base64url')}.${body.toString('base64url')}`;
 }
 
 /** Returns null for anything that is not an intact value made with this key (never throws). */
-export function decryptSecret(stored: string, key: Buffer): string | null {
+export function decryptSecret(stored: string, key: Buffer, aad: string): string | null {
   const [version, nonce, body] = stored.split('.');
-  if (version !== 'v1' || nonce === undefined || body === undefined) return null;
+  if (version !== 'v2' || nonce === undefined || body === undefined) return null;
   try {
     const raw = Buffer.from(body, 'base64url');
     if (raw.length < 17) return null;
     const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(nonce, 'base64url'));
+    decipher.setAAD(Buffer.from(aad, 'utf8'));
     decipher.setAuthTag(raw.subarray(raw.length - 16));
     return Buffer.concat([
       decipher.update(raw.subarray(0, raw.length - 16)),
@@ -114,9 +120,12 @@ export function decryptSecret(stored: string, key: Buffer): string | null {
   }
 }
 
-/** SHA-256 hex: for values that are already high-entropy random (recovery codes). */
-export const sha256Hex = (value: string): string =>
-  createHash('sha256').update(value).digest('hex');
+/**
+ * Recovery codes at rest: HMAC-SHA256 under their own derived key, so a leaked table cannot be
+ * checked offline without `AUTH_SECRET` (a bare hash of 80 random bits would be, given the table).
+ */
+export const recoveryHash = (code: string, key: Buffer): string =>
+  createHmac('sha256', key).update(code).digest('hex');
 
 export function constantTimeEqual(a: string, b: string): boolean {
   const left = createHash('sha256').update(a).digest();
