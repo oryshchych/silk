@@ -160,6 +160,8 @@ export function createStorage(config: StorageConfig): Storage {
     } catch {
       throw new StorageError(`${method} to the storage failed (network)`, null);
     }
+    // The answer's body is never read: release the connection.
+    await response.body?.cancel().catch(() => undefined);
     if (!response.ok && !(method === 'DELETE' && response.status === 404)) {
       throw new StorageError(
         `${method} to the storage answered ${String(response.status)}`,

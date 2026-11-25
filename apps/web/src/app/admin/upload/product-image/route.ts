@@ -1,20 +1,24 @@
 import { randomUUID } from 'node:crypto';
 
-import { addProductImage, assertRoomForImage, imageKey } from '@store/core/admin-images';
+import {
+  addProductImage,
+  assertRoomForImage,
+  imageKey,
+  productExists,
+} from '@store/core/admin-images';
 import { can } from '@store/core/auth-permissions';
-import { LIMITS, processImage, ImageRejectedError } from '@store/media/process';
+import { ImageRejectedError, LIMITS, processImage } from '@store/media/process';
 import { z } from 'zod';
 
-import { adminAction } from '@/lib/admin/bound-action';
-import { requestOriginOk } from '@/lib/admin/bound-action';
+import { adminAction, requestOriginOk } from '@/lib/admin/bound-action';
 import { invalidateTags } from '@/lib/admin/invalidate';
 import { currentSession } from '@/lib/admin/session';
 import { getDb } from '@/lib/db';
+import { createInFlight } from '@/lib/in-flight';
 import { mediaConfig } from '@/lib/media';
-import { readCapped } from '@/lib/read-capped';
 import { createRateLimiter } from '@/lib/rate-limit';
+import { readCapped } from '@/lib/read-capped';
 import { checkRequestLimit } from '@/lib/request-limits';
-import { createSemaphore } from '@/lib/semaphore';
 
 /**
  * Photo upload: `POST /admin/upload/product-image?productId=<uuid>` with the raw image as the body.
@@ -22,30 +26,46 @@ import { createSemaphore } from '@/lib/semaphore';
  * Its own route, not a server action: `proxy.ts` buffers the body of every request it handles
  * (`proxyClientMaxBodySize` is 64 KB) and a photo is megabytes, so the proxy's matcher skips this
  * path and everything the proxy would have done is done here, in this order:
- *   1. Origin (CSRF), a FULL admin session read from the database, the `media.upload` permission,
- *      a per-client and a per-user limit: all before a single byte of the body is read;
- *   2. the declared length, then the SIZE CAP ENFORCED WHILE THE BODY STREAMS (a client that lies
- *      about or omits the length is cut off at the cap, never buffered past it);
- *   3. the type from the bytes, the pixel cap, orientation, metadata stripping (`@store/media`);
- *   4. at most 2 conversions at once (CPU and memory are bounded), more are refused at once;
- *   5. keys built from ids only; files uploaded, then the row and the audit entry in one
- *      transaction; on any failure after the upload the files are removed again.
+ *   1. a cheap per-client limit BEFORE any database work (a flood of stale cookies costs no lookup);
+ *   2. Origin (CSRF), a FULL admin session read from the database, the `media.upload` permission,
+ *      a per-user limit: all before a single byte of the body is read;
+ *   3. an IN-FLIGHT SLOT, taken before the body is read and held to the end of the request: at
+ *      most 3 uploads at once over everybody and 1 per user, the rest refused at once (429). This
+ *      is what bounds MEMORY: each admitted upload holds at most one 12 MB body, one decoded
+ *      image (at most 40 MP) and the renditions, so the process holds a known multiple of that
+ *      and never a pile of bodies waiting for their turn;
+ *   4. the declared length, then the SIZE CAP ENFORCED WHILE THE BODY STREAMS into ONE buffer
+ *      allocated from the declared length (no list of chunks, no second copy);
+ *   5. the product is looked up and the photo count checked BEFORE the conversion;
+ *   6. the type from the bytes, the pixel cap, orientation, metadata stripping (`@store/media`);
+ *   7. keys built from ids only; files uploaded, then the row and the audit entry in one
+ *      transaction; on any failure after the upload the files are removed again (a removal that
+ *      itself fails leaves orphan files and is logged: see docs/SECURITY.md "Uploads").
  * Every response is `private, no-store`.
  */
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+/** Before the session lookup: 120 POSTs a minute per client address, valid cookie or not. */
+const preAuthLimiter = createRateLimiter({ limit: 120, windowMs: 60_000 });
 const clientLimiter = createRateLimiter({ limit: 60, windowMs: 10 * 60_000 });
 const userLimiter = createRateLimiter({ limit: 40, windowMs: 10 * 60_000 });
-const conversions = createSemaphore(2, 2);
+const inFlight = createInFlight({ global: 3, perKey: 1 });
 
-const querySchema = z.object({ productId: z.uuid() });
+const querySchema = z.object({ productId: z.uuid().transform((value) => value.toLowerCase()) });
 
 const HEADERS = { 'Cache-Control': 'private, no-store', 'X-Robots-Tag': 'noindex, nofollow' };
-const reply = (status: number, code: string, extra: Record<string, unknown> = {}): Response =>
-  Response.json({ ok: false, code, ...extra }, { status, headers: HEADERS });
+const reply = (status: number, code: string): Response =>
+  Response.json({ ok: false, code }, { status, headers: HEADERS });
+
+/** Operational log line: an object key and a status, never a URL, a credential or a body. */
+function warn(event: string, detail: Record<string, string | number>): void {
+  process.stderr.write(`${JSON.stringify({ level: 'warn', scope: 'media', event, ...detail })}\n`);
+}
 
 export async function POST(request: Request): Promise<Response> {
+  if (!(await checkRequestLimit(preAuthLimiter, request)).allowed)
+    return reply(429, 'RATE_LIMITED');
   if (!(await requestOriginOk())) return reply(403, 'BAD_ORIGIN');
   const resolved = await currentSession();
   if (resolved?.kind !== 'full') return reply(401, 'UNAUTHENTICATED');
@@ -61,46 +81,61 @@ export async function POST(request: Request): Promise<Response> {
   const media = await mediaConfig();
   if (media === null) return reply(503, 'MEDIA_NOT_CONFIGURED');
 
+  const release = inFlight.acquire(resolved.session.userId);
+  if (release === null) return reply(429, 'BUSY');
+  try {
+    return await upload(request, query.data.productId, media);
+  } finally {
+    release();
+  }
+}
+
+async function upload(
+  request: Request,
+  productId: string,
+  media: NonNullable<Awaited<ReturnType<typeof mediaConfig>>>,
+): Promise<Response> {
   const declared = Number(request.headers.get('content-length') ?? '');
   if (Number.isFinite(declared) && declared > LIMITS.maxBytes) return reply(413, 'TOO_LARGE');
   const body = await readCapped(request, LIMITS.maxBytes);
   if (body === null) return reply(413, 'TOO_LARGE');
   if (body.length === 0) return reply(400, 'INVALID_INPUT');
 
-  const { productId } = query.data;
   const db = await getDb();
+  // Before the conversion: a photo for a product that does not exist, or that is full, costs nothing.
+  if (!(await productExists(db, productId))) return reply(404, 'ADMIN_NOT_FOUND');
   try {
     await assertRoomForImage(db, productId);
   } catch {
     return reply(409, 'ADMIN_TOO_MANY_IMAGES');
   }
 
-  const converted = await conversions.run(async () => {
-    try {
-      return { ok: true as const, image: await processImage(body) };
-    } catch (error) {
-      if (error instanceof ImageRejectedError) return { ok: false as const, reason: error.reason };
-      throw error;
-    }
-  });
-  if (!converted.ran) return reply(429, 'RATE_LIMITED');
-  if (!converted.value.ok) {
-    const reason = converted.value.reason;
+  let image;
+  try {
+    image = await processImage(body);
+  } catch (error) {
+    if (!(error instanceof ImageRejectedError)) throw error;
+    const reason = error.reason;
     return reply(
       reason === 'unsupported_type' ? 415 : reason === 'too_large' ? 413 : 422,
       `IMAGE_${reason.toUpperCase()}`,
     );
   }
 
-  const { image } = converted.value;
   const imageId = randomUUID();
   const uploaded: string[] = [];
   const cleanup = async (): Promise<void> => {
-    await Promise.allSettled(
+    const results = await Promise.allSettled(
       uploaded.map(async (key) => {
         await media.storage.remove(key);
       }),
     );
+    results.forEach((result, index) => {
+      if (result.status === 'rejected') {
+        // An orphan object: nothing references it and nothing will remove it (no reaper yet).
+        warn('orphan', { key: uploaded[index] ?? '', status: 'cleanup failed' });
+      }
+    });
   };
   const variants: Record<string, string> = {};
   try {
@@ -110,7 +145,14 @@ export async function POST(request: Request): Promise<Response> {
       uploaded.push(key);
       variants[`${rendition.size}.${rendition.format}`] = `${media.publicBase}/${key}`;
     }
-  } catch {
+  } catch (error) {
+    warn('storage put failed', {
+      key: imageKey(productId, imageId, 'full', 'webp').replace(/\/[^/]+$/, ''),
+      status:
+        error instanceof Error && 'status' in error && typeof error.status === 'number'
+          ? error.status
+          : 0,
+    });
     await cleanup();
     return reply(502, 'STORAGE_FAILED');
   }
@@ -142,6 +184,9 @@ export async function POST(request: Request): Promise<Response> {
       },
     });
   } catch {
+    warn('database write failed', {
+      key: imageKey(productId, imageId, 'full', 'webp').replace(/\/[^/]+$/, ''),
+    });
     await cleanup();
     return reply(500, 'GENERIC');
   }

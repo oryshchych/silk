@@ -17,13 +17,16 @@ export interface FakeS3 {
   endpoint: string;
   objects: Map<string, { body: Buffer; contentType: string; cacheControl: string }>;
   rejected: number;
+  /** Every request that reached the server, signed or not. */
+  requests: number;
   close: () => Promise<void>;
 }
 
-export async function startFakeS3(): Promise<FakeS3> {
+export async function startFakeS3(host = '127.0.0.1', listenOn = 0): Promise<FakeS3> {
   const objects: FakeS3['objects'] = new Map();
-  const state = { rejected: 0 };
+  const state = { rejected: 0, requests: 0 };
   const server: Server = createServer((req, res) => {
+    state.requests += 1;
     const chunks: Buffer[] = [];
     req.on('data', (chunk: Buffer) => chunks.push(chunk));
     req.on('end', () => {
@@ -79,13 +82,16 @@ export async function startFakeS3(): Promise<FakeS3> {
       }
     });
   });
-  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  await new Promise<void>((resolve) => server.listen(listenOn, host, resolve));
   const port = (server.address() as AddressInfo).port;
   return {
     endpoint: `http://127.0.0.1:${String(port)}`,
     objects,
     get rejected() {
       return state.rejected;
+    },
+    get requests() {
+      return state.requests;
     },
     close: async () => {
       await new Promise<void>((resolve) =>

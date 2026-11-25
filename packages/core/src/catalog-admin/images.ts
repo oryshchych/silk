@@ -49,6 +49,22 @@ export async function assertRoomForImage(tx: Tx | Reader, productId: string): Pr
   if ((row?.n ?? 0) >= MAX_IMAGES_PER_PRODUCT) throw new TooManyImagesError();
 }
 
+/** One writer per product at a time: the cap and the order are decided under this lock. */
+async function lockProductImages(tx: Tx, productId: string): Promise<void> {
+  await tx.execute(
+    sql`SELECT pg_advisory_xact_lock(hashtextextended(${`product-images:${productId}`}, 0))`,
+  );
+}
+
+/** False when there is no such product (checked BEFORE a photo is converted, not after). */
+export async function productExists(db: Reader, productId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: products.id })
+    .from(products)
+    .where(eq(products.id, productId));
+  return row !== undefined;
+}
+
 export async function addProductImage(
   tx: Tx,
   input: {
@@ -67,6 +83,9 @@ export async function addProductImage(
     .from(products)
     .where(eq(products.id, input.productId));
   if (product === undefined) throw new AdminNotFoundError('product');
+  // The room check and the order number are read and written under one lock: parallel uploads
+  // cannot both fit under the cap or take the same place in the order.
+  await lockProductImages(tx, input.productId);
   await assertRoomForImage(tx, input.productId);
   const [last] = await tx
     .select({ max: sql<number>`COALESCE(max(${productImages.sortOrder}), -1)::int` })

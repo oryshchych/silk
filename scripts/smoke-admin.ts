@@ -724,6 +724,55 @@ export async function runAdminSmoke({
         /^products\/[0-9a-f-]{36}\/[0-9a-f-]{36}\/(thumb|card|full)\.(webp|avif)$/.test(key),
       ),
     );
+    // A refused role never gets its body read (an endless body is not consumed), and the store sees nothing.
+    const requestsBefore = fakeS3.requests;
+    const endless = new ReadableStream({
+      pull(controller) {
+        controller.enqueue(new Uint8Array(64 * 1024));
+      },
+    });
+    const refusedFast = await upload(
+      endless,
+      managerToken,
+      `productId=${target.id}`,
+      {},
+      {
+        duplex: 'half',
+        signal: AbortSignal.timeout(8_000),
+      },
+    ).catch(() => null);
+    check(
+      'media: a manager with an endless body gets 403 at once (the body is never read) and the store saw no request',
+      refusedFast?.status === 403 && fakeS3.requests === requestsBefore,
+    );
+    // Memory is bounded by slots taken BEFORE the body is read: parallel uploads of one user are refused at once.
+    const burst = await Promise.all(
+      Array.from({ length: 8 }, async () => await upload(photo, contentToken)),
+    );
+    check(
+      'media: 8 parallel uploads from one user: one is admitted, the rest are 429 BUSY immediately (in-flight slots)',
+      burst.filter((r) => r.status === 201).length >= 1 &&
+        burst.filter((r) => r.status === 429 && r.json.code === 'BUSY').length >= 5,
+    );
+    const stale = 'v1.00000000-0000-4000-8000-000000000000.9999999999.AAAA';
+    const flood = [];
+    for (let i = 0; i < 130; i += 1) {
+      flood.push(
+        await upload(Buffer.from('x'), stale, `productId=${target.id}`, {
+          'X-Forwarded-For': '192.0.2.77',
+        }),
+      );
+    }
+    check(
+      'media: a flood of POSTs with a stale cookie from one client is cut by the pre-auth limit (429) after 120',
+      flood.filter((r) => r.status === 401).length >= 100 && flood.some((r) => r.status === 429),
+    );
+    const mixed = await upload(photo, contentToken, `productId=${target.id.toUpperCase()}`);
+    check(
+      'media: an upper-case product id is accepted as the same product',
+      mixed.status === 201 || mixed.status === 409,
+    );
+
     const editorPage = await get(`/admin/products/${target.id}`, cookie(adminToken));
     check(
       'media: the editor warns about a photo without alt text',

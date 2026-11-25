@@ -61,17 +61,20 @@ export async function processImage(bytes: Buffer): Promise<ProcessedImage> {
   if (bytes.length > LIMITS.maxBytes) throw new ImageRejectedError('too_large');
   if (sniffImage(bytes) === null) throw new ImageRejectedError('unsupported_type');
 
+  // The header is read WITHOUT libvips' pixel limit, so an oversized image is named as such
+  // (`too_many_pixels`) by our own check below instead of surfacing as an unreadable file; only
+  // the DECODE, further down, runs under the limit. Reading dimensions decodes no pixels.
+  let meta: Metadata;
+  try {
+    meta = await sharp(bytes, { limitInputPixels: false }).metadata();
+  } catch {
+    throw new ImageRejectedError('unreadable');
+  }
   const source = sharp(bytes, {
     limitInputPixels: LIMITS.maxPixels,
     failOn: 'error',
     sequentialRead: true,
   });
-  let meta: Metadata;
-  try {
-    meta = await source.metadata();
-  } catch {
-    throw new ImageRejectedError('unreadable');
-  }
   if ((meta.pages ?? 1) > 1) throw new ImageRejectedError('animated');
   const width = meta.width;
   const height = meta.height;

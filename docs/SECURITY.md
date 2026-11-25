@@ -130,10 +130,10 @@ enforced WHILE the body streams (a missing or false length cannot get past it), 
 BYTES (JPEG, PNG or WebP only: an SVG, an HTML page or a GIF sent as `image/jpeg` is refused, 415), the
 pixel cap (40 MP, checked from the header before decoding: a decompression bomb is refused, not
 decoded), no animation, EXIF orientation applied and all metadata (EXIF, GPS) stripped, never enlarged,
-at most 2 conversions at once. Storage keys are `products/<product id>/<image id>/<size>.<format>`:
+at most 3 uploads in flight over everybody and 1 per user (a slot is taken BEFORE the body is read and held to the end, the rest get 429 at once: this is what bounds memory), the body streamed into ONE buffer allocated from its declared length, the product and the photo count checked before the conversion. Storage keys are `products/<product id>/<image id>/<size>.<format>`:
 ids and fixed words, never a file name (`assertSafeKey` refuses anything else). The row and its audit
 entry are written in one transaction after the files are stored; a failure removes the files again.
-Because the route bypasses the proxy it does not get the staging basic-auth gate: it answers 401
+The row, its order number and the 30-photo cap are decided under a per-product advisory lock. Files whose removal fails after a failed write stay in the bucket as ORPHANS (nothing references them; there is no sweeper and the storage client has no list call); every such case and every storage failure is logged at warn level with the object key prefix and a status only (owner queue Q47). Because the route bypasses the proxy it does not get the staging basic-auth gate: it answers 401
 without an admin session, and every response is `private, no-store`.
 
 ## Responses

@@ -107,6 +107,16 @@ describe('processImage', () => {
     expect(performance.now() - start).toBeLessThan(2_000);
   });
 
+  it('a real 42 MP image (6500 x 6500, solid, a small file) is named too_many_pixels, not unreadable', async () => {
+    const big = await sharp({
+      create: { width: 6500, height: 6500, channels: 3, background: '#808080' },
+    })
+      .png({ compressionLevel: 9 })
+      .toBuffer();
+    expect(big.length).toBeLessThan(LIMITS.maxBytes);
+    expect(await rejection(big)).toBe('too_many_pixels');
+  }, 60_000);
+
   it('refuses a file over the byte cap, a truncated JPEG and an animated WebP', async () => {
     expect(await rejection(Buffer.alloc(LIMITS.maxBytes + 1, 0xff))).toBe('too_large');
     const whole = await photo(800, 600);

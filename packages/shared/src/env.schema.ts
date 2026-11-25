@@ -91,9 +91,32 @@ export const envSchema = z
     R2_BUCKET_MEDIA: secret,
     // The S3 endpoint of the bucket. Default: https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com. A local
     // fake or another S3-compatible service overrides it (plain http only for loopback).
-    R2_ENDPOINT: z.url({ protocol: /^https?$/ }).optional(),
+    R2_ENDPOINT: z
+      .url({ protocol: /^https?$/ })
+      .refine(
+        (value) => {
+          const url = new URL(value);
+          return (
+            url.protocol === 'https:' || ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
+          );
+        },
+        { message: 'R2_ENDPOINT must be https (plain http only for loopback)' },
+      )
+      .optional(),
     // Where the browser reads media (the public bucket domain or a CDN in front of it). https.
-    MEDIA_PUBLIC_BASE_URL: z.url({ protocol: /^https$/ }).optional(),
+    MEDIA_PUBLIC_BASE_URL: z
+      .url({ protocol: /^https$/ })
+      .refine(
+        (value) => {
+          const url = new URL(value);
+          return url.username === '' && url.password === '' && url.search === '' && url.hash === '';
+        },
+        {
+          message:
+            'MEDIA_PUBLIC_BASE_URL must be a plain https address (no user, query or fragment)',
+        },
+      )
+      .optional(),
 
     SENTRY_DSN: z.url({ protocol: /^https$/ }).optional(),
 

@@ -539,6 +539,38 @@ describe('product images', () => {
     expect(second.data.imageId).not.toBe(first.data.imageId);
   }, 60_000);
 
+  it('parallel uploads cannot both fit under the cap or share a place in the order (the product is locked)', async () => {
+    const { data } = await newProduct();
+    for (let i = 0; i < 28; i += 1) await add(data.productId);
+    const barrier = new Barrier(6);
+    const outcomes = await Promise.all(
+      Array.from({ length: 6 }, async () => {
+        const other = world.connect(1);
+        await barrier.wait();
+        const imageId = randomUUID();
+        return await other.db
+          .transaction(
+            async (tx) =>
+              await addProductImage(tx, {
+                productId: data.productId,
+                imageId,
+                url: urlFor(`x/${imageId}`),
+                variants: {},
+                width: 10,
+                height: 10,
+              }),
+          )
+          .then(() => 'ok' as const)
+          .catch((error: unknown) => (error instanceof TooManyImagesError ? 'full' : 'broken'));
+      }),
+    );
+    expect(outcomes.filter((o) => o === 'ok')).toHaveLength(2);
+    expect(outcomes.filter((o) => o === 'full')).toHaveLength(4);
+    const orders = (await listAdminImages(handle.db, data.productId)).map((i) => i.sortOrder);
+    expect(orders).toHaveLength(30);
+    expect(new Set(orders).size).toBe(30);
+  }, 90_000);
+
   it('alt text, colour and order are saved; an unknown colour is refused; a no-op changes nothing', async () => {
     const { data } = await newProduct();
     const image = await add(data.productId);
