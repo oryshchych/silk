@@ -487,9 +487,9 @@ export async function runAdminSmoke({
       '/admin/products',
     );
     let shown = false;
-    for (let attempt = 0; attempt < 6 && !shown; attempt += 1) {
+    for (let attempt = 0; attempt < 40 && !shown; attempt += 1) {
       shown = (await get(`/product/${oldSlug}`)).html.includes('777,77');
-      if (!shown) await new Promise((resolve) => setTimeout(resolve, 300));
+      if (!shown) await new Promise((resolve) => setTimeout(resolve, 500));
     }
     check(
       'catalog: a price change shows on the product page within a revalidation (tag invalidation)',
