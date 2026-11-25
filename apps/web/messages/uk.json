@@ -333,7 +333,8 @@
         "manager": "Менеджер",
         "content": "Контент-менеджер"
       },
-      "products": "Товари"
+      "products": "Товари",
+      "importExport": "Імпорт та експорт"
     },
     "dashboard": {
       "title": "Огляд",
@@ -448,6 +449,62 @@
       "badgeBestseller": "Хіт продажів",
       "badgeLast": "Останні одиниці",
       "noSizes": "Спершу додайте розміри й кольори в довідниках."
+    },
+    "importExport": {
+      "title": "Імпорт та експорт",
+      "exportTitle": "Експорт товарів",
+      "exportHint": "CSV з усіма товарами. Колонку собівартості бачать лише ті, хто має на це право.",
+      "exportCsv": "Завантажити CSV",
+      "importTitle": "Імпорт товарів",
+      "importHint": "CSV з колонками sku, slug, brand, category (slug категорії), name_uk, name_en, price, compare_at_price, cost_price, weight_grams. Товар шукається за sku: є — оновлюється (порожня клітинка нічого не змінює), немає — створюється чернеткою. Файл до 60 КБ (близько 300 рядків).",
+      "file": "Файл CSV",
+      "tooBig": "Файл завеликий: до 60 КБ. Розділіть його на частини.",
+      "failed": "Не вдалося обробити файл.",
+      "previewSummary": "Готово до імпорту: {good}, з помилками: {bad}",
+      "ignored": "Ці колонки не імпортуються: {columns}",
+      "commit": "Імпортувати {count}",
+      "doneSummary": "Створено: {created}, оновлено: {updated}, помилок: {failed}",
+      "line": "Рядок",
+      "sku": "Артикул",
+      "result": "Результат",
+      "willCreate": "Буде створено",
+      "willUpdate": "Буде оновлено",
+      "noAccess": "Немає доступу.",
+      "rowErrors": {
+        "sku_required": "Немає артикула.",
+        "sku_invalid": "Некоректний артикул.",
+        "sku_duplicate_in_file": "Артикул повторюється у файлі.",
+        "slug_invalid": "Некоректний slug.",
+        "name_required": "Потрібні обидві назви.",
+        "brand_required": "Потрібен бренд.",
+        "category_required": "Потрібна категорія.",
+        "category_unknown": "Такої категорії немає.",
+        "price_required": "Потрібна ціна.",
+        "price_invalid": "Некоректна ціна.",
+        "compare_price_invalid": "Некоректна стара ціна.",
+        "cost_invalid": "Некоректна собівартість.",
+        "weight_invalid": "Некоректна вага.",
+        "text_too_long": "Текст задовгий.",
+        "price_forbidden": "Немає права змінювати ціни.",
+        "cost_forbidden": "Немає права змінювати собівартість.",
+        "row_too_short": "У рядку менше клітинок, ніж у заголовку.",
+        "row_failed": "Не вдалося зберегти рядок.",
+        "ADMIN_SLUG_TAKEN": "Такий slug уже використовується.",
+        "ADMIN_SKU_TAKEN": "Такий артикул уже використовується.",
+        "ADMIN_INVALID_PRICE": "Стара ціна має бути вищою за ціну."
+      },
+      "fileErrors": {
+        "CSV_TOO_LARGE": "Файл завеликий.",
+        "CSV_TOO_MANY_ROWS": "Забагато рядків (до 1000).",
+        "CSV_TOO_MANY_COLUMNS": "Забагато колонок.",
+        "CSV_CELL_TOO_LONG": "Одна з клітинок задовга.",
+        "CSV_UNTERMINATED_QUOTE": "Файл пошкоджено: незакриті лапки.",
+        "CSV_EMPTY": "Файл порожній.",
+        "FORBIDDEN": "Недостатньо прав.",
+        "UNAUTHENTICATED": "Сеанс завершено. Увійдіть знову.",
+        "RATE_LIMITED": "Забагато дій. Зачекайте хвилину.",
+        "INVALID_INPUT": "Файл порожній або завеликий."
+      }
     }
   }
 }

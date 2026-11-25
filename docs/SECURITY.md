@@ -57,7 +57,9 @@ confirmed TOTP before a session counts; so must anyone who enrolled one.
 | Generate variants, edit a variant's SKU, barcode, active | `catalog.edit` | `generateVariantsAction`, `updateVariantContentAction` |
 | A variant's price override | `catalog.price` | `updateVariantPricingAction` |
 | Read the product list and editor | `admin.view` (+ `catalog.cost.view` for the cost) | `lib/admin` pages call `listAdminProducts` / `getAdminProduct` with the role's cost permission; the DTO schema for a role without it has no cost key |
-| Categories, colours, sizes, attributes, stock, media, import, export | see the table above | their actions arrive with their screens in the next slices |
+| Preview and commit a CSV import | `catalog.import` | `previewImportAction` (writes nothing), `commitImportAction` (`actions/admin-import.ts`): a column the role may not write (price without `catalog.price`, cost without `catalog.cost.view`) turns the row into an error; each written row has its own audit row |
+| Download the product CSV | `catalog.export` | `GET /admin/export/products` (`app/admin/export/products/route.ts`): the cost column only for `catalog.cost.view`, every export audited |
+| Categories, colours, sizes, attributes, stock, media | see the table above | their actions arrive with their screens in the next slices |
 
 ## Authentication facts
 
@@ -114,6 +116,17 @@ of its category chain and the showcase, nothing else.
 - **Credential work is bounded.** At most 3 password hashes or TOTP transactions run at once and 6
   wait; more are refused at once ("too many attempts"), so a login flood cannot starve the site.
   The cap over all clients counts credential attempts (POST), not page loads.
+
+## Import and export
+
+CSV only (XLSX needs a library: owner queue). The parser is bounded (2 MB, 1000 rows, 30 columns,
+20 000 characters a cell) and a file goes through a server action, so `proxy.ts`'s 64 KB body
+limit applies: about 300 rows per file. An import is PREVIEWED first (every row validated, nothing
+written), then committed; each row is written in its own savepoint through the same domain
+functions as the editor, so one bad row never undoes the good ones and every rule (unique slug and
+SKU, old price over price, 301 on a renamed slug) holds. An empty cell on an update changes
+nothing. The export neutralises formulas (a cell starting with `=`, `+`, `-`, `@`, tab or CR gets
+a leading apostrophe) and reads the cost into the file only for a role that may see it.
 
 ## Responses
 

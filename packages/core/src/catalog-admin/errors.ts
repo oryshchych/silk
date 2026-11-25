@@ -60,3 +60,10 @@ export class ForbiddenError extends DomainError {
     super('FORBIDDEN', 'You do not have permission for this change');
   }
 }
+
+/** The uploaded CSV could not be read at all (too big, too many rows, broken quoting, empty). */
+export class ImportFileError extends DomainError {
+  constructor(reason: string) {
+    super(`CSV_${reason.toUpperCase()}`, `The file cannot be imported: ${reason}`);
+  }
+}

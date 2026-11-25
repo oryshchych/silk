@@ -43,6 +43,7 @@ export async function catalogAction<S extends z.ZodType, T>(spec: {
       } else {
         await audit(outcome.audit);
       }
+      for (const extra of outcome.extraAudits ?? []) await audit(extra);
       tags = outcome.tags;
       return outcome.data;
     },
