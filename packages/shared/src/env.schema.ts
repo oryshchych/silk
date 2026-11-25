@@ -50,6 +50,8 @@ export const envSchema = z
     EMAIL_TO_OVERRIDE: z.email().optional(),
     EMAIL_FROM: z.email().optional(),
 
+    // Keys for sessions and TOTP are derived from it (HKDF). Under 32 characters the admin refuses
+    // to sign anyone in (fails closed); production refuses to boot (below).
     AUTH_SECRET: secret,
 
     MONO_PLATA_TOKEN: secret,
@@ -141,6 +143,18 @@ export const envSchema = z
           });
         }
       }
+    }
+
+    if (
+      value.APP_ENV === 'production' &&
+      value.AUTH_SECRET !== undefined &&
+      value.AUTH_SECRET.length < 32
+    ) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['AUTH_SECRET'],
+        message: 'AUTH_SECRET must be at least 32 characters in production.',
+      });
     }
 
     if (value.APP_ENV === 'staging' && value.SITE_URL === undefined) {

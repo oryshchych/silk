@@ -30,6 +30,10 @@
     "./fiscal-receipts": "./src/fiscal/receipts.ts",
     "./quarantine": "./src/payments/quarantine.ts",
     "./fiscal-gaps": "./src/fiscal/gaps.ts",
+    "./auth": "./src/auth/service.ts",
+    "./auth-permissions": "./src/auth/permissions.ts",
+    "./auth-totp": "./src/auth/totp.ts",
+    "./audit": "./src/audit/write-audit.ts",
     "./stock": "./src/stock/adjust-stock.ts"
   },
   "scripts": {

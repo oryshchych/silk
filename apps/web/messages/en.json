@@ -272,5 +272,79 @@
     "payFailed": "The payment did not go through. You can try again, with another card or another provider.",
     "payExpired": "The payment window expired. You can start a new payment.",
     "payRefunded": "This payment was refunded."
+  },
+  "admin": {
+    "meta": {
+      "title": "Admin",
+      "description": "Back office"
+    },
+    "login": {
+      "title": "Sign in to the admin",
+      "email": "Email",
+      "password": "Password",
+      "submit": "Sign in",
+      "invalid": "Wrong email or password.",
+      "rateLimited": "Too many attempts. Try again in a few minutes.",
+      "error": "Could not sign you in. Please try again."
+    },
+    "verify": {
+      "title": "Second sign-in step",
+      "hint": "Enter the 6-digit code from your authenticator app.",
+      "code": "Code",
+      "submit": "Verify",
+      "useRecovery": "Use a recovery code",
+      "useApp": "Use the code from the app",
+      "recoveryLabel": "Recovery code",
+      "invalid": "Wrong code.",
+      "rateLimited": "Too many attempts. Try again in a few minutes.",
+      "backToLogin": "Start sign-in again"
+    },
+    "enroll": {
+      "title": "Set up two-step sign-in",
+      "intro": "Two-step sign-in is required for your role. Add the key to an authenticator app (Google Authenticator, 1Password, Aegis) and enter the first code.",
+      "start": "Generate a key",
+      "secretLabel": "Key for manual entry",
+      "uriLabel": "otpauth link",
+      "codeLabel": "Code from the app",
+      "confirm": "Confirm and sign in",
+      "invalid": "Wrong code. Check the time on your device.",
+      "rateLimited": "Too many attempts. Try again in a few minutes.",
+      "recoveryTitle": "Recovery codes",
+      "recoveryHint": "Keep these codes somewhere safe. Each works once if you lose your phone. They are not shown again.",
+      "continue": "I saved the codes, continue"
+    },
+    "shell": {
+      "skip": "Skip to main content",
+      "brand": "Admin",
+      "nav": "Sections",
+      "dashboard": "Overview",
+      "signedInAs": "Signed in as",
+      "logout": "Sign out",
+      "theme": "Theme",
+      "themeLight": "Light",
+      "themeDark": "Dark",
+      "themeSystem": "System",
+      "language": "Language",
+      "languageUk": "Українська",
+      "languageEn": "English",
+      "role": {
+        "owner": "Owner",
+        "admin": "Administrator",
+        "manager": "Manager",
+        "content": "Content editor"
+      }
+    },
+    "dashboard": {
+      "title": "Overview",
+      "welcome": "The admin is running. Catalog sections will appear here in the next updates.",
+      "signOutOthers": "Sign out on all other devices",
+      "signedOutOthers": "Other sessions ended: {count}",
+      "signOutFailed": "Could not end the sessions."
+    },
+    "state": {
+      "loading": "Loading…",
+      "errorTitle": "Something went wrong",
+      "errorRetry": "Try again"
+    }
   }
 }

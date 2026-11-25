@@ -15,6 +15,7 @@ import {
   FAKE_SECRET,
   startFakeWayForPay,
 } from '../packages/payments/test/fake-wayforpay.ts';
+import { runAdminSmoke } from './smoke-admin.ts';
 import { runCheckoutSmoke } from './smoke-checkout.ts';
 import { runPaymentSmoke } from './smoke-payments.ts';
 
@@ -38,6 +39,7 @@ cpSync(join(root, 'apps/web/.next/standalone'), copy, { recursive: true });
 const fakeWfp = await startFakeWayForPay();
 const fakeMono = await startFakeMono();
 const MONO_TOKEN = 'smoke-mono-token-9f3c1a77';
+const AUTH_SECRET_FOR_SMOKE = 'smoke-auth-secret-0123456789-abcdefghijklmnop';
 
 const server = spawn(process.execPath, [join(copy, 'apps/web/server.js')], {
   env: {
@@ -60,6 +62,7 @@ const server = spawn(process.execPath, [join(copy, 'apps/web/server.js')], {
         'R2_BUCKET_MEDIA',
       ].map((key) => [key, 'smoke']),
     ),
+    AUTH_SECRET: AUTH_SECRET_FOR_SMOKE,
     MONO_PLATA_TOKEN: MONO_TOKEN,
     MONO_API_BASE_URL: fakeMono.baseUrl,
     WAYFORPAY_MERCHANT_ACCOUNT: FAKE_ACCOUNT,
@@ -401,6 +404,15 @@ try {
     );
   }
   await runCheckoutSmoke({ base, buildRoot: copy, check, storedFiles });
+  await runAdminSmoke({
+    base,
+    databaseUrl,
+    authSecret: AUTH_SECRET_FOR_SMOKE,
+    buildRoot: copy,
+    siteOrigin: SITE,
+    check,
+    storedFiles,
+  });
   await runPaymentSmoke({
     base,
     serverPid: server.pid ?? 0,
