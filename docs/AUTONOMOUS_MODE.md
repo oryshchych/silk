@@ -144,6 +144,36 @@ Cost of the work itself:
   at most two rounds. When a phase passes its budget the orchestrator says so in
   the owner queue instead of adding rounds.
 
+Wall-clock rules (added after phase 4 took about five hours: nine sequential PRs,
+a 37 minute specialist run on one of them, three rounds on the media PR):
+
+- **Start the specialist when the PR opens**, in parallel with CI, not after CI is
+  green. The specialist does not wait for CI and does not repeat it.
+- **Time-box a specialist run to about 20 minutes** and give it a written list of
+  what to probe (files, attack surface, at most five mutations). A broader sweep
+  is a separate, deliberate decision, not the default. A run that hits the time
+  box reports what it covered and what it did not.
+- **A fix round gets a scoped re-check, never a rebuilt probe.** The orchestrator
+  re-runs only what the fix touches: the changed files, `pnpm verify`, two
+  mutations of the fix, and the one probe that measures the fixed property. No
+  full image rebuild, no repeating the whole probe matrix, no new specialist,
+  unless the fix changed the attack surface itself.
+- **Tests must use the real shape of the input.** A hand-made stream or mock
+  that behaves better than the real one hides the defect (the phase 4 read
+  deadline passed its unit test with a `cancel()` that always settled, and
+  failed on a real server). When the code meets a real server, socket, container
+  or database, at least one test or smoke case in the PR uses it.
+- **Author closes the obvious classes before review.** Before opening a PR the
+  author lists the failure classes of the change (limits, timeouts, replay,
+  no-op, rollback, role matrix) and shows one test or mutation for each in the PR
+  description. Findings that fall into a listed class are a process failure and
+  are counted in the phase report.
+- **No idle waits.** The orchestrator never sleeps on CI in a foreground command
+  longer than one check cycle; it starts the next independent step (the next
+  review, the owner queue, the phase report draft) and returns when CI reports.
+- **Report the wall-clock in the phase report**: elapsed time, number of PRs, rounds
+  per PR and the longest single wait, so the budget is measured, not guessed.
+
 ## Hard stops: never, in any mode
 
 - Anything on production: deploys, DDL, data, environment, secrets.
