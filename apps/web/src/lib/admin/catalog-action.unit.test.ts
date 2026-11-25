@@ -141,8 +141,11 @@ describe('catalogAction', () => {
 
   it('a cache refresh that throws after the commit does not turn the committed change into an error', async () => {
     invalidateThrows = true;
+    const quiet = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     const result = await catalogAction({ ...base, op: () => Promise.resolve(outcome) });
     invalidateThrows = false;
+    expect(quiet).toHaveBeenCalledTimes(1);
+    quiet.mockRestore();
     expect(result).toEqual({ ok: true, data: outcome.data });
   });
 });
