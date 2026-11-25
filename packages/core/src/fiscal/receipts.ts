@@ -12,7 +12,7 @@
  *
  * Callers hold the order lock (ADR-22), so a document is created once per order and kind.
  */
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { fiscalDocuments, orderItems, orders, outbox } from '@store/db/schema';
@@ -158,7 +158,10 @@ async function recordUnbuildable(
       lastError: reason,
     })
     // `fiscal_docs_one_sale_uq`: a sale document already exists, so this one changes nothing.
-    .onConflictDoNothing()
+    .onConflictDoNothing({
+      target: fiscalDocuments.orderId,
+      where: sql`${fiscalDocuments.kind} = 'sale'`,
+    })
     .returning({ id: fiscalDocuments.id });
   if (document === undefined) return 'exists';
   await tx
@@ -216,7 +219,10 @@ export async function enqueueSaleReceipt(
       itemsSnapshot: snapshot,
     })
     // The unique index is the guarantee; the select above only saves the work in the common case.
-    .onConflictDoNothing()
+    .onConflictDoNothing({
+      target: fiscalDocuments.orderId,
+      where: sql`${fiscalDocuments.kind} = 'sale'`,
+    })
     .returning({ id: fiscalDocuments.id });
   if (document === undefined) return 'exists';
   await tx.update(orders).set({ fiscalStatus: 'pending' }).where(eq(orders.id, order.id));
@@ -263,7 +269,10 @@ export async function enqueueReturnReceipt(
       itemsSnapshot: snapshot,
     })
     // `fiscal_docs_one_return_per_refund_uq`.
-    .onConflictDoNothing()
+    .onConflictDoNothing({
+      target: fiscalDocuments.refundOperationId,
+      where: sql`${fiscalDocuments.refundOperationId} IS NOT NULL`,
+    })
     .returning({ id: fiscalDocuments.id });
   if (document === undefined) return 'exists';
   await queue(tx, document.id);

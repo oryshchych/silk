@@ -500,3 +500,19 @@ the pattern, but on tables that are small before launch, and their header commen
 it; a committed migration is never edited). When a migration has to touch a large table, give
 the steps separate journal entries, or run them with a non-transactional runner, so the lock of
 one step is released before the next starts.
+
+### Migration 0009 precondition (fiscal uniqueness, phase 4)
+
+Migration `0009_fiscal_uniqueness_reconcile_rotation` creates unique indexes. If the target
+database already holds duplicates the whole migration fails (the migrator runs everything pending
+in one transaction, so nothing is half applied; `packages/db/test/upgrade-0009.int.test.ts` proves
+it). Before deploying to a database that ran the phase 3 code, both of these must return no rows:
+
+```sql
+SELECT order_id FROM fiscal_documents WHERE kind = 'sale' GROUP BY 1 HAVING count(*) > 1;
+SELECT refund_operation_id FROM fiscal_documents
+ WHERE kind = 'return' AND refund_operation_id IS NOT NULL GROUP BY 1 HAVING count(*) > 1;
+```
+
+The migrator holds the index locks until commit and `CREATE INDEX CONCURRENTLY` cannot run inside
+it: a large `payment_attempts` later needs a separate non-transactional step in the runbook.

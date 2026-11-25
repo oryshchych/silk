@@ -27,7 +27,12 @@ import {
 
 import { FiscalRetryError } from '../src/errors.ts';
 import { issueFiscalReceipt, MAX_FISCAL_ATTEMPTS, type FiscalDeps } from '../src/fiscal/issue.ts';
-import { buildReceiptLines, enqueueSaleReceipt, lineTotalOf } from '../src/fiscal/receipts.ts';
+import {
+  buildReceiptLines,
+  enqueueReturnReceipt,
+  enqueueSaleReceipt,
+  lineTotalOf,
+} from '../src/fiscal/receipts.ts';
 import { shipOrder } from '../src/orders/fulfilment.ts';
 import { confirmCodOrder, confirmTransferReceived } from '../src/payments/offline.ts';
 import { handlePaymentWebhook } from '../src/payments/handle-webhook.ts';
@@ -285,38 +290,65 @@ describe('cash on delivery and bank transfer', () => {
   });
 });
 
+/**
+ * Runs two enqueue calls on separate connections so that the SECOND one starts while the FIRST
+ * has written its document and not yet committed: the second's SELECT cannot see it, so only the
+ * unique index with ON CONFLICT stands between it and a duplicate.
+ */
+async function racing<T>(
+  call: (tx: Parameters<Parameters<DbHandle['db']['transaction']>[0]>[0]) => Promise<T>,
+): Promise<[T, T]> {
+  const other = world.connect(3);
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let firstWrote: () => void = () => undefined;
+  const written = new Promise<void>((resolve) => {
+    firstWrote = resolve;
+  });
+  const first = admin.db.transaction(async (tx) => {
+    const result = await call(tx);
+    firstWrote();
+    await gate;
+    return result;
+  });
+  await written;
+  const second = other.db.transaction(async (tx) => await call(tx));
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  release();
+  return await Promise.all([first, second]);
+}
+
 describe('Q35: the unique index is the guarantee, not the select before the insert', () => {
   it('two connections racing to write the sale document: one queued, one exists, never a throw', async () => {
     const orderId = await placeOrder(admin, variants[0] ?? '', 'wayforpay');
-    const other = world.connect(3);
-    let release: () => void = () => undefined;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    let firstWrote: () => void = () => undefined;
-    const written = new Promise<void>((resolve) => {
-      firstWrote = resolve;
-    });
-    // The first transaction writes the document and stays open; the second one's SELECT cannot see
-    // it, so only the unique index (with ON CONFLICT) stands between it and a duplicate.
-    const first = admin.db.transaction(async (tx) => {
-      const result = await enqueueSaleReceipt(tx, { orderId, paymentForm: 'card' });
-      firstWrote();
-      await gate;
-      return result;
-    });
-    await written;
-    const second = other.db.transaction(
+    const results = await racing(
       async (tx) => await enqueueSaleReceipt(tx, { orderId, paymentForm: 'card' }),
     );
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    release();
-    const results = await Promise.all([first, second]);
     expect(results).toEqual(['queued', 'exists']);
     expect(await docsOf(orderId)).toHaveLength(1);
     expect(
       await count(sql`SELECT count(*)::int AS n FROM outbox WHERE topic = 'fiscal.issue-receipt'`),
     ).toBe(1);
+  });
+
+  it('two connections racing to write the return document of one refund: one queued, one exists', async () => {
+    const orderId = await paidCardOrder();
+    const [refund] = (
+      await admin.db.execute<{ id: string }>(
+        sql`INSERT INTO refund_operations (order_id, amount, state)
+            VALUES (${orderId}, 5000, 'succeeded') RETURNING id`,
+      )
+    ).rows;
+    const refundOperationId = refund?.id ?? '';
+    const results = await racing(
+      async (tx) =>
+        await enqueueReturnReceipt(tx, { orderId, refundOperationId, amount: money(5000) }),
+    );
+    expect(results).toEqual(['queued', 'exists']);
+    const returns = (await docsOf(orderId)).filter((doc) => doc.kind === 'return');
+    expect(returns).toHaveLength(1);
   });
 });
 

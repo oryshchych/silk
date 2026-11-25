@@ -789,7 +789,8 @@ export const paymentAttempts = pgTable('payment_attempts', {
   expiresAt: timestamp('expires_at', { withTimezone: true }),
   completedAt: timestamp('completed_at', { withTimezone: true }),
   /**
-   * When reconciliation last asked the provider about this attempt. NULL = never asked. The
+   * When reconciliation last picked this attempt up (stamped just BEFORE the provider is asked).
+   * NULL = never. The
    * reconcile job walks open attempts least recently asked first, so a pile of attempts that
    * never settle cannot starve a new payment (owner queue Q35).
    */
