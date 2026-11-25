@@ -12,7 +12,7 @@
  *
  * Callers hold the order lock (ADR-22), so a document is created once per order and kind.
  */
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { fiscalDocuments, orderItems, orders, outbox } from '@store/db/schema';
@@ -157,7 +157,13 @@ async function recordUnbuildable(
       state: 'failed',
       lastError: reason,
     })
+    // `fiscal_docs_one_sale_uq`: a sale document already exists, so this one changes nothing.
+    .onConflictDoNothing({
+      target: fiscalDocuments.orderId,
+      where: sql`${fiscalDocuments.kind} = 'sale'`,
+    })
     .returning({ id: fiscalDocuments.id });
+  if (document === undefined) return 'exists';
   await tx
     .update(orders)
     .set({ fiscalStatus: 'failed', fiscalError: reason })
@@ -166,7 +172,7 @@ async function recordUnbuildable(
     .insert(outbox)
     .values({
       topic: 'alert.fiscal-failed',
-      payload: { orderId: order.id, documentId: document?.id ?? null },
+      payload: { orderId: order.id, documentId: document.id },
       dedupKey: `fiscal-failed:order:${order.id}`,
     })
     .onConflictDoNothing();
@@ -212,8 +218,13 @@ export async function enqueueSaleReceipt(
       amount: order.total,
       itemsSnapshot: snapshot,
     })
+    // The unique index is the guarantee; the select above only saves the work in the common case.
+    .onConflictDoNothing({
+      target: fiscalDocuments.orderId,
+      where: sql`${fiscalDocuments.kind} = 'sale'`,
+    })
     .returning({ id: fiscalDocuments.id });
-  if (document === undefined) throw new Error('fiscal document insert returned no row');
+  if (document === undefined) return 'exists';
   await tx.update(orders).set({ fiscalStatus: 'pending' }).where(eq(orders.id, order.id));
   await queue(tx, document.id);
   return 'queued';
@@ -257,8 +268,13 @@ export async function enqueueReturnReceipt(
       amount: input.amount,
       itemsSnapshot: snapshot,
     })
+    // `fiscal_docs_one_return_per_refund_uq`.
+    .onConflictDoNothing({
+      target: fiscalDocuments.refundOperationId,
+      where: sql`${fiscalDocuments.refundOperationId} IS NOT NULL`,
+    })
     .returning({ id: fiscalDocuments.id });
-  if (document === undefined) throw new Error('fiscal document insert returned no row');
+  if (document === undefined) return 'exists';
   await queue(tx, document.id);
   return 'queued';
 }

@@ -59,6 +59,8 @@ export interface ReconcileDeps {
   db: Reader & { transaction: <T>(fn: (tx: Tx) => Promise<T>) => Promise<T> };
   providers: ProviderMap;
   batch?: number;
+  /** Overrides `MAX_PER_RUN`; for tests of the rotation. */
+  maxPerRun?: number;
 }
 
 type Candidate = {
@@ -70,19 +72,16 @@ type Candidate = {
   overdue: boolean;
   alertDue: boolean;
   authorizedOld: boolean;
-  /** Keyset cursor: created_at as text (microseconds survive) and the id. */
-  cursorAt: string;
 };
 
 /**
- * One page of open attempts after the cursor. `pending` AND `authorized`: a held payment whose
- * final webhook was lost (WayForPay WaitingAuthComplete, Mono hold) is still open money.
+ * The next page of open attempts that have not been asked in THIS run, least recently asked first
+ * (never asked before all), then oldest. Rotation: attempts that never settle sink to the back
+ * after each run, so they cannot starve a new payment behind a backlog (owner queue Q35).
+ * `pending` AND `authorized`: a held payment whose final webhook was lost (WayForPay
+ * WaitingAuthComplete, Mono hold) is still open money.
  */
-async function candidates(
-  db: Reader,
-  after: { at: string; id: string } | null,
-  limit: number,
-): Promise<Candidate[]> {
+async function candidates(db: Reader, runStart: string, limit: number): Promise<Candidate[]> {
   const rows = await db
     .select({
       id: paymentAttempts.id,
@@ -95,7 +94,6 @@ async function candidates(
       alertDue: sql<boolean>`${paymentAttempts.createdAt} + make_interval(hours => ${ALERT_AFTER_HOURS}) < now()`,
       authorizedOld: sql<boolean>`${paymentAttempts.status} = 'authorized'
         AND ${paymentAttempts.createdAt} + make_interval(hours => ${AUTHORIZED_ALERT_HOURS}) < now()`,
-      cursorAt: sql<string>`${paymentAttempts.createdAt}::text`,
     })
     .from(paymentAttempts)
     .where(
@@ -104,12 +102,15 @@ async function candidates(
         inArray(paymentAttempts.status, ['pending', 'authorized']),
         inArray(paymentAttempts.provider, ['mono', 'wayforpay']),
         sql`${paymentAttempts.createdAt} < now() - make_interval(secs => ${MIN_AGE_SECONDS})`,
-        after === null
-          ? sql`true`
-          : sql`(${paymentAttempts.createdAt}, ${paymentAttempts.id}) > (${after.at}::timestamptz, ${after.id}::uuid)`,
+        sql`(${paymentAttempts.lastReconciledAt} IS NULL
+          OR ${paymentAttempts.lastReconciledAt} < ${runStart}::timestamptz)`,
       ),
     )
-    .orderBy(asc(paymentAttempts.createdAt), asc(paymentAttempts.id))
+    .orderBy(
+      sql`${paymentAttempts.lastReconciledAt} ASC NULLS FIRST`,
+      asc(paymentAttempts.createdAt),
+      asc(paymentAttempts.id),
+    )
     .limit(limit);
   return rows.flatMap((row) =>
     row.status === 'pending' || row.status === 'authorized' ? [{ ...row, status: row.status }] : [],
@@ -257,15 +258,33 @@ export async function reconcileOpenAttempts(deps: ReconcileDeps): Promise<Reconc
     }
   }
 
-  let cursor: { at: string; id: string } | null = null;
+  // The database clock, as text (microseconds survive): "asked in this run" means stamped at or
+  // after it. Each page is stamped BEFORE it is asked about, so the next page never repeats it and
+  // a crash mid-page still moves those attempts to the back of the line.
+  const runStart = await deps.db.transaction(async (tx) => {
+    const result = await tx.execute<{ now: string }>(sql`SELECT now()::text AS now`);
+    const row = result.rows[0];
+    if (row === undefined) throw new Error('the database returned no clock');
+    return row.now;
+  });
   let seen = 0;
-  while (seen < MAX_PER_RUN) {
-    const page = await candidates(deps.db, cursor, deps.batch ?? PAGE_SIZE);
-    const last = page.at(-1);
-    if (last === undefined) break;
+  const maxPerRun = deps.maxPerRun ?? MAX_PER_RUN;
+  while (seen < maxPerRun) {
+    const page = await candidates(deps.db, runStart, deps.batch ?? PAGE_SIZE);
+    if (page.length === 0) break;
+    await deps.db.transaction(async (tx) => {
+      await tx
+        .update(paymentAttempts)
+        .set({ lastReconciledAt: sql`now()` })
+        .where(
+          inArray(
+            paymentAttempts.id,
+            page.map((attempt) => attempt.id),
+          ),
+        );
+    });
     for (const attempt of page) await reconcileOne(attempt);
     seen += page.length;
-    cursor = { at: last.cursorAt, id: last.id };
   }
   return result;
 }

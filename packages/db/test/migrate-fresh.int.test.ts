@@ -698,3 +698,76 @@ describe('0008_attempt_needs_order', () => {
     );
   });
 });
+
+describe('0009_fiscal_uniqueness_reconcile_rotation', () => {
+  const UNIQUE_VIOLATION = '23505';
+
+  async function order(email: string): Promise<string> {
+    return (
+      await one<{ id: string }>(
+        app,
+        `INSERT INTO orders (order_number, customer_email, customer_phone, customer_name,
+                             delivery_method, subtotal, total)
+         VALUES (next_order_number(), $1, '+380000000000', 'Test', 'np_warehouse', 100, 100)
+         RETURNING id`,
+        [email],
+      )
+    ).id;
+  }
+  const document = async (
+    orderId: string,
+    kind: string,
+    parent: string | null,
+    refund: string | null,
+  ): Promise<string> =>
+    (
+      await one<{ id: string }>(
+        app,
+        `INSERT INTO fiscal_documents (order_id, kind, parent_document_id, refund_operation_id, amount)
+         VALUES ($1, $2, $3, $4, 100) RETURNING id`,
+        [orderId, kind, parent, refund],
+      )
+    ).id;
+  const refund = async (orderId: string): Promise<string> =>
+    (
+      await one<{ id: string }>(
+        app,
+        `INSERT INTO refund_operations (order_id, amount) VALUES ($1, 50) RETURNING id`,
+        [orderId],
+      )
+    ).id;
+
+  it('a second sale document for one order is rejected, another order is fine', async () => {
+    const a = await order('q35a@example.com');
+    const b = await order('q35b@example.com');
+    await document(a, 'sale', null, null);
+    await expect(document(a, 'sale', null, null)).rejects.toMatchObject({ code: UNIQUE_VIOLATION });
+    await document(b, 'sale', null, null);
+  });
+
+  it('one return per refund operation; several returns per order are fine', async () => {
+    const o = await order('q35c@example.com');
+    const sale = await document(o, 'sale', null, null);
+    const r1 = await refund(o);
+    const r2 = await refund(o);
+    await document(o, 'return', sale, r1);
+    await expect(document(o, 'return', sale, r1)).rejects.toMatchObject({
+      code: UNIQUE_VIOLATION,
+    });
+    await document(o, 'return', sale, r2);
+  });
+
+  it('payment_attempts.last_reconciled_at exists, is nullable and has the rotation index', async () => {
+    const column = await one<{ is_nullable: string }>(
+      app,
+      `SELECT is_nullable FROM information_schema.columns
+       WHERE table_name = 'payment_attempts' AND column_name = 'last_reconciled_at'`,
+    );
+    expect(column.is_nullable).toBe('YES');
+    const index = await one<{ indexdef: string }>(
+      app,
+      `SELECT indexdef FROM pg_indexes WHERE indexname = 'payment_attempts_reconcile_idx'`,
+    );
+    expect(index.indexdef).toContain('NULLS FIRST');
+  });
+});
