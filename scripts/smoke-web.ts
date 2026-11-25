@@ -9,6 +9,12 @@ import { cpSync, mkdtempSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import {
+  FAKE_ACCESS_KEY,
+  FAKE_BUCKET,
+  FAKE_SECRET_KEY,
+  startFakeS3,
+} from '../packages/media/test/fake-s3.ts';
 import { startFakeMono } from '../packages/payments/test/fake-mono.ts';
 import {
   FAKE_ACCOUNT,
@@ -38,6 +44,7 @@ cpSync(join(root, 'apps/web/.next/standalone'), copy, { recursive: true });
 // Local fakes of both providers: the app is pointed at them, never at a real provider.
 const fakeWfp = await startFakeWayForPay();
 const fakeMono = await startFakeMono();
+const fakeS3 = await startFakeS3();
 const MONO_TOKEN = 'smoke-mono-token-9f3c1a77';
 const AUTH_SECRET_FOR_SMOKE = 'smoke-auth-secret-0123456789-abcdefghijklmnop';
 
@@ -63,6 +70,11 @@ const server = spawn(process.execPath, [join(copy, 'apps/web/server.js')], {
       ].map((key) => [key, 'smoke']),
     ),
     AUTH_SECRET: AUTH_SECRET_FOR_SMOKE,
+    R2_ENDPOINT: fakeS3.endpoint,
+    R2_ACCESS_KEY_ID: FAKE_ACCESS_KEY,
+    R2_SECRET_ACCESS_KEY: FAKE_SECRET_KEY,
+    R2_BUCKET_MEDIA: FAKE_BUCKET,
+    MEDIA_PUBLIC_BASE_URL: 'https://media.smoke.example',
     MONO_PLATA_TOKEN: MONO_TOKEN,
     MONO_API_BASE_URL: fakeMono.baseUrl,
     WAYFORPAY_MERCHANT_ACCOUNT: FAKE_ACCOUNT,
@@ -409,6 +421,7 @@ try {
     databaseUrl,
     authSecret: AUTH_SECRET_FOR_SMOKE,
     buildRoot: copy,
+    fakeS3,
     siteOrigin: SITE,
     check,
     storedFiles,
@@ -429,6 +442,7 @@ try {
   server.kill();
   await fakeWfp.close();
   await fakeMono.close();
+  await fakeS3.close();
   rmSync(copy, { recursive: true, force: true });
 }
 

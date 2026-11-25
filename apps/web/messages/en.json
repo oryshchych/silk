@@ -482,6 +482,39 @@
       "valueUk": "Value (uk)",
       "valueEn": "Value (en)",
       "productAttributes": "Product attributes"
+    },
+    "media": {
+      "title": "Photos",
+      "none": "No photos yet.",
+      "add": "Add photos",
+      "hint": "JPEG, PNG or WebP up to 12 MB. WebP and AVIF are made in three sizes for each photo.",
+      "altUk": "Alt text (uk)",
+      "altEn": "Alt text (en)",
+      "color": "Photo colour",
+      "anyColor": "All colours",
+      "order": "Order",
+      "save": "Save",
+      "saved": "Saved.",
+      "delete": "Delete",
+      "deleted": "Deleted.",
+      "confirmDelete": "Delete this photo?",
+      "missingAlt": "Alt text is missing.",
+      "missingAltCount": "Photos without alt text: {count}",
+      "uploaded": "Uploaded: {count}",
+      "failed": "Upload failed.",
+      "errors": {
+        "TOO_LARGE": "The file is too large (up to 12 MB).",
+        "IMAGE_UNSUPPORTED_TYPE": "A JPEG, PNG or WebP photo is required.",
+        "IMAGE_TOO_MANY_PIXELS": "The image is too large in pixels.",
+        "IMAGE_ANIMATED": "Animated files are not supported.",
+        "IMAGE_UNREADABLE": "The file is damaged or could not be read.",
+        "ADMIN_TOO_MANY_IMAGES": "The product already has the maximum number of photos.",
+        "MEDIA_NOT_CONFIGURED": "Photo storage is not configured.",
+        "RATE_LIMITED": "Too many uploads. Wait a moment.",
+        "FORBIDDEN": "You do not have permission.",
+        "UNAUTHENTICATED": "Your session ended. Sign in again.",
+        "STORAGE_FAILED": "Could not save to storage."
+      }
     }
   }
 }

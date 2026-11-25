@@ -25,6 +25,7 @@ const productionSecrets = {
   R2_ACCESS_KEY_ID: 'x',
   R2_SECRET_ACCESS_KEY: 'x',
   R2_BUCKET_MEDIA: 'media',
+  MEDIA_PUBLIC_BASE_URL: 'https://media.example.com',
 } as const;
 
 describe('parseEnv', () => {

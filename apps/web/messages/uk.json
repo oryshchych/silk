@@ -482,6 +482,39 @@
       "valueUk": "Значення (укр)",
       "valueEn": "Значення (eng)",
       "productAttributes": "Атрибути товару"
+    },
+    "media": {
+      "title": "Фото",
+      "none": "Фото ще немає.",
+      "add": "Додати фото",
+      "hint": "JPEG, PNG або WebP до 12 МБ. Для кожного фото створюються WebP та AVIF у трьох розмірах.",
+      "altUk": "Alt-текст (укр)",
+      "altEn": "Alt-текст (eng)",
+      "color": "Колір фото",
+      "anyColor": "Усі кольори",
+      "order": "Порядок",
+      "save": "Зберегти",
+      "saved": "Збережено.",
+      "delete": "Видалити",
+      "deleted": "Видалено.",
+      "confirmDelete": "Видалити це фото?",
+      "missingAlt": "Не заповнено alt-текст.",
+      "missingAltCount": "Фото без alt-тексту: {count}",
+      "uploaded": "Завантажено: {count}",
+      "failed": "Не вдалося завантажити.",
+      "errors": {
+        "TOO_LARGE": "Файл завеликий (до 12 МБ).",
+        "IMAGE_UNSUPPORTED_TYPE": "Потрібне фото JPEG, PNG або WebP.",
+        "IMAGE_TOO_MANY_PIXELS": "Зображення завелике за розміром у пікселях.",
+        "IMAGE_ANIMATED": "Анімовані файли не підтримуються.",
+        "IMAGE_UNREADABLE": "Файл пошкоджено або його не вдалося прочитати.",
+        "ADMIN_TOO_MANY_IMAGES": "У товару вже максимум фото.",
+        "MEDIA_NOT_CONFIGURED": "Сховище фото не налаштоване.",
+        "RATE_LIMITED": "Забагато завантажень. Зачекайте.",
+        "FORBIDDEN": "Недостатньо прав.",
+        "UNAUTHENTICATED": "Сеанс завершено. Увійдіть знову.",
+        "STORAGE_FAILED": "Не вдалося зберегти у сховище."
+      }
     }
   }
 }

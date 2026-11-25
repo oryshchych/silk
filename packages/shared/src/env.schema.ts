@@ -89,6 +89,11 @@ export const envSchema = z
     R2_ACCESS_KEY_ID: secret,
     R2_SECRET_ACCESS_KEY: secret,
     R2_BUCKET_MEDIA: secret,
+    // The S3 endpoint of the bucket. Default: https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com. A local
+    // fake or another S3-compatible service overrides it (plain http only for loopback).
+    R2_ENDPOINT: z.url({ protocol: /^https?$/ }).optional(),
+    // Where the browser reads media (the public bucket domain or a CDN in front of it). https.
+    MEDIA_PUBLIC_BASE_URL: z.url({ protocol: /^https$/ }).optional(),
 
     SENTRY_DSN: z.url({ protocol: /^https$/ }).optional(),
 
@@ -126,6 +131,14 @@ export const envSchema = z
     }
 
     if (value.APP_ENV === 'production') {
+      if (value.MEDIA_PUBLIC_BASE_URL === undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['MEDIA_PUBLIC_BASE_URL'],
+          message:
+            'MEDIA_PUBLIC_BASE_URL is required in production: uploaded photos need a public address.',
+        });
+      }
       if (value.SITE_URL === undefined) {
         ctx.addIssue({
           code: 'custom',

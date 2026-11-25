@@ -202,5 +202,7 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
 export const config = {
   // Усе, крім внутрішніх ресурсів Next. /api включено свідомо: basic auth
   // мусить закривати й API, інакше staging відкритий через нього.
-  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+  // `admin/upload/` is skipped on purpose: the proxy buffers request bodies (64 KB cap) and a photo
+  // upload is megabytes. That route does its own origin, session, role, limit and size checks.
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|admin/upload/).*)'],
 };

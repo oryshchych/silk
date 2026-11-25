@@ -3,6 +3,8 @@
  * category tree, the variants matrix, tags that touch ONLY what changed, audit diffs that never
  * carry the cost, and the role-dependent serialisation of every admin read.
  */
+import { randomUUID } from 'node:crypto';
+
 import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -27,6 +29,14 @@ import {
   SlugTakenError,
   TooManyVariantsError,
 } from '../src/catalog-admin/errors.ts';
+import {
+  addProductImage,
+  deleteProductImage,
+  imageKeys,
+  listAdminImages,
+  TooManyImagesError,
+  updateProductImage,
+} from '../src/catalog-admin/images.ts';
 import { createCategory, moveCategory, updateCategory } from '../src/catalog-admin/categories.ts';
 import { saveColor, saveSize } from '../src/catalog-admin/dictionaries.ts';
 import {
@@ -472,5 +482,95 @@ describe('admin reads are serialised per role', () => {
     expect(low.items.length).toBeGreaterThan(0);
     const huge = await listAdminProducts(handle.db, { page: 9_999_999 }, false);
     expect(huge.items).toEqual([]);
+  });
+});
+
+describe('product images', () => {
+  const urlFor = (key: string) => `https://media.example.test/${key}`;
+  async function add(productId: string) {
+    const imageId = randomUUID();
+    const variants = Object.fromEntries(
+      imageKeys(productId, imageId).map((key) => [key.split('/').slice(-1)[0] ?? key, urlFor(key)]),
+    );
+    return await run<Awaited<ReturnType<typeof addProductImage>>>(
+      async (tx) =>
+        await addProductImage(tx, {
+          productId,
+          imageId,
+          url: variants['full.webp'] ?? '',
+          variants,
+          width: 4000,
+          height: 3000,
+        }),
+    );
+  }
+
+  it('keys are made of ids and fixed words only, and every one is a safe storage key', () => {
+    const keys = imageKeys(
+      '0b8f7c64-5d1e-4c53-9d0a-1f7d3a6a9b21',
+      '1b8f7c64-5d1e-4c53-9d0a-1f7d3a6a9b22',
+    );
+    expect(keys).toHaveLength(6);
+    for (const key of keys) {
+      expect(key).toMatch(
+        /^products\/[0-9a-f-]{36}\/[0-9a-f-]{36}\/(thumb|card|full)\.(webp|avif)$/,
+      );
+    }
+  });
+
+  it('adds images in order, tags only that product, and refuses the 31st', async () => {
+    const { data } = await newProduct();
+    const first = await add(data.productId);
+    const second = await add(data.productId);
+    expect(first.tags).toEqual(
+      expect.arrayContaining([productTag(data.productId), listingTag(rootCategory), SHOWCASE_TAG]),
+    );
+    const listed = await listAdminImages(handle.db, data.productId);
+    expect(listed.map((i) => i.sortOrder)).toEqual([0, 1]);
+    expect(listed[0]?.thumbUrl).toContain('thumb.webp');
+    for (let i = 0; i < 28; i += 1) await add(data.productId);
+    await expect(add(data.productId)).rejects.toBeInstanceOf(TooManyImagesError);
+    expect(second.data.imageId).not.toBe(first.data.imageId);
+  }, 60_000);
+
+  it('alt text, colour and order are saved; an unknown colour is refused; a no-op changes nothing', async () => {
+    const { data } = await newProduct();
+    const image = await add(data.productId);
+    const [color] = await handle.db.select({ id: colors.id }).from(colors).limit(1);
+    const saved = await run<Awaited<ReturnType<typeof updateProductImage>>>(
+      async (tx) =>
+        await updateProductImage(tx, {
+          imageId: image.data.imageId,
+          altUk: 'Чорний бюстгальтер',
+          altEn: 'Black bra',
+          colorId: color?.id ?? null,
+          sortOrder: 3,
+        }),
+    );
+    expect(saved.data.changed.sort()).toEqual(['altEn', 'altUk', 'colorId', 'sortOrder']);
+    const again = await run<Awaited<ReturnType<typeof updateProductImage>>>(
+      async (tx) =>
+        await updateProductImage(tx, { imageId: image.data.imageId, altEn: 'Black bra' }),
+    );
+    expect(again.tags).toEqual([]);
+    await expect(
+      handle.db.transaction(
+        async (tx) =>
+          await updateProductImage(tx, {
+            imageId: image.data.imageId,
+            colorId: '00000000-0000-4000-8000-000000000000',
+          }),
+      ),
+    ).rejects.toBeInstanceOf(AdminNotFoundError);
+  });
+
+  it('deleting returns the storage keys of exactly that image and removes the row', async () => {
+    const { data } = await newProduct();
+    const image = await add(data.productId);
+    const outcome = await run<Awaited<ReturnType<typeof deleteProductImage>>>(
+      async (tx) => await deleteProductImage(tx, { imageId: image.data.imageId }),
+    );
+    expect(outcome.data.keys).toEqual(imageKeys(data.productId, image.data.imageId));
+    expect(await listAdminImages(handle.db, data.productId)).toHaveLength(0);
   });
 });

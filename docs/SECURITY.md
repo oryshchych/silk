@@ -60,7 +60,9 @@ confirmed TOTP before a session counts; so must anyone who enrolled one.
 | Create, edit and move a category (slug change leaves a 301) | `categories.edit` | `createCategoryAction`, `updateCategoryAction`, `moveCategoryAction` (`actions/admin-taxonomy.ts`) |
 | Colours, sizes, attributes and their values | `dictionaries.edit` | `saveColorAction`, `saveSizeAction`, `saveAttributeAction`, `saveAttributeValueAction` |
 | Assign attribute values to a product | `catalog.edit` | `setProductAttributesAction` |
-| Stock, media, import, export | see the table above | their actions arrive with their screens in the next slices |
+| Upload a product photo | `media.upload` | `POST /admin/upload/product-image` (`app/admin/upload/product-image/route.ts`): its own route, see "Uploads" below |
+| Edit a photo's alt text, colour, order; delete it | `media.upload` | `updateProductImageAction`, `deleteProductImageAction` |
+| Stock, import, export | see the table above | their actions arrive with their screens in the next slices |
 
 ## Authentication facts
 
@@ -117,6 +119,22 @@ of its category chain and the showcase, nothing else.
 - **Credential work is bounded.** At most 3 password hashes or TOTP transactions run at once and 6
   wait; more are refused at once ("too many attempts"), so a login flood cannot starve the site.
   The cap over all clients counts credential attempts (POST), not page loads.
+
+## Uploads
+
+A photo is megabytes, and `proxy.ts` buffers the body of every request it handles (64 KB cap), so the
+upload route is excluded from the proxy's matcher and does everything itself, in this order, before it
+reads a byte of the body: Origin (CSRF), a full admin session from the database, the `media.upload`
+permission, a per-client and a per-user limit. Then: the declared length, then the size cap (12 MB)
+enforced WHILE the body streams (a missing or false length cannot get past it), the type from the
+BYTES (JPEG, PNG or WebP only: an SVG, an HTML page or a GIF sent as `image/jpeg` is refused, 415), the
+pixel cap (40 MP, checked from the header before decoding: a decompression bomb is refused, not
+decoded), no animation, EXIF orientation applied and all metadata (EXIF, GPS) stripped, never enlarged,
+at most 2 conversions at once. Storage keys are `products/<product id>/<image id>/<size>.<format>`:
+ids and fixed words, never a file name (`assertSafeKey` refuses anything else). The row and its audit
+entry are written in one transaction after the files are stored; a failure removes the files again.
+Because the route bypasses the proxy it does not get the staging basic-auth gate: it answers 401
+without an admin session, and every response is `private, no-store`.
 
 ## Responses
 

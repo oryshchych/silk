@@ -525,3 +525,11 @@ and set up TOTP on the first login. Any environment:
 `printf %s "$PASSWORD" | pnpm admin:create --email=... --role=owner|admin|manager|content` (the
 password is read from stdin, never an argument). `AUTH_SECRET` (32+ characters) must be set, or
 nothing signs in. Access control per mutation: `docs/SECURITY.md`.
+
+### Photo upload (phase 4)
+
+`packages/media`: `processImage` (sharp: sniff, caps, orientation, WebP and AVIF at 320, 800 and 1600),
+`createStorage` (S3 API with a hand-written SigV4 signer) and a fake S3 (`test/fake-s3.ts`) that verifies the
+signature. `sharp` is a native module: it is in `serverExternalPackages` and approved in
+`pnpm-workspace.yaml`. Environment: `R2_*`, optional `R2_ENDPOINT`, `MEDIA_PUBLIC_BASE_URL`. Security notes:
+`docs/SECURITY.md`, "Uploads".

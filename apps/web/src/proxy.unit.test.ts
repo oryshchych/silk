@@ -33,6 +33,7 @@ async function loadProxy(appEnv: 'local' | 'production') {
       vi.stubEnv(key, 'x'.repeat(32));
     }
     vi.stubEnv('SITE_URL', 'https://shop.example');
+    vi.stubEnv('MEDIA_PUBLIC_BASE_URL', 'https://media.shop.example');
   }
   return (await import('./proxy')).proxy;
 }
