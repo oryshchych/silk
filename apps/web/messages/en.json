@@ -333,7 +333,9 @@
         "manager": "Manager",
         "content": "Content editor"
       },
-      "products": "Products"
+      "products": "Products",
+      "categories": "Categories",
+      "dictionaries": "Dictionaries"
     },
     "dashboard": {
       "title": "Overview",
@@ -448,6 +450,38 @@
       "badgeBestseller": "Bestseller",
       "badgeLast": "Last units",
       "noSizes": "Add sizes and colours in the dictionaries first."
+    },
+    "taxonomy": {
+      "categories": "Categories",
+      "dictionaries": "Dictionaries",
+      "colors": "Colours",
+      "sizes": "Sizes",
+      "attributes": "Attributes",
+      "valuesOf": "Values of",
+      "nameUk": "Name (uk)",
+      "nameEn": "Name (en)",
+      "slug": "Slug",
+      "parent": "Parent category",
+      "root": "Top level",
+      "order": "Order",
+      "active": "Active",
+      "save": "Save",
+      "saved": "Saved.",
+      "create": "Add",
+      "newCategory": "New category",
+      "hex": "Colour",
+      "system": "System",
+      "label": "Label",
+      "band": "Band",
+      "cup": "Cup",
+      "eu": "EU",
+      "us": "US",
+      "code": "Code",
+      "type": "Type",
+      "filterable": "In filters",
+      "valueUk": "Value (uk)",
+      "valueEn": "Value (en)",
+      "productAttributes": "Product attributes"
     }
   }
 }

@@ -6,7 +6,16 @@
  */
 import { and, asc, desc, eq, ilike, or, sql } from 'drizzle-orm';
 
-import { categories, colors, products, productVariants, sizes } from '@store/db/schema';
+import {
+  attributes,
+  attributeValues,
+  categories,
+  colors,
+  productAttributeValues,
+  products,
+  productVariants,
+  sizes,
+} from '@store/db/schema';
 import type { Reader } from '@store/db/types';
 import {
   adminCategoryDto,
@@ -192,4 +201,106 @@ export async function listAdminColors(db: Reader): Promise<AdminColorOption[]> {
     .select({ id: colors.id, name: colors.nameUk, hex: colors.hex })
     .from(colors)
     .orderBy(asc(colors.sortOrder), asc(colors.nameUk));
+}
+
+export interface AdminColorFull {
+  id: string;
+  slug: string;
+  nameUk: string;
+  nameEn: string;
+  hex: string;
+  sortOrder: number;
+}
+
+export interface AdminSizeFull {
+  id: string;
+  system: 'bra' | 'panty' | 'apparel' | 'onesize';
+  label: string;
+  band: number | null;
+  cup: string | null;
+  euLabel: string | null;
+  usLabel: string | null;
+  sortOrder: number;
+}
+
+export interface AdminAttributeFull {
+  id: string;
+  code: string;
+  nameUk: string;
+  nameEn: string;
+  type: 'select' | 'multiselect' | 'boolean' | 'text';
+  isFilterable: boolean;
+  sortOrder: number;
+  values: { id: string; slug: string; valueUk: string; valueEn: string; sortOrder: number }[];
+}
+
+export async function listAdminColorsFull(db: Reader): Promise<AdminColorFull[]> {
+  return await db
+    .select({
+      id: colors.id,
+      slug: colors.slug,
+      nameUk: colors.nameUk,
+      nameEn: colors.nameEn,
+      hex: colors.hex,
+      sortOrder: colors.sortOrder,
+    })
+    .from(colors)
+    .orderBy(asc(colors.sortOrder), asc(colors.slug));
+}
+
+export async function listAdminSizesFull(db: Reader): Promise<AdminSizeFull[]> {
+  return await db
+    .select({
+      id: sizes.id,
+      system: sizes.system,
+      label: sizes.label,
+      band: sizes.band,
+      cup: sizes.cup,
+      euLabel: sizes.euLabel,
+      usLabel: sizes.usLabel,
+      sortOrder: sizes.sortOrder,
+    })
+    .from(sizes)
+    .orderBy(asc(sizes.system), asc(sizes.sortOrder), asc(sizes.label));
+}
+
+export async function listAdminAttributes(db: Reader): Promise<AdminAttributeFull[]> {
+  const attrs = await db
+    .select()
+    .from(attributes)
+    .orderBy(asc(attributes.sortOrder), asc(attributes.code));
+  const values = await db
+    .select()
+    .from(attributeValues)
+    .orderBy(asc(attributeValues.sortOrder), asc(attributeValues.slug));
+  return attrs.map((attribute) => ({
+    id: attribute.id,
+    code: attribute.code,
+    nameUk: attribute.nameUk,
+    nameEn: attribute.nameEn,
+    type: attribute.type,
+    isFilterable: attribute.isFilterable,
+    sortOrder: attribute.sortOrder,
+    values: values
+      .filter((value) => value.attributeId === attribute.id)
+      .map((value) => ({
+        id: value.id,
+        slug: value.slug,
+        valueUk: value.valueUk,
+        valueEn: value.valueEn,
+        sortOrder: value.sortOrder,
+      })),
+  }));
+}
+
+/** The attribute value ids assigned to a product. */
+export async function listProductAttributeValueIds(
+  db: Reader,
+  productId: string,
+): Promise<string[]> {
+  const rows = await db
+    .select({ id: productAttributeValues.attributeValueId })
+    .from(productAttributeValues)
+    .where(eq(productAttributeValues.productId, productId));
+  return rows.map((row) => row.id);
 }

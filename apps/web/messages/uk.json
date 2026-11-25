@@ -333,7 +333,9 @@
         "manager": "Менеджер",
         "content": "Контент-менеджер"
       },
-      "products": "Товари"
+      "products": "Товари",
+      "categories": "Категорії",
+      "dictionaries": "Довідники"
     },
     "dashboard": {
       "title": "Огляд",
@@ -448,6 +450,38 @@
       "badgeBestseller": "Хіт продажів",
       "badgeLast": "Останні одиниці",
       "noSizes": "Спершу додайте розміри й кольори в довідниках."
+    },
+    "taxonomy": {
+      "categories": "Категорії",
+      "dictionaries": "Довідники",
+      "colors": "Кольори",
+      "sizes": "Розміри",
+      "attributes": "Атрибути",
+      "valuesOf": "Значення:",
+      "nameUk": "Назва (укр)",
+      "nameEn": "Назва (eng)",
+      "slug": "Slug",
+      "parent": "Батьківська категорія",
+      "root": "Верхній рівень",
+      "order": "Порядок",
+      "active": "Активна",
+      "save": "Зберегти",
+      "saved": "Збережено.",
+      "create": "Додати",
+      "newCategory": "Нова категорія",
+      "hex": "Колір",
+      "system": "Система",
+      "label": "Позначка",
+      "band": "Обхват",
+      "cup": "Чашка",
+      "eu": "EU",
+      "us": "US",
+      "code": "Код",
+      "type": "Тип",
+      "filterable": "У фільтрах",
+      "valueUk": "Значення (укр)",
+      "valueEn": "Значення (eng)",
+      "productAttributes": "Атрибути товару"
     }
   }
 }
