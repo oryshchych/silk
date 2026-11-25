@@ -51,8 +51,8 @@ export class ImageRejectedError extends Error {
   }
 }
 
-// Bound libvips' own appetite: two worker threads, no operation cache.
-sharp.concurrency(2);
+// Bound libvips' own appetite: one worker thread per operation, no operation cache.
+sharp.concurrency(1);
 sharp.cache(false);
 
 const QUALITY = { webp: 78, avif: 52 } as const;
@@ -88,13 +88,24 @@ export async function processImage(bytes: Buffer): Promise<ProcessedImage> {
   const sourceHeight = oriented ? width : height;
   const renditions: Rendition[] = [];
   try {
+    // The source is DECODED ONCE, straight down to the largest rendition (a JPEG is shrunk while
+    // it loads, so a 30 MP photo never exists in full), oriented, as a raw master of at most
+    // 1600 x 1600 pixels (10 MB). Every rendition is then made from that small master: the
+    // peak memory of one conversion is the master plus one encoder, not six decodes of the source.
+    const { data: master, info: masterInfo } = await source
+      .rotate()
+      .resize({ width: WIDTHS.full, height: WIDTHS.full, fit: 'inside', withoutEnlargement: true })
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    const raw = {
+      width: masterInfo.width,
+      height: masterInfo.height,
+      channels: masterInfo.channels,
+    };
     for (const size of ['full', 'card', 'thumb'] as const) {
-      const target = Math.min(WIDTHS[size], sourceWidth);
+      const target = Math.min(WIDTHS[size], masterInfo.width);
       for (const format of ['webp', 'avif'] as const) {
-        const pipeline = source
-          .clone()
-          .rotate()
-          .resize({ width: target, withoutEnlargement: true });
+        const pipeline = sharp(master, { raw }).resize({ width: target, withoutEnlargement: true });
         const { data, info } = await (
           format === 'webp'
             ? pipeline.webp({ quality: QUALITY.webp, effort: 4 })

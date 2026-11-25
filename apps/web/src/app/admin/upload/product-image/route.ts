@@ -30,12 +30,14 @@ import { checkRequestLimit } from '@/lib/request-limits';
  *   2. Origin (CSRF), a FULL admin session read from the database, the `media.upload` permission,
  *      a per-user limit: all before a single byte of the body is read;
  *   3. an IN-FLIGHT SLOT, taken before the body is read and held to the end of the request: at
- *      most 3 uploads at once over everybody and 1 per user, the rest refused at once (429). This
+ *      most 2 uploads at once over everybody and 1 per user, the rest refused at once (429). This
  *      is what bounds MEMORY: each admitted upload holds at most one 12 MB body, one decoded
  *      image (at most 40 MP) and the renditions, so the process holds a known multiple of that
  *      and never a pile of bodies waiting for their turn;
- *   4. the declared length, then the SIZE CAP ENFORCED WHILE THE BODY STREAMS into ONE buffer
- *      allocated from the declared length (no list of chunks, no second copy);
+ *   4. the SIZE CAP ENFORCED WHILE THE BODY STREAMS into ONE buffer allocated from the declared
+ *      length (no list of chunks, no second copy), and a READ DEADLINE (no data for 15 s, or the
+ *      whole body not in 60 s: 408, the slot is released): a client that sends headers and then
+ *      nothing cannot hold a slot;
  *   5. the product is looked up and the photo count checked BEFORE the conversion;
  *   6. the type from the bytes, the pixel cap, orientation, metadata stripping (`@store/media`);
  *   7. keys built from ids only; files uploaded, then the row and the audit entry in one
@@ -50,13 +52,25 @@ export const dynamic = 'force-dynamic';
 const preAuthLimiter = createRateLimiter({ limit: 120, windowMs: 60_000 });
 const clientLimiter = createRateLimiter({ limit: 60, windowMs: 10 * 60_000 });
 const userLimiter = createRateLimiter({ limit: 40, windowMs: 10 * 60_000 });
-const inFlight = createInFlight({ global: 3, perKey: 1 });
+/**
+ * Two uploads at once over everybody and one per user. Measured against the production image at
+ * 1 GiB: a worst-case upload (a 30 MP progressive JPEG or a 40 MP PNG) peaks near 400 MB with the
+ * body, the decode and the encoders, so the number of slots times that peak, plus the rest of the
+ * app, must stay under the container limit.
+ */
+const inFlight = createInFlight({ global: 2, perKey: 1 });
 
 const querySchema = z.object({ productId: z.uuid().transform((value) => value.toLowerCase()) });
 
 const HEADERS = { 'Cache-Control': 'private, no-store', 'X-Robots-Tag': 'noindex, nofollow' };
-const reply = (status: number, code: string): Response =>
-  Response.json({ ok: false, code }, { status, headers: HEADERS });
+/** A refusal: the request body is never read, the unread stream is cancelled and the connection is closed. */
+function reply(status: number, code: string, request?: Request): Response {
+  void request?.body?.cancel().catch(() => undefined);
+  return Response.json(
+    { ok: false, code },
+    { status, headers: request === undefined ? HEADERS : { ...HEADERS, Connection: 'close' } },
+  );
+}
 
 /** Operational log line: an object key and a status, never a URL, a credential or a body. */
 function warn(event: string, detail: Record<string, string | number>): void {
@@ -65,24 +79,24 @@ function warn(event: string, detail: Record<string, string | number>): void {
 
 export async function POST(request: Request): Promise<Response> {
   if (!(await checkRequestLimit(preAuthLimiter, request)).allowed)
-    return reply(429, 'RATE_LIMITED');
-  if (!(await requestOriginOk())) return reply(403, 'BAD_ORIGIN');
+    return reply(429, 'RATE_LIMITED', request);
+  if (!(await requestOriginOk())) return reply(403, 'BAD_ORIGIN', request);
   const resolved = await currentSession();
-  if (resolved?.kind !== 'full') return reply(401, 'UNAUTHENTICATED');
-  if (!can(resolved.session.role, 'media.upload')) return reply(403, 'FORBIDDEN');
+  if (resolved?.kind !== 'full') return reply(401, 'UNAUTHENTICATED', request);
+  if (!can(resolved.session.role, 'media.upload')) return reply(403, 'FORBIDDEN', request);
   if (
     !(await checkRequestLimit(clientLimiter, request)).allowed ||
     !userLimiter.check(resolved.session.userId).allowed
   ) {
-    return reply(429, 'RATE_LIMITED');
+    return reply(429, 'RATE_LIMITED', request);
   }
   const query = querySchema.safeParse(Object.fromEntries(new URL(request.url).searchParams));
-  if (!query.success) return reply(400, 'INVALID_INPUT');
+  if (!query.success) return reply(400, 'INVALID_INPUT', request);
   const media = await mediaConfig();
-  if (media === null) return reply(503, 'MEDIA_NOT_CONFIGURED');
+  if (media === null) return reply(503, 'MEDIA_NOT_CONFIGURED', request);
 
   const release = inFlight.acquire(resolved.session.userId);
-  if (release === null) return reply(429, 'BUSY');
+  if (release === null) return reply(429, 'BUSY', request);
   try {
     return await upload(request, query.data.productId, media);
   } finally {
@@ -95,10 +109,17 @@ async function upload(
   productId: string,
   media: NonNullable<Awaited<ReturnType<typeof mediaConfig>>>,
 ): Promise<Response> {
-  const declared = Number(request.headers.get('content-length') ?? '');
-  if (Number.isFinite(declared) && declared > LIMITS.maxBytes) return reply(413, 'TOO_LARGE');
-  const body = await readCapped(request, LIMITS.maxBytes);
-  if (body === null) return reply(413, 'TOO_LARGE');
+  const read = await readCapped(request, {
+    limit: LIMITS.maxBytes,
+    idleMs: 15_000,
+    totalMs: 60_000,
+  });
+  if (!read.ok)
+    return reply(
+      read.reason === 'timeout' ? 408 : 413,
+      read.reason === 'timeout' ? 'TIMEOUT' : 'TOO_LARGE',
+    );
+  const body = read.body;
   if (body.length === 0) return reply(400, 'INVALID_INPUT');
 
   const db = await getDb();

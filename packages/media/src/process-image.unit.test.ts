@@ -100,10 +100,12 @@ describe('processImage', () => {
     const bomb = Buffer.concat([
       Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
       chunk('IHDR', header),
+      // One tiny (empty) compressed data chunk: enough for a reader to accept the header.
+      chunk('IDAT', Buffer.from([0x78, 0x9c, 0x03, 0x00, 0x00, 0x00, 0x00, 0x01])),
       chunk('IEND', Buffer.alloc(0)),
     ]);
     const start = performance.now();
-    expect(await rejection(bomb)).toMatch(/too_many_pixels|unreadable/);
+    expect(await rejection(bomb)).toBe('too_many_pixels');
     expect(performance.now() - start).toBeLessThan(2_000);
   });
 

@@ -797,6 +797,7 @@ export async function runAdminSmoke({
       'media: a body over the cap is cut off with 413, declared or streamed without a length',
       tooBig.status === 413 && chunked.status === 413 && fakeS3.objects.size === storedBefore + 6,
     );
+    const requestsAfterGood = fakeS3.requests;
     const traversal = await upload(photo, contentToken, 'productId=../../etc/passwd');
     const missing = await upload(
       photo,
@@ -804,10 +805,11 @@ export async function runAdminSmoke({
       'productId=00000000-0000-4000-8000-000000000000',
     );
     check(
-      'media: a path-like product id is 400 and an unknown product stores nothing',
+      'media: a path-like product id is 400 and an unknown product is 404 BEFORE any conversion: the store saw no request',
       traversal.status === 400 &&
-        missing.status !== 201 &&
-        fakeS3.objects.size === storedBefore + 6,
+        missing.status === 404 &&
+        fakeS3.objects.size === storedBefore + 6 &&
+        fakeS3.requests === requestsAfterGood,
     );
     check(
       'media: every key is made of the product id, the image id and a fixed name (no file name anywhere)',
