@@ -18,6 +18,8 @@ import {
 import { samplePhoto } from '../packages/media/test/sample-image.ts';
 import type { FakeS3 } from '../packages/media/test/fake-s3.ts';
 import { auditLog, categories, productImages, products } from '../packages/db/src/schema.ts';
+import net from 'node:net';
+
 import { codeAt, stepOf } from '../packages/core/src/auth/totp.ts';
 
 interface Context {
@@ -864,6 +866,69 @@ export async function runAdminSmoke({
     check(
       'media: an upper-case product id is accepted as the same product',
       mixed.status === 201 || mixed.status === 409,
+    );
+
+    // Two GLOBAL slots: four different users uploading at once are not all admitted.
+    const extraTokens: string[] = [];
+    for (let i = 0; i < 3; i += 1) {
+      const email = `content-x${String(i)}-${suffix}@example.test`;
+      await db.transaction(async (tx) => {
+        await createAdminUser(tx, { email, password: PASSWORD, role: 'content' });
+      });
+      const session = await db.transaction(
+        async (tx) => await beginLogin(tx, config, { email, password: PASSWORD, client }),
+      );
+      if (!session.ok) throw new Error('extra session failed');
+      extraTokens.push(session.token);
+    }
+    // Let the earlier burst finish so its slots are free.
+    await new Promise((resolve) => setTimeout(resolve, 2_500));
+    const fourUsers = await Promise.all(
+      [contentToken, ...extraTokens].map(async (token) => await upload(photo, token)),
+    );
+    check(
+      'media: four different users at once: at most TWO are admitted (global slots), the rest are 429 BUSY',
+      fourUsers.filter((r) => r.status === 201 || r.status === 409).length <= 2 &&
+        fourUsers.filter((r) => r.status === 429 && r.json.code === 'BUSY').length >= 2,
+    );
+
+    // A client that sends the headers and then NOTHING must not hold a slot past the read deadline.
+    await new Promise((resolve) => setTimeout(resolve, 2_500));
+    const target_ = new URL(base);
+    const stalled = net.connect(Number(target_.port), target_.hostname);
+    stalled.write(
+      [
+        `POST /admin/upload/product-image?productId=${target.id} HTTP/1.1`,
+        `Host: ${target_.host}`,
+        `Origin: ${siteOrigin}`,
+        `Cookie: admin_session=${contentToken}`,
+        'X-Forwarded-For: 198.51.100.200',
+        'Content-Type: image/jpeg',
+        'Content-Length: 5000000',
+        '',
+        '',
+      ].join('\r\n'),
+    );
+    stalled.on('error', () => undefined);
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+    const whileStalled = await upload(photo, contentToken);
+    const stalledStart = Date.now();
+    let freed: Awaited<ReturnType<typeof upload>> | null = null;
+    while (Date.now() - stalledStart < 40_000) {
+      await new Promise((resolve) => setTimeout(resolve, 2_000));
+      const attempt = await upload(photo, contentToken);
+      if (!(attempt.status === 429 && attempt.json.code === 'BUSY')) {
+        freed = attempt;
+        break;
+      }
+    }
+    stalled.destroy();
+    check(
+      'media: a socket that sends headers and no body holds the user slot (429 BUSY) and frees it within the read deadline (well under 60 s)',
+      whileStalled.status === 429 &&
+        whileStalled.json.code === 'BUSY' &&
+        freed !== null &&
+        Date.now() - stalledStart < 45_000,
     );
 
     const editorPage = await get(`/admin/products/${target.id}`, cookie(adminToken));

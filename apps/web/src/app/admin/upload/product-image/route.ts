@@ -54,8 +54,9 @@ const clientLimiter = createRateLimiter({ limit: 60, windowMs: 10 * 60_000 });
 const userLimiter = createRateLimiter({ limit: 40, windowMs: 10 * 60_000 });
 /**
  * Two uploads at once over everybody and one per user. Measured against the production image at
- * 1 GiB: a worst-case upload (a 30 MP progressive JPEG or a 40 MP PNG) peaks near 400 MB with the
- * body, the decode and the encoders, so the number of slots times that peak, plus the rest of the
+ * 1 GiB (MALLOC_ARENA_MAX=2 and the mmap/trim thresholds from the Dockerfile): a flood of
+ * worst-case uploads (30 MP progressive JPEGs, 40 MP PNGs) peaks between about 170 and 300 MiB for
+ * the whole process, never an OOM kill, so the number of slots times that peak, plus the rest of the
  * app, must stay under the container limit.
  */
 const inFlight = createInFlight({ global: 2, perKey: 1 });

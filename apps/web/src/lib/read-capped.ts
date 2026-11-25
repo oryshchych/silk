@@ -25,7 +25,7 @@ export async function readCapped(request: Request, limits: ReadLimits): Promise<
   const declared = header === null || header.trim() === '' ? Number.NaN : Number(header);
   const known = Number.isInteger(declared) && declared >= 0;
   if (known && declared > limit) {
-    await request.body.cancel().catch(() => undefined);
+    void request.body.cancel().catch(() => undefined);
     return { ok: false, reason: 'too_large' };
   }
   const cap = known ? declared : limit;
@@ -34,14 +34,16 @@ export async function readCapped(request: Request, limits: ReadLimits): Promise<
   const reader = request.body.getReader();
   const startedAt = performance.now();
 
-  const stop = async (reason: 'too_large' | 'timeout'): Promise<ReadResult> => {
-    await reader.cancel().catch(() => undefined);
+  // `cancel()` is NOT awaited: on a real server a stalled client never lets it settle, and waiting
+  // for it would defeat the very deadline that called it. The answer goes out at once.
+  const stop = (reason: 'too_large' | 'timeout'): ReadResult => {
+    void reader.cancel().catch(() => undefined);
     return { ok: false, reason };
   };
 
   for (;;) {
     const left = totalMs - (performance.now() - startedAt);
-    if (left <= 0) return await stop('timeout');
+    if (left <= 0) return stop('timeout');
     let timer: NodeJS.Timeout | undefined;
     const timedOut = new Promise<'timeout'>((resolve) => {
       timer = setTimeout(
@@ -53,10 +55,10 @@ export async function readCapped(request: Request, limits: ReadLimits): Promise<
     });
     const next = await Promise.race([reader.read(), timedOut]);
     clearTimeout(timer);
-    if (next === 'timeout') return await stop('timeout');
+    if (next === 'timeout') return stop('timeout');
     if (next.done) break;
     const { value } = next;
-    if (length + value.byteLength > cap) return await stop('too_large');
+    if (length + value.byteLength > cap) return stop('too_large');
     if (length + value.byteLength > buffer.length) {
       const grown = Buffer.allocUnsafe(
         Math.min(cap, Math.max(buffer.length * 2, length + value.byteLength)),

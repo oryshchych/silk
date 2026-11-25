@@ -52,6 +52,32 @@ describe('readCapped memory', () => {
 });
 
 describe('readCapped time limits', () => {
+  it('does NOT wait for cancel() to settle: a stream whose cancel never resolves still ends at the deadline', async () => {
+    const stalled = new ReadableStream<Uint8Array>({
+      pull: () => new Promise(() => undefined),
+      cancel: () => new Promise(() => undefined),
+    });
+    const started = performance.now();
+    const result = await readCapped(requestOf(stalled), {
+      limit: 1_000_000,
+      idleMs: 100,
+      totalMs: 5_000,
+    });
+    expect(result).toEqual({ ok: false, reason: 'timeout' });
+    expect(performance.now() - started).toBeLessThan(2_000);
+  }, 10_000);
+
+  it('the same for the size cap: an over-long body with a cancel that never settles is refused at once', async () => {
+    const big = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        controller.enqueue(new Uint8Array(1024));
+      },
+      cancel: () => new Promise(() => undefined),
+    });
+    const result = await readCapped(requestOf(big), { limit: 4_096 });
+    expect(result).toEqual({ ok: false, reason: 'too_large' });
+  }, 5_000);
+
   it('a body that sends nothing after the headers ends with a timeout and cancels the stream', async () => {
     let cancelled = false;
     const silent = new ReadableStream<Uint8Array>({
