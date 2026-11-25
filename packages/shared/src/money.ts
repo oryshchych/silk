@@ -134,3 +134,11 @@ const formatters: Record<MoneyLocale, Intl.NumberFormat> = {
 export function formatMoney(a: Money, locale: MoneyLocale): string {
   return formatters[locale].format(a / 100);
 }
+
+/** `129900` -> `"1299.00"`: the plain amount for an input field (integer arithmetic only). */
+export function toHryvniasText(a: Money): string {
+  const abs = Math.abs(a);
+  const whole = Math.floor(abs / 100);
+  const fraction = String(abs % 100).padStart(2, '0');
+  return `${a < 0 ? '-' : ''}${String(whole)}.${fraction}`;
+}

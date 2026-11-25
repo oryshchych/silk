@@ -16,7 +16,10 @@ export const MFA_REQUIRED_ROLES: readonly AdminRole[] = ['owner', 'admin'];
 export const PERMISSIONS = {
   'admin.view': ['owner', 'admin', 'manager', 'content'],
   'users.manage': ['owner'],
+  'catalog.create': ['owner', 'admin'],
   'catalog.edit': ['owner', 'admin', 'content'],
+  'categories.edit': ['owner', 'admin', 'content'],
+  'dictionaries.edit': ['owner', 'admin'],
   'catalog.price': ['owner', 'admin'],
   'catalog.cost.view': ['owner', 'admin'],
   'catalog.publish': ['owner', 'admin', 'content'],

@@ -21,7 +21,13 @@ import {
   type ListingParams,
   type ShowcaseKind,
 } from '@store/core/catalog';
-import { categoryTag, CATEGORIES_TAG, productTag, SHOWCASE_TAG } from '@store/shared/cache-tags';
+import {
+  categoryTag,
+  CATEGORIES_TAG,
+  listingTag,
+  productTag,
+  SHOWCASE_TAG,
+} from '@store/shared/cache-tags';
 import type { FilterOptionsDto, ListingDto } from '@store/shared/dto/catalog';
 import type { SiteLocale } from '@store/shared/seo';
 
@@ -56,7 +62,7 @@ export async function loadCategoryPage(slug: string, locale: SiteLocale) {
   return known ? await getCachedCategoryPage(slug, locale) : null;
 }
 
-/** Tagged with every category in scope, so changing a product refreshes its category and the ancestors listing it. */
+/** Tagged with every category in scope, so changing a product refreshes its category and the ancestors listing it (`listingTag`, not the breadcrumb's `categoryTag`). */
 const getCachedListing = (input: {
   categoryIds: readonly string[];
   params: ListingParams;
@@ -65,7 +71,7 @@ const getCachedListing = (input: {
   unstable_cache(
     async () => await listProducts(await getDb(), input),
     ['listing', input.locale, JSON.stringify(input.params), ...input.categoryIds],
-    { tags: input.categoryIds.map(categoryTag), revalidate: LISTING_TTL },
+    { tags: input.categoryIds.map(listingTag), revalidate: LISTING_TTL },
   )();
 
 export const getCachedFilterOptions = (input: {
@@ -75,7 +81,7 @@ export const getCachedFilterOptions = (input: {
   unstable_cache(
     async () => await getFilterOptions(await getDb(), input),
     ['filter-options', input.locale, ...input.categoryIds],
-    { tags: input.categoryIds.map(categoryTag), revalidate: LISTING_TTL },
+    { tags: input.categoryIds.map(listingTag), revalidate: LISTING_TTL },
   )();
 
 export interface LoadedListing {

@@ -9,6 +9,7 @@ import { clientAddress, UNKNOWN_CLIENT } from './lib/client-address';
 import { isAdminAuthPath, isAdminPath } from './lib/admin-path';
 import { SESSION_COOKIE } from './lib/admin/cookies';
 import { missingPath, parseProductPath } from './lib/product-path';
+import { redirectMap } from './lib/redirect-map';
 import { knownProductSlugs } from './lib/product-slugs';
 import { createRateLimiter } from './lib/rate-limit';
 import { isSearchPath } from './lib/search-path';
@@ -153,6 +154,18 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
     const target = request.nextUrl.clone();
     target.pathname = unprefixed;
     return withNoindex(NextResponse.redirect(target, 308));
+  }
+
+  // A changed slug: the old product or category path answers 301 to the new one (ADR-14: the table
+  // is in process memory, never queried per request). Before the slug gate below, because an old
+  // slug is not a visible slug and would otherwise be answered 404.
+  if (request.method === 'GET' || request.method === 'HEAD') {
+    const hit = await redirectMap.lookup(pathname);
+    if (hit !== null) {
+      const target = request.nextUrl.clone();
+      target.pathname = hit.to;
+      return withNoindex(NextResponse.redirect(target, hit.status));
+    }
   }
 
   // An unknown or malformed product slug is answered here with the server-rendered
