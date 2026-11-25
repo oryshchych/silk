@@ -57,7 +57,10 @@ confirmed TOTP before a session counts; so must anyone who enrolled one.
 | Generate variants, edit a variant's SKU, barcode, active | `catalog.edit` | `generateVariantsAction`, `updateVariantContentAction` |
 | A variant's price override | `catalog.price` | `updateVariantPricingAction` |
 | Read the product list and editor | `admin.view` (+ `catalog.cost.view` for the cost) | `lib/admin` pages call `listAdminProducts` / `getAdminProduct` with the role's cost permission; the DTO schema for a role without it has no cost key |
-| Categories, colours, sizes, attributes, stock, media, import, export | see the table above | their actions arrive with their screens in the next slices |
+| Create, edit and move a category (slug change leaves a 301) | `categories.edit` | `createCategoryAction`, `updateCategoryAction`, `moveCategoryAction` (`actions/admin-taxonomy.ts`) |
+| Colours, sizes, attributes and their values | `dictionaries.edit` | `saveColorAction`, `saveSizeAction`, `saveAttributeAction`, `saveAttributeValueAction` |
+| Assign attribute values to a product | `catalog.edit` | `setProductAttributesAction` |
+| Stock, media, import, export | see the table above | their actions arrive with their screens in the next slices |
 
 ## Authentication facts
 
