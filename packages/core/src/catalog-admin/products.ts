@@ -15,7 +15,7 @@ import { money } from '@store/shared/money';
 import { DomainError } from '../errors.ts';
 import { AdminNotFoundError, NotPublishableError } from './errors.ts';
 import { diffOf, mapUnique, type AdminOutcome } from './outcome.ts';
-import { recordSlugRedirects } from './redirects.ts';
+import { recordSlugRedirects, releaseSlugPaths } from './redirects.ts';
 import type { CreateProductInput, ProductContentInput, ProductPricingInput } from './schemas.ts';
 
 export class InvalidPriceError extends DomainError {
@@ -69,6 +69,8 @@ export async function createProduct(
     if (row === undefined) throw new Error('product insert returned no row');
     return row;
   });
+  // A redirect from this slug (a product once renamed away from it) must not shadow the new page.
+  await releaseSlugPaths(tx, 'product', input.slug);
   return {
     data: { productId: created.id },
     audit: {

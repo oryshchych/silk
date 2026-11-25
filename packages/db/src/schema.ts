@@ -335,6 +335,8 @@ export const productVariants = pgTable('product_variants', {
 }, (t) => [
   uniqueIndex('variants_combo_uq').on(t.productId, t.sizeId, t.colorId),
   uniqueIndex('variants_sku_uq').on(t.sku),
+  /** A barcode identifies one variant (NULL = none). Several variants without one are fine */
+  uniqueIndex('variants_barcode_uq').on(t.barcode).where(sql`${t.barcode} IS NOT NULL`),
   index('variants_product_idx').on(t.productId),
   index('variants_size_idx').on(t.sizeId),
   index('variants_color_idx').on(t.colorId),
@@ -351,6 +353,37 @@ export const productVariants = pgTable('product_variants', {
   // Замість цього — воркер stock:reconcile алертить про розбіжність,
   // а рішення приймає людина.
   check('variants_price_positive', sql`${t.priceOverride} IS NULL OR ${t.priceOverride} > 0`),
+]);
+
+/**
+ * History of manual stock changes (phase 4, admin "stock"). One row per change made through
+ * `adjustStock`: the quantity before and after, who did it and why. Orders do not write here:
+ * their effect on stock is in `stock_reservations` and `order_status_history` (ADR-18).
+ * The row is written in the same transaction as the change; `quantity_after = quantity_before +
+ * delta` is a CHECK so a row that does not add up cannot exist.
+ */
+export const stockAdjustments = pgTable('stock_adjustments', {
+  id: hotId(),   // uuidv7: insert-heavy, read by variant and time
+  variantId: uuid('variant_id').notNull().references(() => productVariants.id, { onDelete: 'restrict' }),
+  /** The admin who made the change (auth_users.id). RESTRICT: users are deactivated, never deleted, so history never loses its author */
+  userId: uuid('user_id').references(() => authUsers.id, { onDelete: 'restrict' }),
+  /** Idempotency key of the admin request: a repeat of the same request changes nothing (NULL = none given) */
+  requestId: uuid('request_id'),
+  /** receipt | writeoff | stocktake | correction | import */
+  reason: varchar('reason', { length: 20 }).notNull(),
+  delta: integer('delta').notNull(),
+  quantityBefore: integer('quantity_before').notNull(),
+  quantityAfter: integer('quantity_after').notNull(),
+  note: varchar('note', { length: 500 }),
+  createdAt: createdAt(),
+}, (t) => [
+  index('stock_adjustments_variant_idx').on(t.variantId, t.createdAt),
+  index('stock_adjustments_created_idx').on(t.createdAt),
+  uniqueIndex('stock_adjustments_request_uq').on(t.requestId),
+  check('stock_adjustments_reason', sql`${t.reason} IN ('receipt', 'writeoff', 'stocktake', 'correction', 'import')`),
+  check('stock_adjustments_adds_up', sql`${t.quantityAfter} = ${t.quantityBefore} + ${t.delta}`),
+  check('stock_adjustments_nonneg', sql`${t.quantityBefore} >= 0 AND ${t.quantityAfter} >= 0`),
+  check('stock_adjustments_delta_nonzero', sql`${t.delta} <> 0`),
 ]);
 
 /* ─── гнучкі атрибути (тип чашки, push-up, тканина, рівень підтримки) ─── */

@@ -8,7 +8,9 @@ import { z } from 'zod';
 
 import { parseHryvnias } from '@store/shared/money';
 
-const text = (max: number) => z.string().trim().max(max);
+/** Text without a NUL byte: Postgres refuses it (22021), so it is refused here with a clean error. */
+const noNul = (value: string): boolean => !value.includes('\u0000');
+const text = (max: number) => z.string().trim().max(max).refine(noNul, 'no NUL byte');
 const optionalText = (max: number) =>
   text(max)
     .transform((value) => (value === '' ? null : value))

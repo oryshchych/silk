@@ -11,7 +11,7 @@ import { CATEGORIES_TAG, categoryTag, listingTag } from '@store/shared/cache-tag
 
 import { AdminNotFoundError, CategoryCycleError, CategoryTooDeepError } from './errors.ts';
 import { diffOf, mapUnique, type AdminOutcome } from './outcome.ts';
-import { recordSlugRedirects } from './redirects.ts';
+import { recordSlugRedirects, releaseSlugPaths } from './redirects.ts';
 
 const MAX_DEPTH = 3;
 
@@ -87,6 +87,7 @@ export async function createCategory(
     if (row === undefined) throw new Error('category insert returned no row');
     return row;
   });
+  await releaseSlugPaths(tx, 'category', input.slug);
   return {
     data: { categoryId: created.id },
     audit: {
@@ -149,6 +150,9 @@ export async function moveCategory(
   tx: Tx,
   input: { categoryId: string; parentId: string | null; sortOrder?: number | undefined },
 ): Promise<AdminOutcome<{ depth: number }>> {
+  // One move at a time: the cycle check reads the tree and the update changes it, so two moves
+  // racing (A under B, B under A) could each pass the check and together make a cycle.
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended('categories-tree', 0))`);
   const category = await loadCategory(tx, input.categoryId);
   const subtree = await subtreeOf(tx, input.categoryId);
   if (input.parentId !== null && subtree.ids.includes(input.parentId)) {

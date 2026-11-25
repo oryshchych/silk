@@ -476,6 +476,44 @@ export async function runAdminSmoke({
       '/admin/products',
     );
 
+    // A draft that is renamed must not reveal its new slug through the old address; a published
+    // product's redirect is cacheable only briefly.
+    const draftSlug = `draft-${suffix}`;
+    const drafted = await form(
+      'createProductAction',
+      {
+        sku: `DRAFT-${suffix}`,
+        slug: draftSlug,
+        brand: 'Smoke',
+        categoryId: original?.categoryId ?? '',
+        nameUk: 'Чернетка',
+        nameEn: 'Draft',
+        basePrice: '10.00',
+        weightGrams: 100,
+      },
+      cookie(adminToken),
+      '/admin/products',
+    );
+    const draftId = /"productId":"([0-9a-f-]{36})"/.exec(drafted.body)?.[1] ?? '';
+    const draftRenamed = await form(
+      'updateProductContentAction',
+      { productId: draftId, slug: `secret-launch-${suffix}` },
+      cookie(adminToken),
+      '/admin/products',
+    );
+    const draftProbe = await get(`/product/${draftSlug}`);
+    check(
+      'catalog: renaming a DRAFT does not reveal the new slug: the old address is a 404, not a 301',
+      drafted.body.includes('"ok":true') &&
+        draftRenamed.body.includes('"ok":true') &&
+        draftProbe.status === 404 &&
+        draftProbe.location === null,
+    );
+    check(
+      'catalog: the 301 of a published product is cacheable for a short time only',
+      oldPage.cache.includes('max-age=300') && !oldPage.cache.includes('immutable'),
+    );
+
     // The price change reaches the storefront within a revalidation, and touches only that product.
     await get(`/product/${oldSlug}`);
     await get(`/product/${bystander.slug}`);

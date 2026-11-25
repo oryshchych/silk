@@ -22,7 +22,7 @@ Access control lives **inside** the code that does the work (`AGENTS.md` section
 ## Roles and permissions
 
 Roles: `owner` (everything), `admin` (everything except users and roles), `manager` (orders, stock),
-`content` (catalog text and media, never prices, cost or money). `owner` and `admin` must hold a
+`content` (catalog text and media; may READ prices, as the storefront shows them to everyone, but never write a price or see the cost). `owner` and `admin` must hold a
 confirmed TOTP before a session counts; so must anyone who enrolled one.
 
 <!-- permissions:start -->
@@ -52,7 +52,7 @@ confirmed TOTP before a session counts; so must anyone who enrolled one.
 | Theme and language of the admin | none (cosmetic cookie, `Path=/admin`) | `actions/admin-prefs.ts`: Origin; value outside the known list is replaced by the default |
 | Create a product | `catalog.create` | `createProductAction` (`actions/admin-catalog.ts`) via `catalogAction` -> `adminAction` |
 | Edit product text, SEO, slug, category | `catalog.edit` | `updateProductContentAction`: never a price (a separate action) |
-| Edit a price, the old price, the cost | `catalog.price` | `updateProductPricingAction`; the cost field also needs `catalog.cost.view` to be shown |
+| Edit a price, the old price, the cost | `catalog.price` | `updateProductPricingAction`; writing the cost ALSO needs `catalog.cost.view` (checked in the action: a role that may not see the cost may not set it blind) |
 | Publish or unpublish | `catalog.publish` | `setProductActiveAction` |
 | Generate variants, edit a variant's SKU, barcode, active | `catalog.edit` | `generateVariantsAction`, `updateVariantContentAction` |
 | A variant's price override | `catalog.price` | `updateVariantPricingAction` |

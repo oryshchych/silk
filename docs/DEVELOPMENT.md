@@ -525,3 +525,13 @@ and set up TOTP on the first login. Any environment:
 `printf %s "$PASSWORD" | pnpm admin:create --email=... --role=owner|admin|manager|content` (the
 password is read from stdin, never an argument). `AUTH_SECRET` (32+ characters) must be set, or
 nothing signs in. Access control per mutation: `docs/SECURITY.md`.
+
+### Migration 0012 precondition (variant barcodes, phase 4)
+
+`0012_variant_barcode_unique` creates a unique index on `product_variants.barcode` (where not null). If
+the target database already holds two variants with the same barcode the migration fails as a whole
+(see the note on 0009). Before deploying to a database that has barcodes, this must return no rows:
+
+```sql
+SELECT barcode FROM product_variants WHERE barcode IS NOT NULL GROUP BY 1 HAVING count(*) > 1;
+```

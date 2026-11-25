@@ -41,7 +41,9 @@
     "./admin-schemas": "./src/catalog-admin/schemas.ts",
     "./admin-read": "./src/catalog-admin/read.ts",
     "./admin-redirects": "./src/catalog-admin/redirects.ts",
-    "./admin-outcome": "./src/catalog-admin/outcome.ts"
+    "./admin-outcome": "./src/catalog-admin/outcome.ts",
+    "./stock": "./src/stock/adjust-stock.ts",
+    "./admin-errors": "./src/catalog-admin/errors.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"
