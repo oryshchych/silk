@@ -1,0 +1,344 @@
+/**
+ * Phase 4 slice 2 on the BUILT app (called from smoke-web.ts): the admin's headers, limits,
+ * redirects, theme without flash, sessions read from the database, and the guarantee that none of
+ * it reaches the storefront. Sessions are minted with the same core functions the login uses, so
+ * the cookie the server receives is a real one; forged, revoked and deactivated sessions are
+ * tried against the real server too.
+ */
+import { actionIds } from './smoke-http.ts';
+import { createDb } from '../packages/db/src/client.ts';
+import {
+  beginLogin,
+  confirmTotpEnrolment,
+  createAdminUser,
+  resolveSession,
+  revokeAllSessions,
+  startTotpEnrolment,
+} from '../packages/core/src/auth/service.ts';
+import { codeAt, stepOf } from '../packages/core/src/auth/totp.ts';
+
+interface Context {
+  base: string;
+  databaseUrl: string;
+  authSecret: string;
+  buildRoot: string;
+  /** The configured SITE_URL: an action's Origin must carry its host. */
+  siteOrigin: string;
+  check: (name: string, ok: boolean) => void;
+  storedFiles: () => number;
+}
+
+const PASSWORD = 'smoke-admin-password-0123456789';
+const client = { ip: '198.51.100.77', userAgent: 'smoke-admin' };
+
+export async function runAdminSmoke({
+  base,
+  databaseUrl,
+  authSecret,
+  buildRoot,
+  siteOrigin,
+  check,
+  storedFiles,
+}: Context): Promise<void> {
+  const config = { secret: authSecret };
+  const { db, close } = createDb(databaseUrl, { max: 2 });
+  const suffix = String(Date.now());
+  let counter = 0;
+  const nextClient = (): string => `203.0.113.${String(++counter + 10)}`;
+
+  const get = async (path: string, headers: Record<string, string> = {}, method = 'GET') => {
+    const response = await fetch(base + path, {
+      method,
+      redirect: 'manual',
+      headers: { 'X-Forwarded-For': nextClient(), ...headers },
+    });
+    return {
+      status: response.status,
+      location: response.headers.get('location'),
+      cache: response.headers.get('cache-control') ?? '',
+      robots: response.headers.get('x-robots-tag') ?? '',
+      html: await response.text(),
+    };
+  };
+  const cookie = (token: string): Record<string, string> => ({ Cookie: `admin_session=${token}` });
+
+  const ids = actionIds(buildRoot);
+  const origin = (): Record<string, string> => ({
+    Origin: siteOrigin,
+    // Next itself compares Origin with the forwarded host; behind a real proxy that is the site host.
+    'X-Forwarded-Host': new URL(siteOrigin).host,
+  });
+  /** A server action with plain arguments, the way the forms post it. */
+  const form = async (
+    name: string,
+    args: Record<string, string>,
+    headers: Record<string, string> = {},
+    path = '/admin/login',
+  ) => {
+    const response = await fetch(base + path, {
+      method: 'POST',
+      redirect: 'manual',
+      headers: {
+        'Next-Action': ids[name] ?? '',
+        'Content-Type': 'text/plain;charset=UTF-8',
+        'X-Forwarded-For': nextClient(),
+        ...origin(),
+        ...headers,
+      },
+      body: JSON.stringify([args]),
+    });
+    return {
+      status: response.status,
+      redirect: response.headers.get('x-action-redirect'),
+      cookies: response.headers.getSetCookie(),
+      body: await response.text(),
+    };
+  };
+  /** A no-argument-or-FormData action posted the progressive-enhancement way (a plain form). */
+  const plainForm = async (
+    name: string,
+    fields: Record<string, string>,
+    headers: Record<string, string> = {},
+    path = '/admin',
+  ) => {
+    const body = new FormData();
+    body.set(`$ACTION_ID_${ids[name] ?? ''}`, '');
+    for (const [key, value] of Object.entries(fields)) body.set(key, value);
+    const response = await fetch(base + path, {
+      method: 'POST',
+      redirect: 'manual',
+      headers: { 'X-Forwarded-For': nextClient(), ...origin(), ...headers },
+      body,
+    });
+    return {
+      status: response.status,
+      location: response.headers.get('location'),
+      cookies: response.headers.getSetCookie(),
+    };
+  };
+
+  try {
+    // A manager signs in with the password alone; an owner needs TOTP.
+    const manager = `manager-${suffix}@example.test`;
+    const owner = `owner-${suffix}@example.test`;
+    await db.transaction(async (tx) => {
+      await createAdminUser(tx, { email: manager, password: PASSWORD, role: 'manager' });
+      await createAdminUser(tx, { email: owner, password: PASSWORD, role: 'owner' });
+    });
+    const managerLogin = await db.transaction(
+      async (tx) => await beginLogin(tx, config, { email: manager, password: PASSWORD, client }),
+    );
+    const ownerPending = await db.transaction(
+      async (tx) => await beginLogin(tx, config, { email: owner, password: PASSWORD, client }),
+    );
+    if (!managerLogin.ok || !ownerPending.ok) throw new Error('smoke accounts could not sign in');
+    const enrol = await db.transaction(
+      async (tx) => await startTotpEnrolment(tx, config, { token: ownerPending.token }),
+    );
+    if (enrol === null) throw new Error('smoke enrolment failed');
+    const ownerFull = await db.transaction(
+      async (tx) =>
+        await confirmTotpEnrolment(tx, config, {
+          token: ownerPending.token,
+          code: codeAt(enrol.secret, stepOf(Date.now())),
+          client,
+        }),
+    );
+    if (!ownerFull.ok) throw new Error('smoke owner could not complete enrolment');
+
+    // 1. Not signed in: a redirect to the login, never indexed or stored.
+    const anonymous = await get('/admin');
+    check(
+      'admin: no cookie redirects to /admin/login, no-store and noindex',
+      anonymous.status === 307 &&
+        new URL(anonymous.location ?? 'x:', base).pathname === '/admin/login' &&
+        anonymous.cache.includes('no-store') &&
+        anonymous.robots.includes('noindex'),
+    );
+    const login = await get('/admin/login');
+    check(
+      'admin: the login page is 200, private no-store, noindex, with its own html and the system theme',
+      login.status === 200 &&
+        login.cache.includes('private') &&
+        login.cache.includes('no-store') &&
+        login.robots.includes('noindex') &&
+        login.html.includes('data-theme="system"') &&
+        login.html.includes('<html lang="uk"'),
+    );
+    const spelled = await get('/%61dmin/login');
+    check(
+      'admin: an encoded spelling gets the same headers',
+      spelled.cache.includes('no-store') && spelled.robots.includes('noindex'),
+    );
+
+    // 2. Theme and language come from cookies, so the first paint is already right.
+    const dark = await get('/admin/login', { Cookie: 'admin_theme=dark; admin_locale=en' });
+    check(
+      'admin: the theme cookie sets data-theme on the first HTML, no script needed',
+      dark.html.includes('data-theme="dark"') && dark.html.includes('<html lang="en"'),
+    );
+    const junk = await get('/admin/login', { Cookie: 'admin_theme="><script>x</script>' });
+    check(
+      'admin: a junk theme cookie falls back to system and is never echoed',
+      junk.html.includes('data-theme="system"') && !junk.html.includes('<script>x</script>'),
+    );
+
+    // 3. Sessions are read from the database.
+    const ok = await get('/admin', cookie(managerLogin.token));
+    check(
+      'admin: a real manager session sees the dashboard with email and role',
+      ok.status === 200 &&
+        ok.html.includes(manager) &&
+        ok.cache.includes('no-store') &&
+        ok.html.includes('Менеджер'),
+    );
+    const tampered = await get('/admin', cookie(`${managerLogin.token.slice(0, -2)}xx`));
+    check(
+      'admin: a tampered token is redirected to the login (the proxy lets it pass, the page refuses)',
+      tampered.status === 307 &&
+        new URL(tampered.location ?? 'x:', base).pathname === '/admin/login',
+    );
+    const pendingOnly = await get('/admin', cookie(ownerPending.token));
+    check(
+      'admin: a pending (password-only) owner session never reaches the dashboard',
+      pendingOnly.status !== 200 || !pendingOnly.html.includes(owner),
+    );
+    const ownerOk = await get('/admin', cookie(ownerFull.token));
+    check(
+      'admin: an owner with a confirmed TOTP sees the dashboard',
+      ownerOk.status === 200 && ownerOk.html.includes(owner),
+    );
+
+    // 3b. The login action itself: a real sign-in, a wrong password, and a foreign Origin.
+    const good = await form('loginAction', { email: manager, password: PASSWORD });
+    check(
+      'admin login action: the right password redirects and sets an HttpOnly, SameSite=Strict, Path=/admin cookie',
+      (good.redirect ?? '').includes('/admin') &&
+        good.cookies.some(
+          (c) =>
+            c.startsWith('admin_session=') &&
+            /HttpOnly/i.test(c) &&
+            /SameSite=Strict/i.test(c) &&
+            /Path=\/admin/i.test(c),
+        ),
+    );
+    const bad = await form('loginAction', { email: manager, password: 'wrong-password-wrong' });
+    check(
+      'admin login action: a wrong password answers "invalid" and sets no cookie',
+      bad.body.includes('"code":"invalid"') &&
+        !bad.cookies.some((c) => c.startsWith('admin_session=')),
+    );
+    const unknown = await form('loginAction', {
+      email: `nobody-${suffix}@example.test`,
+      password: PASSWORD,
+    });
+    check(
+      'admin login action: an unknown account is answered exactly like a wrong password',
+      unknown.body.includes('"code":"invalid"') && unknown.body.length === bad.body.length,
+    );
+    const foreign = await form(
+      'loginAction',
+      { email: manager, password: PASSWORD },
+      { Origin: 'https://evil.example' },
+    );
+    check(
+      'admin login action: a foreign Origin is refused (no redirect, no cookie)',
+      foreign.redirect === null && !foreign.cookies.some((c) => c.startsWith('admin_session=')),
+    );
+
+    // 3b2. "Sign out other devices" goes through adminAction: Origin, session, audit.
+    const second = await db.transaction(
+      async (tx) => await beginLogin(tx, config, { email: manager, password: PASSWORD, client }),
+    );
+    if (!second.ok) throw new Error('second manager session failed');
+    const others = await form('signOutOtherSessionsAction', {}, cookie(managerLogin.token));
+    check(
+      'admin action: sign out other devices ends the other session and keeps this one',
+      others.body.includes('"ok":true') &&
+        (await get('/admin', cookie(second.token))).status === 307 &&
+        (await get('/admin', cookie(managerLogin.token))).status === 200,
+    );
+    const anon = await form('signOutOtherSessionsAction', {});
+    check(
+      'admin action: without a session it answers UNAUTHENTICATED',
+      anon.body.includes('UNAUTHENTICATED'),
+    );
+    const csrf = await form(
+      'signOutOtherSessionsAction',
+      {},
+      {
+        ...cookie(managerLogin.token),
+        Origin: 'https://evil.example',
+        'X-Forwarded-Host': 'evil.example',
+      },
+    );
+    check(
+      'admin action: a foreign Origin is refused and the session is untouched',
+      !csrf.body.includes('"ok":true') &&
+        (await get('/admin', cookie(managerLogin.token))).status === 200,
+    );
+
+    // 3c. The theme switch is a cookie set by a server action, checked for Origin and value.
+    const themed = await plainForm('setThemeAction', { theme: 'dark' });
+    check(
+      'admin theme action: sets admin_theme=dark scoped to /admin',
+      themed.cookies.some((c) => c.startsWith('admin_theme=dark') && /Path=\/admin/i.test(c)),
+    );
+    const themedBad = await plainForm('setThemeAction', { theme: '"><script>' });
+    check(
+      'admin theme action: a value outside the list is stored as the default, never as sent',
+      themedBad.cookies.some((c) => c.startsWith('admin_theme=system')) &&
+        !themedBad.cookies.some((c) => c.includes('script')),
+    );
+    const themedForeign = await plainForm(
+      'setThemeAction',
+      { theme: 'dark' },
+      { Origin: 'https://evil.example', 'X-Forwarded-Host': 'evil.example' },
+    );
+    check(
+      'admin theme action: a foreign Origin sets no cookie',
+      !themedForeign.cookies.some((c) => c.startsWith('admin_theme=')),
+    );
+
+    // 4. Revocation and deactivation take effect at once.
+    const live = await resolveSession(db, config, managerLogin.token);
+    if (live === null) throw new Error('the manager session should still be live');
+    await db.transaction(async (tx) => {
+      await revokeAllSessions(tx, live.session.userId);
+    });
+    const revoked = await get('/admin', cookie(managerLogin.token));
+    check(
+      'admin: a revoked session is refused on the next request',
+      revoked.status === 307 || !revoked.html.includes(manager),
+    );
+
+    // 5. Limits: every method but OPTIONS, every spelling, per client.
+    const fixed = { 'X-Forwarded-For': '192.0.2.200' };
+    let limited = 0;
+    for (let i = 0; i < 40; i += 1) {
+      const path = i % 2 === 0 ? '/admin/login' : '/%61dmin/login';
+      const r = await get(path, fixed, i % 3 === 0 ? 'POST' : 'GET');
+      if (r.status === 429) limited += 1;
+    }
+    check('admin: the credential pages are limited per client (429 after 30)', limited >= 8);
+    const options = await get('/admin/login', fixed, 'OPTIONS');
+    check('admin: OPTIONS is not counted against the limit', options.status !== 429);
+    const other = await get('/admin/login');
+    check('admin: another client is not affected by that limit', other.status === 200);
+
+    // 6. The storefront is untouched.
+    const store = await get('/');
+    check(
+      'storefront: no admin theme attribute, no admin cookie and no admin headers on the home page',
+      !store.html.includes('data-theme') &&
+        !store.html.includes('admin_') &&
+        !store.html.includes('/admin'),
+    );
+    const before = storedFiles();
+    for (let i = 0; i < 20; i += 1)
+      await get(`/admin/zzz-${String(i)}`, cookie(managerLogin.token));
+    check('admin: unknown admin paths do not grow the page cache', storedFiles() - before <= 2);
+  } finally {
+    await close();
+  }
+}

@@ -72,6 +72,13 @@ Auth.js таблиці **не створює і не мігрує** — попе
 користувачів на іншу модель токенів неприємно, а спроєктувати одразу
 безкоштовно.
 
+**Phase 4 implementation note (2026-11-25).** The decision above stands; the Auth.js
+*package* is not used (owner queue Q38). The session token is `v1.<sid>.<expiry>.<HMAC-SHA256>`,
+signed with a key derived (HKDF) from `AUTH_SECRET`; it only proves that we issued the `sid`.
+Passwords are argon2id, TOTP is RFC 6238 with the secret AES-256-GCM encrypted, all from
+`node:crypto`. Code: `packages/core/src/auth`, `apps/web/src/lib/admin`. The access-control table
+is `docs/SECURITY.md`. Refresh-token rotation for mobile is Q39.
+
 ### ADR-12. Готовність до мобільного застосунку без окремого бекенда
 
 Мобільний застосунок не потребує окремого сервісу — йому потрібен HTTP-фасад

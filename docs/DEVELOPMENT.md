@@ -516,3 +516,12 @@ SELECT refund_operation_id FROM fiscal_documents
 
 The migrator holds the index locks until commit and `CREATE INDEX CONCURRENTLY` cannot run inside
 it: a large `payment_attempts` later needs a separate non-transactional step in the runbook.
+
+### Admin accounts (phase 4)
+
+There is no public sign-up. Local: `pnpm admin:seed-local` creates `owner@example.test` (test
+credentials in `scripts/admin-user.ts`, refused outside `APP_ENV=local`); sign in at `/admin/login`
+and set up TOTP on the first login. Any environment:
+`printf %s "$PASSWORD" | pnpm admin:create --email=... --role=owner|admin|manager|content` (the
+password is read from stdin, never an argument). `AUTH_SECRET` (32+ characters) must be set, or
+nothing signs in. Access control per mutation: `docs/SECURITY.md`.

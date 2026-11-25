@@ -15,7 +15,7 @@ const base = { ...withoutOverride, EMAIL_TO_OVERRIDE: 'dev@example.com' } as con
 
 const productionSecrets = {
   SITE_URL: 'https://shop.example',
-  AUTH_SECRET: 'x',
+  AUTH_SECRET: 'x'.repeat(32),
   MONO_PLATA_TOKEN: 'x',
   WAYFORPAY_MERCHANT_ACCOUNT: 'x',
   WAYFORPAY_SECRET_KEY: 'x',
@@ -101,6 +101,14 @@ describe('parseEnv', () => {
     expect(() => parseEnv({ ...staging, NEXT_PUBLIC_SITE_URL: 'https://s.example' })).toThrow(
       /SITE_URL/,
     );
+  });
+
+  it('refuses an AUTH_SECRET shorter than 32 characters in production only (sessions and TOTP keys derive from it)', () => {
+    const production = { ...withoutOverride, APP_ENV: 'production', ...productionSecrets } as const;
+    expect(() => parseEnv({ ...production, AUTH_SECRET: 'short' })).toThrow(/AUTH_SECRET/);
+    expect(parseEnv({ ...production, AUTH_SECRET: 'y'.repeat(32) }).APP_ENV).toBe('production');
+    // Elsewhere a short value boots; the admin then fails closed (crypto.unit.test.ts).
+    expect(parseEnv({ ...base, AUTH_SECRET: 'short' }).APP_ENV).toBe('local');
   });
 
   it('reads TRUSTED_PROXY_HOPS as a small non-negative integer', () => {

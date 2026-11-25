@@ -30,7 +30,7 @@ async function loadProxy(appEnv: 'local' | 'production') {
       'R2_SECRET_ACCESS_KEY',
       'R2_BUCKET_MEDIA',
     ]) {
-      vi.stubEnv(key, 'x');
+      vi.stubEnv(key, 'x'.repeat(32));
     }
     vi.stubEnv('SITE_URL', 'https://shop.example');
   }

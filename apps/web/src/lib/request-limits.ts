@@ -35,7 +35,7 @@ export const limiters = {
 } as const satisfies Record<string, RateLimiter>;
 
 /** The client key of the current request, from the trusted proxy hop. */
-async function currentClient(): Promise<string> {
+export async function currentClient(): Promise<string> {
   return clientAddress((await headers()).get('x-forwarded-for'), await trustedHopsOf());
 }
 

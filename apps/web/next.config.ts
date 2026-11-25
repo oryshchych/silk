@@ -31,6 +31,15 @@ const nextConfig: NextConfig = {
   headers: () =>
     Promise.resolve([
       {
+        // The admin is never cached or indexed (proxy.ts sets the same; this one covers a path the
+        // proxy does not see as admin). Declared first so the general block below only adds.
+        source: '/admin/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'private, no-store' },
+          { key: 'X-Robots-Tag', value: 'noindex, nofollow' },
+        ],
+      },
+      {
         source: '/:path*',
         headers: [
           { key: 'X-Content-Type-Options', value: 'nosniff' },
