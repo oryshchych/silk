@@ -10,6 +10,7 @@ import {
   parseHryvnias,
   percentOf,
   subtract,
+  toHryvniasText,
   sum,
   type Money,
 } from './money';
@@ -140,5 +141,20 @@ describe('negative zero', () => {
     expect(Object.is(money(-0), 0)).toBe(true);
     expect(Object.is(multiply(money(0), -1), 0)).toBe(true);
     expect(Object.is(parseHryvnias('-0'), 0)).toBe(true);
+  });
+});
+
+describe('toHryvniasText', () => {
+  it('writes kopiykas as a plain amount an input can show and parseHryvnias reads back', () => {
+    for (const [kopiykas, text] of [
+      [0, '0.00'],
+      [5, '0.05'],
+      [129_900, '1299.00'],
+      [129_905, '1299.05'],
+      [-250, '-2.50'],
+    ] as const) {
+      expect(toHryvniasText(money(kopiykas))).toBe(text);
+      expect(parseHryvnias(text)).toBe(kopiykas);
+    }
   });
 });

@@ -22,7 +22,7 @@ Access control lives **inside** the code that does the work (`AGENTS.md` section
 ## Roles and permissions
 
 Roles: `owner` (everything), `admin` (everything except users and roles), `manager` (orders, stock),
-`content` (catalog text and media, never prices, cost or money). `owner` and `admin` must hold a
+`content` (catalog text and media; may READ prices, as the storefront shows them to everyone, but never write a price or see the cost). `owner` and `admin` must hold a
 confirmed TOTP before a session counts; so must anyone who enrolled one.
 
 <!-- permissions:start -->
@@ -30,7 +30,10 @@ confirmed TOTP before a session counts; so must anyone who enrolled one.
 |---|---|---|
 | `admin.view` | owner, admin, manager, content | Any admin page |
 | `users.manage` | owner | Create, deactivate, change the role of admin users |
-| `catalog.edit` | owner, admin, content | Product text, categories, attributes, SEO fields |
+| `catalog.create` | owner, admin | Create a product (a draft: it needs a price) |
+| `catalog.edit` | owner, admin, content | Product text, SEO fields, structure, variant SKU/barcode/active |
+| `categories.edit` | owner, admin, content | Create, edit and move categories |
+| `dictionaries.edit` | owner, admin | Colours, sizes, attributes and their values |
 | `catalog.price` | owner, admin | Price, old price, promo price of products and variants |
 | `catalog.cost.view` | owner, admin | See `cost_price` / `unit_cost_snapshot` anywhere (screens, exports) |
 | `catalog.publish` | owner, admin, content | Publish or unpublish a product |
@@ -47,7 +50,14 @@ confirmed TOTP before a session counts; so must anyone who enrolled one.
 | Sign in (password, TOTP, recovery code, enrolment) | none (no session yet) | `actions/admin-auth.ts`: Origin, per-client limit, account lockout in `@store/core/auth` |
 | Sign out | session | `logoutAction` reads the session itself; the cookie is cleared whatever the result |
 | Theme and language of the admin | none (cosmetic cookie, `Path=/admin`) | `actions/admin-prefs.ts`: Origin; value outside the known list is replaced by the default |
-| Catalog, stock, media, import, export | see the table above | added with their actions in the next slices; each names its permission in `adminAction` |
+| Create a product | `catalog.create` | `createProductAction` (`actions/admin-catalog.ts`) via `catalogAction` -> `adminAction` |
+| Edit product text, SEO, slug, category | `catalog.edit` | `updateProductContentAction`: never a price (a separate action) |
+| Edit a price, the old price, the cost | `catalog.price` | `updateProductPricingAction`; writing the cost ALSO needs `catalog.cost.view` (checked in the action: a role that may not see the cost may not set it blind) |
+| Publish or unpublish | `catalog.publish` | `setProductActiveAction` |
+| Generate variants, edit a variant's SKU, barcode, active | `catalog.edit` | `generateVariantsAction`, `updateVariantContentAction` |
+| A variant's price override | `catalog.price` | `updateVariantPricingAction` |
+| Read the product list and editor | `admin.view` (+ `catalog.cost.view` for the cost) | `lib/admin` pages call `listAdminProducts` / `getAdminProduct` with the role's cost permission; the DTO schema for a role without it has no cost key |
+| Categories, colours, sizes, attributes, stock, media, import, export | see the table above | their actions arrive with their screens in the next slices |
 
 ## Authentication facts
 
@@ -71,6 +81,23 @@ confirmed TOTP before a session counts; so must anyone who enrolled one.
 - `audit_log` rows redact any key that looks like a credential (`password`, `secret`, `token`,
   `hash`, `code`, `key`, `cookie`, `authorization`). Authentication events are audited without the
   email or any secret.
+
+## Catalog data and the cost
+
+`products.cost_price` is read for the admin only through `packages/core/src/catalog-admin/read.ts`,
+which serialises through `@store/shared/dto/admin-catalog`: a role without `catalog.cost.view` gets
+a schema in which the key does not exist (zod drops unknown keys), so the value cannot leave the
+server even though the row carries it. A cost change is written to `audit_log` as
+`"costPrice": "changed"`, never with the old or new value. The serialized response is tested per
+role: `packages/core/test/catalog-admin.int.test.ts` (JSON of the DTO) and `scripts/smoke-admin.ts`
+(the real pages and the direct POSTs of a content role and a manager).
+
+## Cache invalidation (owner queue Q23)
+
+There is NO HTTP endpoint that invalidates the storefront cache. A catalog action returns the tags
+to drop; `catalogAction` calls `revalidateTag(tag, 'max')` after the transaction committed and the
+role was checked (`lib/admin/invalidate.ts`). A product edit drops `product:{id}`, the listing tag
+of its category chain and the showcase, nothing else.
 
 ## Operating the lockout, and what the design does not cover
 

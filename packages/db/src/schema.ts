@@ -335,6 +335,8 @@ export const productVariants = pgTable('product_variants', {
 }, (t) => [
   uniqueIndex('variants_combo_uq').on(t.productId, t.sizeId, t.colorId),
   uniqueIndex('variants_sku_uq').on(t.sku),
+  /** A barcode identifies one variant (NULL = none). Several variants without one are fine */
+  uniqueIndex('variants_barcode_uq').on(t.barcode).where(sql`${t.barcode} IS NOT NULL`),
   index('variants_product_idx').on(t.productId),
   index('variants_size_idx').on(t.sizeId),
   index('variants_color_idx').on(t.colorId),

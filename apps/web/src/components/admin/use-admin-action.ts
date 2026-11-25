@@ -1,0 +1,60 @@
+'use client';
+
+import { useTranslations } from 'next-intl';
+import { useState, useTransition } from 'react';
+
+const KNOWN_CODES = [
+  'GENERIC',
+  'FORBIDDEN',
+  'UNAUTHENTICATED',
+  'RATE_LIMITED',
+  'INVALID_INPUT',
+  'BAD_ORIGIN',
+  'ADMIN_NOT_FOUND',
+  'ADMIN_SLUG_TAKEN',
+  'ADMIN_SKU_TAKEN',
+  'ADMIN_INVALID_PRICE',
+  'ADMIN_NOT_PUBLISHABLE',
+  'ADMIN_TOO_MANY_VARIANTS',
+  'ADMIN_DUPLICATE',
+] as const;
+
+export type ActionOutcome = { ok: true } | { ok: false; code: string };
+export interface FormMessage {
+  kind: 'ok' | 'error';
+  text: string;
+}
+
+/**
+ * Runs an admin action from a form: shows the result in a live region, maps a failure code to its
+ * message (an unknown code becomes the generic one: a code is never shown as is).
+ */
+export function useAdminAction() {
+  const t = useTranslations('admin.errors');
+  const [message, setMessage] = useState<FormMessage | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  function run(action: () => Promise<ActionOutcome>, okText: string, onOk?: () => void): void {
+    startTransition(async () => {
+      const result = await action();
+      if (result.ok) {
+        setMessage({ kind: 'ok', text: okText });
+        onOk?.();
+      } else {
+        const known = KNOWN_CODES.find((code) => code === result.code) ?? 'GENERIC';
+        setMessage({ kind: 'error', text: t(known) });
+      }
+    });
+  }
+  return { message, pending, run, setMessage };
+}
+
+/** The text fields of a form as strings; a checkbox is `true` when checked. */
+export function readForm(form: HTMLFormElement): FormData {
+  return new FormData(form);
+}
+
+export const textOf = (data: FormData, name: string): string => {
+  const value = data.get(name);
+  return typeof value === 'string' ? value : '';
+};

@@ -5,7 +5,7 @@
  * two drift apart.
  *
  * Roles: owner (everything), admin (everything except users and roles), manager (orders, stock,
- * customers), content (catalog text and media, never prices or money).
+ * customers), content (catalog text and media; may read prices, never write them or see the cost).
  */
 export const ROLES = ['owner', 'admin', 'manager', 'content'] as const;
 export type AdminRole = (typeof ROLES)[number];
@@ -16,7 +16,10 @@ export const MFA_REQUIRED_ROLES: readonly AdminRole[] = ['owner', 'admin'];
 export const PERMISSIONS = {
   'admin.view': ['owner', 'admin', 'manager', 'content'],
   'users.manage': ['owner'],
+  'catalog.create': ['owner', 'admin'],
   'catalog.edit': ['owner', 'admin', 'content'],
+  'categories.edit': ['owner', 'admin', 'content'],
+  'dictionaries.edit': ['owner', 'admin'],
   'catalog.price': ['owner', 'admin'],
   'catalog.cost.view': ['owner', 'admin'],
   'catalog.publish': ['owner', 'admin', 'content'],

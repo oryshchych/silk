@@ -78,3 +78,12 @@ Postgres звідти означає запит до БД на кожен пер
 ### ADR-7. Стан фільтрів — URL
 
 Query-params — єдине джерело істини для PLP. Ніякого дублювання в стані клієнта. Дає шеринг посилань, кнопку «назад», індексацію й серверний рендер без гідратаційних розбіжностей.
+
+**Phase 4 implementation note (2026-11-25).** The trusted invalidation path is the admin server
+action itself (after its commit), not an outbox consumer: the cache lives in the web process, which
+the worker cannot reach without an HTTP route, and no such route exists (owner queue Q23). A
+product page carries `product:{id}`, `category:{id}` (its breadcrumb) and `categories`; a category
+LISTING carries `listing:{id}` for every category in scope. A product edit drops `product:{id}`,
+`listing:{categoryId}` (and the old one when moved) and `showcase`, so its siblings' pages stay
+cached; a category edit also drops `category:{id}` and `categories`. Admin reads are not cached,
+so `updateTag` has no job in this design.

@@ -15,6 +15,7 @@ import {
   revokeAllSessions,
   startTotpEnrolment,
 } from '../packages/core/src/auth/service.ts';
+import { products } from '../packages/db/src/schema.ts';
 import { codeAt, stepOf } from '../packages/core/src/auth/totp.ts';
 
 interface Context {
@@ -56,6 +57,7 @@ export async function runAdminSmoke({
       status: response.status,
       location: response.headers.get('location'),
       cache: response.headers.get('cache-control') ?? '',
+      nextCache: response.headers.get('x-nextjs-cache') ?? '',
       robots: response.headers.get('x-robots-tag') ?? '',
       html: await response.text(),
     };
@@ -71,7 +73,7 @@ export async function runAdminSmoke({
   /** A server action with plain arguments, the way the forms post it. */
   const form = async (
     name: string,
-    args: Record<string, string>,
+    args: Record<string, unknown>,
     headers: Record<string, string> = {},
     path = '/admin/login',
   ) => {
@@ -325,6 +327,217 @@ export async function runAdminSmoke({
     check('admin: OPTIONS is not counted against the limit', options.status !== 429);
     const other = await get('/admin/login');
     check('admin: another client is not affected by that limit', other.status === 200);
+
+    // 5b. Catalog mutations: the role is checked INSIDE the action, on a direct POST.
+    const roleUsers = new Map<string, string>();
+    await db.transaction(async (tx) => {
+      for (const role of ['content', 'admin'] as const) {
+        const email = `${role}-${suffix}@example.test`;
+        await createAdminUser(tx, { email, password: PASSWORD, role });
+        roleUsers.set(role, email);
+      }
+    });
+    const sessionOf = async (role: 'content' | 'admin' | 'manager'): Promise<string> => {
+      const email = role === 'manager' ? manager : (roleUsers.get(role) ?? '');
+      const result = await db.transaction(
+        async (tx) => await beginLogin(tx, config, { email, password: PASSWORD, client }),
+      );
+      if (!result.ok) throw new Error(`no session for ${role}`);
+      if (result.next !== 'done') {
+        const started = await db.transaction(
+          async (tx) => await startTotpEnrolment(tx, config, { token: result.token }),
+        );
+        if (started === null) throw new Error('enrolment failed');
+        const full = await db.transaction(
+          async (tx) =>
+            await confirmTotpEnrolment(tx, config, {
+              token: result.token,
+              code: codeAt(started.secret, stepOf(Date.now())),
+              client,
+            }),
+        );
+        if (!full.ok) throw new Error('enrolment confirm failed');
+        return full.token;
+      }
+      return result.token;
+    };
+    const contentToken = await sessionOf('content');
+    const adminToken = await sessionOf('admin');
+    const managerToken = await sessionOf('manager');
+    // Read through the schema and filter in JS: the repository root has no drizzle-orm operators.
+    const productRow = async (id: string) =>
+      (await db.select().from(products)).find((row) => row.id === id);
+    const active = (await db.select().from(products)).filter((row) => row.isActive);
+    const target = active[0];
+    const bystander = active[1];
+    if (target === undefined || bystander === undefined)
+      throw new Error('the seed has no products');
+    const original = await productRow(target.id);
+
+    const contentPrice = await form(
+      'updateProductPricingAction',
+      { productId: target.id, basePrice: '1.00' },
+      cookie(contentToken),
+      '/admin/products',
+    );
+    const afterContent = await productRow(target.id);
+    check(
+      'catalog: a content role POSTing a price directly is FORBIDDEN and the price is unchanged',
+      contentPrice.body.includes('FORBIDDEN') && afterContent?.basePrice === original?.basePrice,
+    );
+    const managerEdit = await form(
+      'updateProductContentAction',
+      { productId: target.id, nameUk: 'Не повинно зберегтись' },
+      cookie(managerToken),
+      '/admin/products',
+    );
+    check(
+      'catalog: a manager cannot edit product text either',
+      managerEdit.body.includes('FORBIDDEN') &&
+        (await productRow(target.id))?.nameUk === original?.nameUk,
+    );
+    const contentEdit = await form(
+      'updateProductContentAction',
+      { productId: target.id, nameEn: `Edited ${suffix}` },
+      cookie(contentToken),
+      '/admin/products',
+    );
+    check(
+      'catalog: a content role may edit text',
+      contentEdit.body.includes('"ok":true') &&
+        (await productRow(target.id))?.nameEn === `Edited ${suffix}`,
+    );
+    const anonymousPrice = await form(
+      'updateProductPricingAction',
+      { productId: target.id, basePrice: '1.00' },
+      {},
+      '/admin/products',
+    );
+    check(
+      'catalog: without a session the same POST is UNAUTHENTICATED',
+      anonymousPrice.body.includes('UNAUTHENTICATED'),
+    );
+
+    // The serialized pages per role: the cost exists only for owner and admin.
+    const costValue = '123.45';
+    const adminSetsCost = await form(
+      'updateProductPricingAction',
+      { productId: target.id, costPrice: costValue },
+      cookie(adminToken),
+      '/admin/products',
+    );
+    check('catalog: an admin sets the cost', adminSetsCost.body.includes('"ok":true'));
+    const pageFor = async (token: string) =>
+      await get(`/admin/products/${target.id}`, cookie(token));
+    const listFor = async (token: string) => await get('/admin/products', cookie(token));
+    const adminPage = await pageFor(adminToken);
+    const contentPage = await pageFor(contentToken);
+    check(
+      'catalog: the editor page of an admin carries the cost, that of a content role carries neither the key nor the value',
+      adminPage.html.includes('123.45') &&
+        !contentPage.html.includes('123.45') &&
+        !contentPage.html.includes('costPrice'),
+    );
+    const costHeader = /<th[^>]*>Собівартість<\/th>/;
+    const adminList = await listFor(adminToken);
+    const managerList = await listFor(managerToken);
+    check(
+      'catalog: the product list shows the cost column to an admin and neither the column nor the value to a manager',
+      costHeader.test(adminList.html) &&
+        !costHeader.test(managerList.html) &&
+        !managerList.html.includes('costPrice') &&
+        !managerList.html.includes('123,45'),
+    );
+
+    // A changed slug answers 301 at the old address, for both locales.
+    const oldSlug = original?.slug ?? '';
+    const newSlug = `renamed-${suffix}`;
+    const renamed = await form(
+      'updateProductContentAction',
+      { productId: target.id, slug: newSlug },
+      cookie(adminToken),
+      '/admin/products',
+    );
+    const oldPage = await get(`/product/${oldSlug}`);
+    const oldPageEn = await get(`/en/product/${oldSlug}`);
+    check(
+      'catalog: renaming a product answers 301 from the old address to the new one, in both locales',
+      renamed.body.includes('"ok":true') &&
+        oldPage.status === 301 &&
+        new URL(oldPage.location ?? 'x:', base).pathname === `/product/${newSlug}` &&
+        oldPageEn.status === 301 &&
+        new URL(oldPageEn.location ?? 'x:', base).pathname === `/en/product/${newSlug}`,
+    );
+    // Put it back so the rest of the smoke sees the original address.
+    await form(
+      'updateProductContentAction',
+      { productId: target.id, slug: oldSlug },
+      cookie(adminToken),
+      '/admin/products',
+    );
+
+    // A draft that is renamed must not reveal its new slug through the old address; a published
+    // product's redirect is cacheable only briefly.
+    const draftSlug = `draft-${suffix}`;
+    const drafted = await form(
+      'createProductAction',
+      {
+        sku: `DRAFT-${suffix}`,
+        slug: draftSlug,
+        brand: 'Smoke',
+        categoryId: original?.categoryId ?? '',
+        nameUk: 'Чернетка',
+        nameEn: 'Draft',
+        basePrice: '10.00',
+        weightGrams: 100,
+      },
+      cookie(adminToken),
+      '/admin/products',
+    );
+    const draftId = /"productId":"([0-9a-f-]{36})"/.exec(drafted.body)?.[1] ?? '';
+    const draftRenamed = await form(
+      'updateProductContentAction',
+      { productId: draftId, slug: `secret-launch-${suffix}` },
+      cookie(adminToken),
+      '/admin/products',
+    );
+    const draftProbe = await get(`/product/${draftSlug}`);
+    check(
+      'catalog: renaming a DRAFT does not reveal the new slug: the old address is a 404, not a 301',
+      drafted.body.includes('"ok":true') &&
+        draftRenamed.body.includes('"ok":true') &&
+        draftProbe.status === 404 &&
+        draftProbe.location === null,
+    );
+    check(
+      'catalog: the 301 of a published product is cacheable for a short time only',
+      oldPage.cache.includes('max-age=300') && !oldPage.cache.includes('immutable'),
+    );
+
+    // The price change reaches the storefront within a revalidation, and touches only that product.
+    await get(`/product/${oldSlug}`);
+    await get(`/product/${bystander.slug}`);
+    const bystanderBefore = await get(`/product/${bystander.slug}`);
+    const priced = await form(
+      'updateProductPricingAction',
+      { productId: target.id, basePrice: '7777.77' },
+      cookie(adminToken),
+      '/admin/products',
+    );
+    let shown = false;
+    for (let attempt = 0; attempt < 40 && !shown; attempt += 1) {
+      shown = (await get(`/product/${oldSlug}`)).html.includes('777,77');
+      if (!shown) await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    check(
+      'catalog: a price change shows on the product page within a revalidation (tag invalidation)',
+      priced.body.includes('"ok":true') && shown,
+    );
+    const bystanderAfter = await get(`/product/${bystander.slug}`);
+    check(
+      'catalog: changing one product leaves another product page in the cache',
+      bystanderBefore.nextCache === 'HIT' && bystanderAfter.nextCache === 'HIT',
+    );
 
     // 6. The storefront is untouched.
     const store = await get('/');

@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "variants_barcode_uq" ON "product_variants" USING btree ("barcode") WHERE "product_variants"."barcode" IS NOT NULL;

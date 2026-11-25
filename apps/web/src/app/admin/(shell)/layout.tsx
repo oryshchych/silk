@@ -36,6 +36,9 @@ export default async function AdminShellLayout({ children }: { children: React.R
           >
             {t('dashboard')}
           </a>
+          <a href="/admin/products" className="ml-4 inline-flex min-h-11 items-center underline">
+            {t('products')}
+          </a>
         </nav>
         <PreferenceSwitches theme={theme} locale={locale} />
         <div className="flex flex-wrap items-center gap-3">

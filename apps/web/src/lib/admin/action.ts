@@ -39,6 +39,11 @@ interface AdminActionContext<Input> {
   input: Input;
   /** Writes the audit row: the author and the client address are filled in, never taken from input. */
   audit: (entry: Omit<AuditEntry, 'userId' | 'ip'>) => Promise<void>;
+  /**
+   * For a call that changed NOTHING (a no-op update): satisfies the "every mutation is audited"
+   * check without writing an empty row. A handler that changed something must use `audit`.
+   */
+  skipAudit: () => void;
 }
 
 export interface AdminActionSpec<S extends z.ZodType, R> {
@@ -80,6 +85,9 @@ export function createAdminAction(deps: AdminActionDeps) {
           input: parsed.data,
           audit: async (entry) => {
             await writeAudit(tx, { ...entry, userId: session.userId, ip });
+            state.audited = true;
+          },
+          skipAudit: () => {
             state.audited = true;
           },
         });

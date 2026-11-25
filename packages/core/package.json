@@ -34,7 +34,16 @@
     "./auth-permissions": "./src/auth/permissions.ts",
     "./auth-totp": "./src/auth/totp.ts",
     "./audit": "./src/audit/write-audit.ts",
-    "./stock": "./src/stock/adjust-stock.ts"
+    "./admin-products": "./src/catalog-admin/products.ts",
+    "./admin-variants": "./src/catalog-admin/variants.ts",
+    "./admin-categories": "./src/catalog-admin/categories.ts",
+    "./admin-dictionaries": "./src/catalog-admin/dictionaries.ts",
+    "./admin-schemas": "./src/catalog-admin/schemas.ts",
+    "./admin-read": "./src/catalog-admin/read.ts",
+    "./admin-redirects": "./src/catalog-admin/redirects.ts",
+    "./admin-outcome": "./src/catalog-admin/outcome.ts",
+    "./stock": "./src/stock/adjust-stock.ts",
+    "./admin-errors": "./src/catalog-admin/errors.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"
