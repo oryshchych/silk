@@ -15,11 +15,11 @@ const optionalText = (max: number) =>
   text(max)
     .transform((value) => (value === '' ? null : value))
     .nullable();
-const slug = z
+export const slugField = z
   .string()
   .max(200)
   .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'lowercase words joined by hyphens');
-const sku = z
+export const skuField = z
   .string()
   .trim()
   .min(1)
@@ -49,8 +49,8 @@ const id = z.uuid();
 /** Text, structure and SEO of a product: needs `catalog.edit`. Never a price. */
 export const productContentSchema = z.object({
   productId: id,
-  sku: sku.optional(),
-  slug: slug.optional(),
+  sku: skuField.optional(),
+  slug: slugField.optional(),
   brand: text(120).min(1).optional(),
   categoryId: id.optional(),
   nameUk: text(300).min(1).optional(),
@@ -86,8 +86,8 @@ export type ProductPricingInput = z.output<typeof productPricingSchema>;
 
 /** A new product starts as a draft. Needs `catalog.create`. */
 export const createProductSchema = z.object({
-  sku,
-  slug,
+  sku: skuField,
+  slug: slugField,
   brand: text(120).min(1),
   categoryId: id,
   nameUk: text(300).min(1),
@@ -109,7 +109,7 @@ export const generateVariantsSchema = z.object({
 /** Non-price fields of a variant: needs `catalog.edit`. */
 export const variantContentSchema = z.object({
   variantId: id,
-  sku: sku.optional(),
+  sku: skuField.optional(),
   barcode: optionalText(64).optional(),
   isActive: z.boolean().optional(),
   weightGrams: z.number().int().min(1).max(50_000).nullable().optional(),
@@ -123,7 +123,7 @@ export const variantPricingSchema = z.object({
 
 export const createCategorySchema = z.object({
   parentId: id.nullable(),
-  slug,
+  slug: slugField,
   nameUk: text(200).min(1),
   nameEn: text(200).min(1),
   sizeSystem: z.enum(['bra', 'panty', 'apparel', 'onesize']).nullable().optional(),
@@ -131,7 +131,7 @@ export const createCategorySchema = z.object({
 
 export const updateCategorySchema = z.object({
   categoryId: id,
-  slug: slug.optional(),
+  slug: slugField.optional(),
   nameUk: text(200).min(1).optional(),
   nameEn: text(200).min(1).optional(),
   descriptionUk: optionalText(5_000).optional(),

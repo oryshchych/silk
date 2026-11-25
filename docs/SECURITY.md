@@ -62,7 +62,9 @@ confirmed TOTP before a session counts; so must anyone who enrolled one.
 | Assign attribute values to a product | `catalog.edit` | `setProductAttributesAction` |
 | Upload a product photo | `media.upload` | `POST /admin/upload/product-image` (`app/admin/upload/product-image/route.ts`): its own route, see "Uploads" below |
 | Edit a photo's alt text, colour, order; delete it | `media.upload` | `updateProductImageAction`, `deleteProductImageAction` |
-| Stock, import, export | see the table above | their actions arrive with their screens in the next slices |
+| Preview and commit a CSV import | `catalog.import` | `previewImportAction` (writes nothing), `commitImportAction` (`actions/admin-import.ts`): a column the role may not write (price without `catalog.price`, cost without `catalog.cost.view`) turns the row into an error; each written row has its own audit row |
+| Download the product CSV | `catalog.export` | `GET /admin/export/products` (`app/admin/export/products/route.ts`): the cost column only for `catalog.cost.view`, every export audited |
+| Stock | `stock.adjust` | its action arrives with the stock screen in the next slice |
 
 ## Authentication facts
 
@@ -135,6 +137,16 @@ ids and fixed words, never a file name (`assertSafeKey` refuses anything else). 
 entry are written in one transaction after the files are stored; a failure removes the files again.
 The row, its order number and the 30-photo cap are decided under a per-product advisory lock. Files whose removal fails after a failed write stay in the bucket as ORPHANS (nothing references them; there is no sweeper and the storage client has no list call); every such case and every storage failure is logged at warn level with the object key prefix and a status only (owner queue Q47). Because the route bypasses the proxy it does not get the staging basic-auth gate: it answers 401
 without an admin session, and every response is `private, no-store`.
+## Import and export
+
+CSV only (XLSX needs a library: owner queue). The parser is bounded (2 MB, 1000 rows, 30 columns,
+20 000 characters a cell) and a file goes through a server action, so `proxy.ts`'s 64 KB body
+limit applies, and it is a limit in BYTES (the screen and the action check UTF-8 bytes, 56 000): about 250 rows per file. An import is PREVIEWED first (every row validated, nothing
+written), then committed; each row is written in its own savepoint through the same domain
+functions as the editor, so one bad row never undoes the good ones and every rule (unique slug and
+SKU, old price over price, 301 on a renamed slug) holds. An empty cell on an update changes
+nothing. The export neutralises formulas (a cell starting with `=`, `+`, `-`, `@`, tab or CR gets
+a leading apostrophe, removed again when the same file is imported) and reads the cost into the file only for a role that may see it. A file with a NUL byte, invalid UTF-8 or a repeated header is refused whole. A catalogue larger than one file (10 000 rows) is exported in parts (`?after=<sku>`; the screen lists them and a cut file answers `X-Export-Truncated`).
 
 ## Responses
 
