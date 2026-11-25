@@ -10,8 +10,18 @@
  * (5 s, 10 s, 20 s, ... up to the TTL) so an outage is not hammered; one
  * success resets it.
  */
+declare global {
+  /**
+   * Bumped by `invalidate`. The proxy and the server actions are separate module graphs in one
+   * process, so the counter lives on `globalThis` (same pattern as the redirect map).
+   */
+  var silkSlugSetVersion: number | undefined;
+}
+
 export interface SlugSet {
   has: (slug: string) => Promise<boolean | null>;
+  /** Forget the loaded set: the next `has` WAITS for a fresh one (a publish or a rename just happened). */
+  invalidate: () => void;
 }
 
 export function createSlugSet(
@@ -25,6 +35,8 @@ export function createSlugSet(
   let staleAt = 0;
   let inflight: Promise<void> | null = null;
   let failures = 0;
+  let mustReload = false;
+  let seenVersion = globalThis.silkSlugSetVersion ?? 0;
 
   function refresh(): Promise<void> {
     inflight ??= load()
@@ -48,12 +60,26 @@ export function createSlugSet(
 
   return {
     async has(slug) {
-      if (now() >= staleAt) {
+      const version = globalThis.silkSlugSetVersion ?? 0;
+      if (version !== seenVersion) {
+        seenVersion = version;
+        mustReload = true;
+      }
+      if (mustReload) {
+        mustReload = false;
+        await inflight;
+        await refresh();
+      } else if (now() >= staleAt) {
         // Only the first load is awaited; afterwards a stale set is served while it refreshes.
         if (slugs === null) await refresh();
         else void refresh();
       }
       return slugs === null ? null : slugs.has(slug);
+    },
+    invalidate() {
+      mustReload = true;
+      globalThis.silkSlugSetVersion = (globalThis.silkSlugSetVersion ?? 0) + 1;
+      seenVersion = globalThis.silkSlugSetVersion;
     },
   };
 }

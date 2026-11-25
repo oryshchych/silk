@@ -771,3 +771,180 @@ describe('0009_fiscal_uniqueness_reconcile_rotation', () => {
     expect(index.indexdef).toContain('NULLS FIRST');
   });
 });
+
+describe('0010 and 0011: stock_adjustments', () => {
+  async function variant(): Promise<string> {
+    const stamp = String(Date.now()) + String(Math.random()).slice(2, 6);
+    const { id: category } = await one<{ id: string }>(
+      app,
+      `INSERT INTO categories (slug, name_uk, name_en) VALUES ($1, 'k', 'c') RETURNING id`,
+      [`cat-${stamp}`],
+    );
+    const { id: product } = await one<{ id: string }>(
+      app,
+      `INSERT INTO products (sku, slug, brand, category_id, name_uk, name_en, base_price)
+       VALUES ($1, $2, 'b', $3, 'n', 'n', 100) RETURNING id`,
+      [`P-${stamp}`, `p-${stamp}`, category],
+    );
+    const { id: size } = await one<{ id: string }>(
+      app,
+      `INSERT INTO sizes (system, label) VALUES ('apparel', $1) RETURNING id`,
+      [`S${stamp}`.slice(0, 20)],
+    );
+    const { id: color } = await one<{ id: string }>(
+      app,
+      `INSERT INTO colors (slug, name_uk, name_en, hex) VALUES ($1, 'c', 'c', '#000000') RETURNING id`,
+      [`c-${stamp}`],
+    );
+    return (
+      await one<{ id: string }>(
+        app,
+        `INSERT INTO product_variants (product_id, size_id, color_id, sku, stock_quantity)
+         VALUES ($1, $2, $3, $4, 5) RETURNING id`,
+        [product, size, color, `V-${stamp}`],
+      )
+    ).id;
+  }
+  const insert = async (
+    variantId: string,
+    delta: number,
+    before: number,
+    after: number,
+    reason = 'receipt',
+  ) =>
+    await app.query(
+      `INSERT INTO stock_adjustments (variant_id, reason, delta, quantity_before, quantity_after)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [variantId, reason, delta, before, after],
+    );
+
+  const rejectedBy = async (constraint: string, run: Promise<unknown>): Promise<void> => {
+    await expect(run).rejects.toMatchObject({ code: '23514', constraint });
+  };
+
+  it('accepts a row that adds up', async () => {
+    const id = await variant();
+    await insert(id, 3, 5, 8);
+  });
+  it('stock_adjustments_adds_up rejects a row whose after is not before plus delta', async () => {
+    await rejectedBy('stock_adjustments_adds_up', insert(await variant(), 3, 5, 9));
+  });
+  it('stock_adjustments_nonneg rejects a negative quantity', async () => {
+    await rejectedBy('stock_adjustments_nonneg', insert(await variant(), -6, 5, -1));
+  });
+  it('stock_adjustments_delta_nonzero rejects a zero delta', async () => {
+    await rejectedBy('stock_adjustments_delta_nonzero', insert(await variant(), 0, 5, 5));
+  });
+  it('stock_adjustments_reason rejects an unknown reason', async () => {
+    await rejectedBy('stock_adjustments_reason', insert(await variant(), 1, 5, 6, 'gift'));
+  });
+
+  it('request_id is unique, several rows without one are fine', async () => {
+    const id = await variant();
+    const key = async () =>
+      await app.query(
+        `INSERT INTO stock_adjustments (variant_id, reason, delta, quantity_before, quantity_after, request_id)
+         VALUES ($1, 'receipt', 1, 5, 6, '5b6c7d8e-9f01-4a23-8b45-6c7d8e9f0a11')`,
+        [id],
+      );
+    await key();
+    await expect(key()).rejects.toMatchObject({
+      code: '23505',
+      constraint: 'stock_adjustments_request_uq',
+    });
+    await insert(id, 1, 5, 6);
+    await insert(id, 1, 5, 6);
+  });
+
+  it('is append-only: the app role is denied UPDATE, DELETE and TRUNCATE (42501), and a trigger stops every role', async () => {
+    const id = await variant();
+    await insert(id, 1, 5, 6);
+    await expect(
+      app.query(`UPDATE stock_adjustments SET note = 'x' WHERE variant_id = $1`, [id]),
+    ).rejects.toMatchObject({ code: '42501' });
+    await expect(
+      app.query(`DELETE FROM stock_adjustments WHERE variant_id = $1`, [id]),
+    ).rejects.toMatchObject({ code: '42501' });
+    await expect(app.query(`TRUNCATE stock_adjustments`)).rejects.toMatchObject({ code: '42501' });
+    // The owner role is not stopped by privileges, only by the trigger.
+    await expect(
+      migrator.query(`UPDATE stock_adjustments SET note = 'x' WHERE variant_id = $1`, [id]),
+    ).rejects.toMatchObject({ code: '23001' });
+    await expect(
+      migrator.query(`DELETE FROM stock_adjustments WHERE variant_id = $1`, [id]),
+    ).rejects.toMatchObject({ code: '23001' });
+    await expect(migrator.query(`TRUNCATE stock_adjustments`)).rejects.toMatchObject({
+      code: '23001',
+    });
+  });
+
+  it('a user with stock history cannot be deleted (RESTRICT): history keeps its author', async () => {
+    const id = await variant();
+    const { id: user } = await one<{ id: string }>(
+      app,
+      `INSERT INTO auth_users (email) VALUES ($1) RETURNING id`,
+      [`history-${String(Date.now())}@example.test`],
+    );
+    await app.query(
+      `INSERT INTO stock_adjustments (variant_id, user_id, reason, delta, quantity_before, quantity_after)
+       VALUES ($1, $2, 'receipt', 1, 5, 6)`,
+      [id, user],
+    );
+    await expect(app.query(`DELETE FROM auth_users WHERE id = $1`, [user])).rejects.toMatchObject({
+      code: '23001',
+    });
+  });
+
+  it('a variant with history cannot be deleted (RESTRICT)', async () => {
+    const id = await variant();
+    await insert(id, 1, 5, 6);
+    await expect(
+      app.query(`DELETE FROM product_variants WHERE id = $1`, [id]),
+    ).rejects.toMatchObject({
+      // 23001: RESTRICT is checked at once (23503 is NO ACTION at commit).
+      code: '23001',
+    });
+  });
+});
+
+describe('0012_variant_barcode_unique', () => {
+  it('a barcode is unique among variants that have one; any number may have none', async () => {
+    const stamp = String(Date.now());
+    const { id: category } = await one<{ id: string }>(
+      app,
+      `INSERT INTO categories (slug, name_uk, name_en) VALUES ($1, 'k', 'c') RETURNING id`,
+      [`bc-cat-${stamp}`],
+    );
+    const { id: product } = await one<{ id: string }>(
+      app,
+      `INSERT INTO products (sku, slug, brand, category_id, name_uk, name_en, base_price)
+       VALUES ($1, $2, 'b', $3, 'n', 'n', 100) RETURNING id`,
+      [`BC-${stamp}`, `bc-${stamp}`, category],
+    );
+    const { id: color } = await one<{ id: string }>(
+      app,
+      `INSERT INTO colors (slug, name_uk, name_en, hex) VALUES ($1, 'c', 'c', '#000000') RETURNING id`,
+      [`bc-col-${stamp}`],
+    );
+    const variant = async (sku: string, label: string, barcode: string | null) => {
+      const { id: size } = await one<{ id: string }>(
+        app,
+        `INSERT INTO sizes (system, label) VALUES ('apparel', $1) RETURNING id`,
+        [label],
+      );
+      await app.query(
+        `INSERT INTO product_variants (product_id, size_id, color_id, sku, barcode) VALUES ($1, $2, $3, $4, $5)`,
+        [product, size, color, sku, barcode],
+      );
+    };
+    await variant(`BC-V1-${stamp}`, `Z1${stamp}`.slice(0, 20), '5901234123457');
+    await expect(
+      variant(`BC-V2-${stamp}`, `Z2${stamp}`.slice(0, 20), '5901234123457'),
+    ).rejects.toMatchObject({
+      code: '23505',
+      constraint: 'variants_barcode_uq',
+    });
+    await variant(`BC-V3-${stamp}`, `Z3${stamp}`.slice(0, 20), null);
+    await variant(`BC-V4-${stamp}`, `Z4${stamp}`.slice(0, 20), null);
+  });
+});

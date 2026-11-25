@@ -166,10 +166,19 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   // slug is not a visible slug and would otherwise be answered 404.
   if (request.method === 'GET' || request.method === 'HEAD') {
     const hit = await redirectMap.lookup(pathname);
-    if (hit !== null) {
+    // A product redirect is served only while its TARGET is a visible product: a renamed draft
+    // must not reveal its new slug to an anonymous visitor.
+    const targetProduct = hit === null ? null : parseProductPath(hit.to);
+    const targetVisible =
+      targetProduct === null ? true : (await knownProductSlugs.has(targetProduct.slug)) !== false;
+    if (hit !== null && targetVisible) {
       const target = request.nextUrl.clone();
       target.pathname = hit.to;
-      return withNoindex(NextResponse.redirect(target, hit.status));
+      const response = NextResponse.redirect(target, hit.status);
+      // A short public cache: an unbounded one would pin a browser to a redirect that a later
+      // rename (A to B to A) has made wrong.
+      response.headers.set('Cache-Control', 'public, max-age=300');
+      return withNoindex(response);
     }
   }
 

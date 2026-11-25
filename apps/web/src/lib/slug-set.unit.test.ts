@@ -2,6 +2,27 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { createSlugSet } from './slug-set';
 
+describe('createSlugSet invalidation', () => {
+  it('after invalidate() the NEXT lookup waits for a fresh set (a publish or a rename is served at once)', async () => {
+    let list = ['a'];
+    const set = createSlugSet(() => Promise.resolve(list), { ttlMs: 60_000 });
+    expect(await set.has('b')).toBe(false);
+    list = ['a', 'b'];
+    set.invalidate();
+    expect(await set.has('b')).toBe(true);
+  });
+
+  it('an invalidation made through another instance (the server actions) reaches this one (the proxy)', async () => {
+    let list = ['a'];
+    const proxySide = createSlugSet(() => Promise.resolve(list), { ttlMs: 60_000 });
+    const actionSide = createSlugSet(() => Promise.resolve(list), { ttlMs: 60_000 });
+    expect(await proxySide.has('b')).toBe(false);
+    list = ['a', 'b'];
+    actionSide.invalidate();
+    expect(await proxySide.has('b')).toBe(true);
+  });
+});
+
 describe('createSlugSet', () => {
   it('answers from the loaded set and picks up a changed set after the TTL', async () => {
     let clock = 0;

@@ -533,3 +533,13 @@ nothing signs in. Access control per mutation: `docs/SECURITY.md`.
 signature. `sharp` is a native module: it is in `serverExternalPackages` and approved in
 `pnpm-workspace.yaml`. Environment: `R2_*`, optional `R2_ENDPOINT`, `MEDIA_PUBLIC_BASE_URL`. Security notes:
 `docs/SECURITY.md`, "Uploads".
+
+### Migration 0012 precondition (variant barcodes, phase 4)
+
+`0012_variant_barcode_unique` creates a unique index on `product_variants.barcode` (where not null). If
+the target database already holds two variants with the same barcode the migration fails as a whole
+(see the note on 0009). Before deploying to a database that has barcodes, this must return no rows:
+
+```sql
+SELECT barcode FROM product_variants WHERE barcode IS NOT NULL GROUP BY 1 HAVING count(*) > 1;
+```

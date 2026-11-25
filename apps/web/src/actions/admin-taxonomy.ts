@@ -49,7 +49,7 @@ export async function updateCategoryAction(input: unknown) {
     permission: 'categories.edit',
     schema: updateCategorySchema,
     input,
-    touchesRedirects: true,
+    dropped: (data) => (data.changed.includes('slug') ? { redirects: true } : {}),
     op: updateCategory,
   });
 }

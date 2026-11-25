@@ -4,7 +4,7 @@
  * calls Next; the web action does, once the transaction has committed.
  */
 import type { DomainError } from '../errors.ts';
-import { DuplicateEntryError, SkuTakenError, SlugTakenError } from './errors.ts';
+import { BarcodeTakenError, DuplicateEntryError, SkuTakenError, SlugTakenError } from './errors.ts';
 
 import type { Tx } from '@store/db/types';
 
@@ -44,6 +44,7 @@ const CONSTRAINTS: Record<string, () => DomainError> = {
   categories_slug_uq: () => new SlugTakenError(),
   products_sku_uq: () => new SkuTakenError(),
   variants_sku_uq: () => new SkuTakenError(),
+  variants_barcode_uq: () => new BarcodeTakenError(),
   colors_slug_uq: () => new DuplicateEntryError(),
   sizes_system_label_uq: () => new DuplicateEntryError(),
   attributes_code_uq: () => new DuplicateEntryError(),
