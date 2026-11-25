@@ -336,7 +336,8 @@
       "products": "Товари",
       "categories": "Категорії",
       "dictionaries": "Довідники",
-      "importExport": "Імпорт та експорт"
+      "importExport": "Імпорт та експорт",
+      "stock": "Склад"
     },
     "dashboard": {
       "title": "Огляд",
@@ -389,7 +390,17 @@
       "ADMIN_INVALID_PRICE": "Стара ціна має бути вищою за ціну.",
       "ADMIN_NOT_PUBLISHABLE": "Щоб опублікувати, потрібен активний варіант і активна категорія.",
       "ADMIN_TOO_MANY_VARIANTS": "За раз можна створити не більше 200 варіантів.",
-      "ADMIN_DUPLICATE": "Такий запис уже існує."
+      "ADMIN_DUPLICATE": "Такий запис уже існує.",
+      "STOCK_BELOW_ZERO": "Залишок не може бути від'ємним.",
+      "STOCK_BELOW_RESERVED": "Залишок не може бути меншим за резерв під замовлення. Спершу скасуйте або звільніть замовлення.",
+      "STOCK_ABOVE_MAX": "Залишок перевищує максимум.",
+      "STOCK_REQUEST_REUSED": "Цей запит уже використано для іншого варіанта.",
+      "STOCK_VARIANT_NOT_FOUND": "Варіант не знайдено.",
+      "STOCK_INVALID_CHANGE": "Вкажіть ціле число, не нуль для зміни.",
+      "ADMIN_BARCODE_TAKEN": "Такий штрихкод уже використовується.",
+      "ADMIN_TOO_MANY_IMAGES": "У товару вже максимум фото.",
+      "ADMIN_CATEGORY_CYCLE": "Категорію не можна перемістити в саму себе або в її нащадка.",
+      "ADMIN_CATEGORY_TOO_DEEP": "Дерево категорій має не більше 4 рівнів."
     },
     "editor": {
       "newTitle": "Новий товар",
@@ -576,6 +587,45 @@
         "UNAUTHENTICATED": "Сеанс завершено. Увійдіть знову.",
         "STORAGE_FAILED": "Не вдалося зберегти у сховище."
       }
+    },
+    "stock": {
+      "title": "Склад",
+      "search": "Пошук (артикул, назва)",
+      "lowOnly": "Закінчується",
+      "filter": "Показати",
+      "total": "Варіантів: {count}",
+      "empty": "Нічого не знайдено.",
+      "product": "Товар",
+      "variant": "Варіант",
+      "stock": "Залишок",
+      "reserved": "Резерв",
+      "available": "Доступно",
+      "adjust": "Змінити",
+      "history": "Історія",
+      "historyTitle": "Історія змін складу",
+      "noHistory": "Змін ще не було.",
+      "back": "До складу",
+      "pages": "Сторінки",
+      "previous": "Назад",
+      "next": "Далі",
+      "pageOf": "Сторінка {page} з {total}",
+      "mode": "Дія",
+      "modeDelta": "Змінити на",
+      "modeSet": "Встановити",
+      "amount": "Кількість",
+      "reason": "Причина",
+      "reasonReceipt": "Надходження",
+      "reasonWriteoff": "Списання",
+      "reasonStocktake": "Інвентаризація",
+      "reasonCorrection": "Виправлення",
+      "note": "Примітка",
+      "apply": "Застосувати",
+      "saved": "Збережено.",
+      "when": "Коли",
+      "change": "Зміна",
+      "before": "Було",
+      "after": "Стало",
+      "by": "Хто"
     }
   }
 }

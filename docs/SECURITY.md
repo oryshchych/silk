@@ -64,7 +64,9 @@ confirmed TOTP before a session counts; so must anyone who enrolled one.
 | Edit a photo's alt text, colour, order; delete it | `media.upload` | `updateProductImageAction`, `deleteProductImageAction` |
 | Preview and commit a CSV import | `catalog.import` | `previewImportAction` (writes nothing), `commitImportAction` (`actions/admin-import.ts`): a column the role may not write (price without `catalog.price`, cost without `catalog.cost.view`) turns the row into an error; each written row has its own audit row |
 | Download the product CSV | `catalog.export` | `GET /admin/export/products` (`app/admin/export/products/route.ts`): the cost column only for `catalog.cost.view`, every export audited |
-| Stock | `stock.adjust` | its action arrives with the stock screen in the next slice |
+| Adjust the stock of a variant (receipt, write-off, stocktake) | `stock.adjust` | `adjustStockAction` (`actions/admin-stock.ts`): refuses a result below the reserved quantity (Q44), a request id makes a repeat harmless, the history row and the audit entry are written in the same transaction |
+
+The stock history lists the author's email next to every change, to every role that can open the admin (`admin.view`, content included): staff see who counted or wrote off stock. It is not exposed outside the admin. A replayed request id or a stocktake to the current quantity writes no second audit row: the audit log records a change once.
 
 ## Authentication facts
 
