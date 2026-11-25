@@ -89,8 +89,13 @@ function handleAdmin(request: NextRequest): NextResponse {
   if (client === UNKNOWN_CLIENT) noteUnknownClient();
   const authPath = isAdminAuthPath(pathname);
   const clientVerdict = (authPath ? adminAuthLimiter : adminLimiter).check(client);
+  // The cap over ALL clients counts only requests that try a credential (POST): a flood of plain
+  // page loads must not be able to lock every legitimate admin out.
+  const tries = request.method !== 'GET' && request.method !== 'HEAD';
   const verdict =
-    authPath && clientVerdict.allowed ? adminAuthGlobalLimiter.check(GLOBAL_KEY) : clientVerdict;
+    authPath && tries && clientVerdict.allowed
+      ? adminAuthGlobalLimiter.check(GLOBAL_KEY)
+      : clientVerdict;
   if (!verdict.allowed) {
     return adminHeaders(
       new NextResponse('Too many requests', {

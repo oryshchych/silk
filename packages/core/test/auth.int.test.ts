@@ -2,6 +2,8 @@
  * Admin authentication on real Postgres (ADR-19): the two login steps, lockout, replay, recovery
  * codes, session revocation and the rule that role and MFA are read live, never from the token.
  */
+import { createHash } from 'node:crypto';
+
 import { eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
@@ -24,6 +26,7 @@ import {
   resolveSession,
   revokeAllSessions,
   revokeOtherSessions,
+  unlockAccount,
   startTotpEnrolment,
   verifyRecoveryLogin,
   verifyTotpLogin,
@@ -395,5 +398,167 @@ describe('lockout', () => {
       .from(auditLog);
     expect(JSON.stringify(rows)).not.toContain(PASSWORD);
     expect(JSON.stringify(rows)).not.toContain('nobody@example.test');
+  });
+});
+
+describe('review round 1: guards that were not pinned', () => {
+  const totp = async (token: string, code: string) =>
+    await handle.db.transaction(
+      async (t) => await verifyTotpLogin(t, config(), { token, code, client }),
+    );
+
+  it('a correct password does NOT reset the counter when a second step follows: wrong codes add up across logins', async () => {
+    const owner = await enrolled('owner');
+    clock += 31_000;
+    const first = await login(owner.email);
+    if (!first.ok) throw new Error('refused');
+    for (let i = 0; i < MAX_FAILED_ATTEMPTS - 1; i += 1) await totp(first.token, '111111');
+    // "Right password, four wrong codes" again and again must still lock on the fifth wrong code.
+    const second = await login(owner.email);
+    if (!second.ok) throw new Error('refused');
+    await totp(second.token, '111111');
+    const right = codeAt(owner.secret, stepOf(clock));
+    expect((await totp(second.token, right)).ok).toBe(false);
+    expect((await login(owner.email)).ok).toBe(false);
+  });
+
+  it('a pending session of an enrolled owner cannot overwrite the confirmed TOTP secret', async () => {
+    const owner = await enrolled('owner');
+    const read = async () =>
+      (
+        await handle.db
+          .select({ secret: authTotp.secretEncrypted })
+          .from(authTotp)
+          .where(sql`user_id = (SELECT id FROM auth_users WHERE email = ${owner.email})`)
+      )[0]?.secret;
+    const before = await read();
+    clock += 31_000;
+    const pending = await login(owner.email);
+    if (!pending.ok) throw new Error('refused');
+    const started = await handle.db.transaction(
+      async (t) => await startTotpEnrolment(t, config(), { token: pending.token }),
+    );
+    expect(started).toBeNull();
+    expect(await read()).toBe(before);
+    expect((await totp(pending.token, codeAt(owner.secret, stepOf(clock)))).ok).toBe(true);
+  });
+
+  it('only a PENDING session can take the second step: a full one cannot enrol, verify or redeem a code', async () => {
+    const owner = await enrolled('owner');
+    const manager = await login(await user('manager'));
+    if (!manager.ok) throw new Error('refused');
+    for (const token of [owner.token, manager.token]) {
+      expect(
+        await handle.db.transaction(async (t) => await startTotpEnrolment(t, config(), { token })),
+      ).toBeNull();
+      expect((await totp(token, '123456')).ok).toBe(false);
+      expect(
+        (
+          await handle.db.transaction(
+            async (t) =>
+              await verifyRecoveryLogin(t, config(), {
+                token,
+                code: owner.recovery[0] ?? 'x',
+                client,
+              }),
+          )
+        ).ok,
+      ).toBe(false);
+    }
+  });
+
+  it('a session expires on DATABASE time even when its signed token still looks valid', async () => {
+    const email = await user('content');
+    const result = await login(email);
+    if (!result.ok) throw new Error('refused');
+    expect(await resolve(result.token)).not.toBeNull();
+    await handle.db.execute(
+      sql`UPDATE auth_sessions SET expires_at = now() - make_interval(mins => 1)
+          WHERE user_id = (SELECT id FROM auth_users WHERE email = ${email})`,
+    );
+    expect(await resolve(result.token)).toBeNull();
+  });
+
+  it("another account's TOTP ciphertext copied into this account's row does not pass its second step", async () => {
+    const a = await enrolled('owner');
+    const b = await enrolled('admin');
+    await handle.db.execute(
+      sql`UPDATE auth_totp SET secret_encrypted =
+            (SELECT secret_encrypted FROM auth_totp WHERE user_id = (SELECT id FROM auth_users WHERE email = ${a.email}))
+          WHERE user_id = (SELECT id FROM auth_users WHERE email = ${b.email})`,
+    );
+    clock += 61_000;
+    const pending = await login(b.email);
+    if (!pending.ok) throw new Error('refused');
+    expect((await totp(pending.token, codeAt(a.secret, stepOf(clock)))).ok).toBe(false);
+  });
+
+  it('recovery codes are 80 bits and stored keyed, not as the code or its bare hash', async () => {
+    const owner = await enrolled('owner');
+    for (const code of owner.recovery) expect(code).toMatch(/^[0-9a-f]{5}(-[0-9a-f]{5}){3}$/);
+    const hashes = (
+      await handle.db.select({ hash: authRecoveryCodes.codeHash }).from(authRecoveryCodes)
+    ).map((row) => row.hash);
+    const bare = createHash('sha256')
+      .update(owner.recovery[0] ?? '')
+      .digest('hex');
+    expect(hashes).not.toContain(bare);
+    expect(hashes).not.toContain(owner.recovery[0] ?? '');
+  });
+
+  it('an unknown account costs about as much time as a wrong password (the dummy hash runs)', async () => {
+    const email = await user('content');
+    const median = async (target: string): Promise<number> => {
+      const samples: number[] = [];
+      for (let i = 0; i < 5; i += 1) {
+        const start = performance.now();
+        await login(target, 'wrong-password-wrong');
+        samples.push(performance.now() - start);
+      }
+      return samples.sort((x, y) => x - y)[2] ?? 0;
+    };
+    const known = await median(email);
+    const unknown = await median(`nobody-${String(counter)}@example.test`);
+    expect(unknown).toBeGreaterThan(known * 0.5);
+    // The known account just collected 5 failures and is locked: reset for the next tests.
+    await handle.db.transaction(async (t) => {
+      await unlockAccount(t, { email });
+    });
+  });
+
+  it('unlockAccount lifts a lock, is audited, and says when the account does not exist', async () => {
+    const email = await user('content');
+    for (let i = 0; i < MAX_FAILED_ATTEMPTS; i += 1) await login(email, 'wrong-password-wrong');
+    expect((await login(email)).ok).toBe(false);
+    expect(await handle.db.transaction(async (t) => await unlockAccount(t, { email }))).toBe(true);
+    expect((await login(email)).ok).toBe(true);
+    expect(
+      (await handle.db.select().from(auditLog).where(eq(auditLog.action, 'auth.unlocked'))).length,
+    ).toBeGreaterThan(0);
+    expect(
+      await handle.db.transaction(
+        async (t) => await unlockAccount(t, { email: 'nobody@example.test' }),
+      ),
+    ).toBe(false);
+  });
+
+  it('the name-in-password rule only applies to a name of 4 or more characters', async () => {
+    await handle.db.transaction(async (t) => {
+      await createAdminUser(t, {
+        email: 'a@example.test',
+        password: 'banana-banana-banana',
+        role: 'content',
+      });
+    });
+    await expect(
+      handle.db.transaction(
+        async (t) =>
+          await createAdminUser(t, {
+            email: 'alice@example.test',
+            password: 'xx-alice-xx-1234',
+            role: 'content',
+          }),
+      ),
+    ).rejects.toBeInstanceOf(WeakPasswordError);
   });
 });
