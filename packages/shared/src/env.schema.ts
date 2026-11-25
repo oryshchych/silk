@@ -50,7 +50,8 @@ export const envSchema = z
     EMAIL_TO_OVERRIDE: z.email().optional(),
     EMAIL_FROM: z.email().optional(),
 
-    AUTH_SECRET: secret,
+    // Keys for sessions and TOTP are derived from it (HKDF): short values are refused.
+    AUTH_SECRET: z.string().min(32).optional(),
 
     MONO_PLATA_TOKEN: secret,
     WAYFORPAY_MERCHANT_ACCOUNT: secret,
