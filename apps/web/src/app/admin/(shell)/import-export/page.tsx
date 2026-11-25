@@ -1,3 +1,4 @@
+import { exportParts } from '@store/core/admin-export';
 import { can } from '@store/core/auth-permissions';
 import { getTranslations } from 'next-intl/server';
 import { cookies } from 'next/headers';
@@ -5,6 +6,7 @@ import { cookies } from 'next/headers';
 import { ImportPanel } from '@/components/admin/import-panel';
 import { LOCALE_COOKIE, parseAdminLocale } from '@/lib/admin/preferences';
 import { requireFullSession } from '@/lib/admin/session';
+import { getDb } from '@/lib/db';
 
 export default async function ImportExportPage() {
   const session = await requireFullSession();
@@ -12,6 +14,7 @@ export default async function ImportExportPage() {
   const t = await getTranslations({ locale, namespace: 'admin.importExport' });
   const canImport = can(session.role, 'catalog.import');
   const canExport = can(session.role, 'catalog.export');
+  const parts = canExport ? await exportParts(await getDb()) : [];
   return (
     <div className="space-y-10">
       <h1 className="text-2xl font-semibold">{t('title')}</h1>
@@ -28,6 +31,28 @@ export default async function ImportExportPage() {
           >
             {t('exportCsv')}
           </a>
+          {parts.length > 0 ? (
+            <div className="space-y-2">
+              <p role="status">{t('exportParts', { count: parts.length })}</p>
+              <ul className="flex flex-wrap gap-3">
+                {parts.map((after, index) => (
+                  <li key={after ?? 'first'}>
+                    <a
+                      href={
+                        after === null
+                          ? '/admin/export/products'
+                          : `/admin/export/products?after=${encodeURIComponent(after)}`
+                      }
+                      download
+                      className="inline-flex min-h-11 items-center underline"
+                    >
+                      {t('exportPart', { number: index + 1 })}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </section>
       ) : null}
       {canImport ? <ImportPanel /> : null}

@@ -13,12 +13,19 @@ import { catalogAction } from '@/lib/admin/catalog-action';
 
 /**
  * The CSV arrives as text in a server action, so the body passes through `proxy.ts` and its 64 KB
- * limit (`proxyClientMaxBodySize`): that is about 300 rows. A bigger file is refused at the
+ * limit (`proxyClientMaxBodySize`): that is about 250 rows. A bigger file is refused at the
  * limit with a clear message; the file is split. (A dedicated route like the photo upload would
  * lift it; queued.)
  */
-const MAX_CSV_CHARS = 60_000;
-const schema = z.object({ csv: z.string().min(1).max(MAX_CSV_CHARS) });
+/** BYTES, not characters: the proxy limit is on the request body, and a Cyrillic letter is two bytes. */
+const MAX_CSV_BYTES = 56_000;
+const schema = z.object({
+  csv: z
+    .string()
+    .min(1)
+    .refine((value) => Buffer.byteLength(value, 'utf8') <= MAX_CSV_BYTES, 'too large')
+    .refine((value) => !value.includes('\u0000'), 'no NUL byte'),
+});
 
 function parse(csv: string) {
   try {
@@ -59,5 +66,7 @@ export async function commitImportAction(input: unknown) {
       });
       return await applyImport(tx, plan, randomUUID());
     },
+    // New products and renamed slugs: the proxy's redirect table and visible-slug set must see them.
+    dropped: (data) => (data.created + data.updated > 0 ? { redirects: true, slugs: true } : {}),
   });
 }

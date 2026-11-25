@@ -22,7 +22,9 @@ export class CsvError extends Error {
     | 'too_many_columns'
     | 'cell_too_long'
     | 'unterminated_quote'
-    | 'empty';
+    | 'empty'
+    | 'invalid_characters'
+    | 'duplicate_header';
 
   constructor(reason: CsvError['reason']) {
     super(`csv rejected: ${reason}`);
@@ -51,6 +53,9 @@ function detectDelimiter(firstLine: string): ',' | ';' {
 
 export function parseCsv(input: string): ParsedCsv {
   if (input.length > CSV_LIMITS.maxBytes) throw new CsvError('too_large');
+  // A NUL byte would make Postgres refuse a whole batch (22021); U+FFFD means the file was not valid UTF-8.
+  if (input.includes('\u0000') || input.includes('\uFFFD'))
+    throw new CsvError('invalid_characters');
   const text = input.startsWith('﻿') ? input.slice(1) : input;
   const delimiter = detectDelimiter(text.split(/\r?\n/, 1)[0] ?? '');
   const records: { line: number; cells: string[] }[] = [];
@@ -112,10 +117,19 @@ export function parseCsv(input: string): ParsedCsv {
 
   const [head, ...rest] = records;
   if (head === undefined) throw new CsvError('empty');
-  return {
-    header: head.cells.map((name) => name.trim().toLowerCase()),
-    rows: rest,
-  };
+  const header = head.cells.map((name) => name.trim().toLowerCase());
+  if (
+    new Set(header.filter((name) => name !== '')).size !==
+    header.filter((name) => name !== '').length
+  ) {
+    throw new CsvError('duplicate_header');
+  }
+  return { header, rows: rest };
+}
+
+/** The reverse of `safeCell`, for a file this shop exported: a leading apostrophe before a formula character is dropped. */
+export function unsafeCell(value: string): string {
+  return /^'[=+\-@\t\r]/.test(value) ? value.slice(1) : value;
 }
 
 /** A cell that a spreadsheet would run as a formula is made text by a leading apostrophe. */

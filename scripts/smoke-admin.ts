@@ -15,7 +15,7 @@ import {
   revokeAllSessions,
   startTotpEnrolment,
 } from '../packages/core/src/auth/service.ts';
-import { categories, products } from '../packages/db/src/schema.ts';
+import { auditLog, categories, products } from '../packages/db/src/schema.ts';
 import { codeAt, stepOf } from '../packages/core/src/auth/totp.ts';
 
 interface Context {
@@ -602,12 +602,22 @@ export async function runAdminSmoke({
         type: response.headers.get('content-type') ?? '',
         disposition: response.headers.get('content-disposition') ?? '',
         cache: response.headers.get('cache-control') ?? '',
+        truncated: response.headers.get('x-export-truncated'),
         body: await response.text(),
       };
     };
     const exportAdmin = await exportFor(adminToken);
     const exportManager = await exportFor(managerToken);
     const exportAnon = await exportFor(null);
+    const exportAudits = (await db.select().from(auditLog)).filter(
+      (row) => row.action === 'export',
+    );
+    check(
+      'export: every download is audited (who, rows, whether the cost was included)',
+      exportAudits.some((row) => JSON.stringify(row.diff).includes('"includedCost":true')) &&
+        exportAudits.every((row) => row.userId !== null),
+    );
+    check('export: a small catalogue is not marked truncated', exportAdmin.truncated === null);
     check(
       'export: an admin gets a CSV download (no-store) with the cost column; a manager is 403; no session is refused (the proxy redirects to the login; the route itself answers 401)',
       exportAdmin.status === 200 &&

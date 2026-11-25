@@ -8,7 +8,8 @@ import { commitImportAction, previewImportAction } from '@/actions/admin-import'
 import { buttonClass, fieldClass } from './auth-card';
 import { StatusLine } from './fields';
 
-const MAX_CHARS = 60_000;
+/** UTF-8 BYTES: the server action's body passes through the proxy's 64 KB limit. */
+const MAX_BYTES = 56_000;
 
 interface Row {
   line: number;
@@ -42,6 +43,8 @@ const ROW_ERRORS = [
 ] as const;
 const FILE_ERRORS = [
   'CSV_TOO_LARGE',
+  'CSV_INVALID_CHARACTERS',
+  'CSV_DUPLICATE_HEADER',
   'CSV_TOO_MANY_ROWS',
   'CSV_TOO_MANY_COLUMNS',
   'CSV_CELL_TOO_LONG',
@@ -80,16 +83,17 @@ export function ImportPanel() {
     setPhase({ kind: 'idle' });
     if (file === undefined) return;
     startTransition(async () => {
-      if (file.size > MAX_CHARS * 2) {
+      if (file.size > MAX_BYTES) {
         setMessage({ kind: 'error', text: t('tooBig') });
         return;
       }
       const csv = await file.text();
-      if (csv.length > MAX_CHARS) {
+      // A refusal by the platform (a body over the limit) is a thrown error, not an answer.
+      const result = await previewImportAction({ csv }).catch(() => null);
+      if (result === null) {
         setMessage({ kind: 'error', text: t('tooBig') });
         return;
       }
-      const result = await previewImportAction({ csv });
       if (!result.ok) {
         setMessage({ kind: 'error', text: fileMessage(result.code) });
         return;
@@ -105,7 +109,11 @@ export function ImportPanel() {
 
   function onCommit(csv: string): void {
     startTransition(async () => {
-      const result = await commitImportAction({ csv });
+      const result = await commitImportAction({ csv }).catch(() => null);
+      if (result === null) {
+        setMessage({ kind: 'error', text: t('tooBig') });
+        return;
+      }
       if (!result.ok) {
         setMessage({ kind: 'error', text: fileMessage(result.code) });
         return;

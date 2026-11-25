@@ -17,7 +17,7 @@ import type { Reader, Tx } from '@store/db/types';
 import { money } from '@store/shared/money';
 
 import { DomainError } from '../errors.ts';
-import type { ParsedCsv } from './csv.ts';
+import { unsafeCell, type ParsedCsv } from './csv.ts';
 import type { AdminOutcome, AuditDraft } from './outcome.ts';
 import { createProduct, updateProductContent, updateProductPricing } from './products.ts';
 import { hryvnias, skuField, slugField } from './schemas.ts';
@@ -117,7 +117,8 @@ export async function planImport(
   );
   const cell = (cells: readonly string[], name: string): string | undefined => {
     const position = index.get(name);
-    return position === undefined ? undefined : (cells[position] ?? '').trim();
+    // A cell this shop exported with a leading apostrophe (formula neutralising) is read back as it was.
+    return position === undefined ? undefined : unsafeCell((cells[position] ?? '').trim());
   };
 
   const skus = [
@@ -250,7 +251,9 @@ export async function applyImport(
   let created = 0;
   let updated = 0;
 
-  for (const row of plan.planned) {
+  // In SKU order: two imports running at once then take their row locks in the same order.
+  const ordered = [...plan.planned].sort((a, b) => (a.sku < b.sku ? -1 : a.sku > b.sku ? 1 : 0));
+  for (const row of ordered) {
     try {
       await tx.transaction(async (inner) => {
         const outcomes: AdminOutcome<unknown>[] = [];

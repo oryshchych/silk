@@ -490,9 +490,9 @@
       "exportHint": "A CSV of all products. The cost column is only included for those who may see it.",
       "exportCsv": "Download CSV",
       "importTitle": "Import products",
-      "importHint": "A CSV with the columns sku, slug, brand, category (category slug), name_uk, name_en, price, compare_at_price, cost_price, weight_grams. A product is matched by sku: it is updated if it exists (an empty cell changes nothing) and created as a draft if not. Files up to 60 KB (about 300 rows).",
+      "importHint": "A CSV with the columns sku, slug, brand, category (category slug), name_uk, name_en, price, compare_at_price, cost_price, weight_grams. A product is matched by sku: it is updated if it exists (an empty cell changes nothing) and created as a draft if not. Files up to 56 KB (about 250 rows).",
       "file": "CSV file",
-      "tooBig": "The file is too large: up to 60 KB. Split it into parts.",
+      "tooBig": "The file is too large: up to 56 KB (about 250 rows). Split it into parts.",
       "failed": "Could not process the file.",
       "previewSummary": "Ready to import: {good}, with errors: {bad}",
       "ignored": "These columns are not imported: {columns}",
@@ -537,8 +537,12 @@
         "FORBIDDEN": "You do not have permission.",
         "UNAUTHENTICATED": "Your session ended. Sign in again.",
         "RATE_LIMITED": "Too many actions. Wait a minute.",
-        "INVALID_INPUT": "The file is empty or too large."
-      }
+        "INVALID_INPUT": "The file is empty or too large.",
+        "CSV_INVALID_CHARACTERS": "The file contains invalid characters (NUL or not UTF-8). Save it as CSV UTF-8.",
+        "CSV_DUPLICATE_HEADER": "A column in the header is repeated."
+      },
+      "exportParts": "There are too many products for one file. Download in parts: {count}.",
+      "exportPart": "Part {number}"
     }
   }
 }

@@ -11,7 +11,7 @@ import type { DbHandle } from '@store/db/client';
 import { categories, products } from '@store/db/schema';
 
 import { parseCsv } from '../src/catalog-admin/csv.ts';
-import { exportProductsCsv } from '../src/catalog-admin/export.ts';
+import { exportParts, exportProductsCsv } from '../src/catalog-admin/export.ts';
 import { applyImport, planImport } from '../src/catalog-admin/import.ts';
 import { createWorld, type TestWorld } from './fixtures.ts';
 
@@ -154,6 +154,50 @@ describe('import: preview and commit', () => {
     const { outcome } = await importCsv(text);
     expect((await productBySku('IMP-800'))?.nameEn).toBe('=HYPERLINK("http://evil.example")');
     expect(outcome.data.results.find((r) => r.sku === 'IMP-801')?.action).toBe('error');
+  });
+});
+
+describe('review round 1', () => {
+  it('a row that fails in its SECOND step leaves nothing behind (the savepoint): no half-written product, no audit row for it', async () => {
+    // price 50 with an old price of 40: createProduct succeeds, the pricing step then throws.
+    const text = [header, line(1000, { price: '50.00', compare: '40.00' }), line(1001)].join('\n');
+    const { outcome } = await importCsv(text);
+    expect(outcome.data.results.find((r) => r.sku === 'IMP-1000')?.errors).toEqual([
+      'ADMIN_INVALID_PRICE',
+    ]);
+    expect(await productBySku('IMP-1000')).toBeUndefined();
+    expect(await productBySku('IMP-1001')).toBeDefined();
+    const entityIds = (outcome.extraAudits ?? []).map((a) => a.entityId);
+    const half = await handle.db
+      .select({ id: products.id })
+      .from(products)
+      .where(eq(products.sku, 'IMP-1000'));
+    expect(half).toHaveLength(0);
+    expect(entityIds).toHaveLength(1);
+  });
+
+  it('re-importing an exported file does not corrupt cells that were neutralised for the spreadsheet', async () => {
+    await importCsv(
+      [header, line(1100, { brand: '-Brand', nameEn: '=Name', nameUk: '@Імя' })].join('\n'),
+    );
+    const exported = await exportProductsCsv(handle.db, { canSeeCost: true });
+    await importCsv(exported.csv);
+    const row = await productBySku('IMP-1100');
+    expect([row?.brand, row?.nameEn, row?.nameUk]).toEqual(['-Brand', '=Name', '@Імя']);
+  });
+
+  it('export: `after` continues behind a SKU, and a small catalogue needs no parts', async () => {
+    const all = await exportProductsCsv(handle.db, { canSeeCost: false });
+    const skus = parseCsv(all.csv).rows.map((r) => r.cells[0] ?? '');
+    const second = await exportProductsCsv(handle.db, { canSeeCost: false, after: skus[2] ?? '' });
+    expect(parseCsv(second.csv).rows.map((r) => r.cells[0])).toEqual(skus.slice(3));
+    expect(second.lastSku).toBe(skus.at(-1));
+    expect(await exportParts(handle.db)).toEqual([]);
+  });
+
+  it('a file with a NUL byte or a repeated header is refused before anything is read into the database', () => {
+    expect(() => parseCsv('sku,name\nA,b\u0000c')).toThrow();
+    expect(() => parseCsv('sku,sku\nA,B')).toThrow();
   });
 });
 

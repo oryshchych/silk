@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { CSV_LIMITS, CsvError, parseCsv, safeCell, writeCsv } from './csv.ts';
+import { CSV_LIMITS, CsvError, parseCsv, safeCell, unsafeCell, writeCsv } from './csv.ts';
 
 describe('parseCsv', () => {
   it('reads quoted cells, doubled quotes, newlines inside quotes, CRLF and a BOM', () => {
@@ -46,6 +46,19 @@ describe('parseCsv', () => {
     expect(reason('a\n"never closed')).toBe('unterminated_quote');
     expect(reason('x'.repeat(CSV_LIMITS.maxBytes + 1))).toBe('too_large');
     expect(reason('')).toBe('empty');
+    expect(reason('sku,name\nA1,a\u0000b')).toBe('invalid_characters');
+    expect(reason('sku,name\nA1,a\uFFFDb')).toBe('invalid_characters');
+    expect(reason('sku,name,SKU\nA1,a,b')).toBe('duplicate_header');
+  });
+});
+
+describe('unsafeCell', () => {
+  it('undoes safeCell for exactly the neutralised cells, and leaves ordinary apostrophes alone', () => {
+    for (const value of ['=1+1', '+SUM(A1)', '-brand', '@cmd']) {
+      expect(unsafeCell(safeCell(value)), value).toBe(value);
+    }
+    expect(unsafeCell("'tis the season")).toBe("'tis the season");
+    expect(unsafeCell('plain')).toBe('plain');
   });
 });
 

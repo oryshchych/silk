@@ -124,12 +124,12 @@ of its category chain and the showcase, nothing else.
 
 CSV only (XLSX needs a library: owner queue). The parser is bounded (2 MB, 1000 rows, 30 columns,
 20 000 characters a cell) and a file goes through a server action, so `proxy.ts`'s 64 KB body
-limit applies: about 300 rows per file. An import is PREVIEWED first (every row validated, nothing
+limit applies, and it is a limit in BYTES (the screen and the action check UTF-8 bytes, 56 000): about 250 rows per file. An import is PREVIEWED first (every row validated, nothing
 written), then committed; each row is written in its own savepoint through the same domain
 functions as the editor, so one bad row never undoes the good ones and every rule (unique slug and
 SKU, old price over price, 301 on a renamed slug) holds. An empty cell on an update changes
 nothing. The export neutralises formulas (a cell starting with `=`, `+`, `-`, `@`, tab or CR gets
-a leading apostrophe) and reads the cost into the file only for a role that may see it.
+a leading apostrophe, removed again when the same file is imported) and reads the cost into the file only for a role that may see it. A file with a NUL byte, invalid UTF-8 or a repeated header is refused whole. A catalogue larger than one file (10 000 rows) is exported in parts (`?after=<sku>`; the screen lists them and a cut file answers `X-Export-Truncated`).
 
 ## Responses
 

@@ -1,6 +1,7 @@
 import { writeAudit } from '@store/core/audit';
 import { can } from '@store/core/auth-permissions';
 import { exportProductsCsv } from '@store/core/admin-export';
+import { skuField } from '@store/core/admin-schemas';
 
 import { currentSession } from '@/lib/admin/session';
 import { getDb } from '@/lib/db';
@@ -32,14 +33,18 @@ export async function GET(request: Request): Promise<Response> {
 
   const db = await getDb();
   const canSeeCost = can(session.role, 'catalog.cost.view');
-  const { csv, rows, truncated } = await exportProductsCsv(db, { canSeeCost });
+  // `after=<sku>` continues a file that was cut at the row limit (the screen lists the parts).
+  const afterParam = new URL(request.url).searchParams.get('after');
+  const after = afterParam === null ? undefined : skuField.safeParse(afterParam).data;
+  if (afterParam !== null && after === undefined) return refuse(400, 'INVALID_INPUT');
+  const { csv, rows, truncated, lastSku } = await exportProductsCsv(db, { canSeeCost, after });
   const ip = await clientAddressOf(request);
   await db.transaction(async (tx) => {
     await writeAudit(tx, {
       userId: session.userId,
       action: 'export',
       entity: 'product',
-      diff: { rows, truncated, includedCost: canSeeCost },
+      diff: { rows, truncated, includedCost: canSeeCost, after: after ?? null },
       ip,
     });
   });
@@ -48,6 +53,10 @@ export async function GET(request: Request): Promise<Response> {
       ...HEADERS,
       'Content-Type': 'text/csv; charset=utf-8',
       'Content-Disposition': 'attachment; filename="products.csv"',
+      // A file that stops at the row limit says so; the next part starts after `X-Export-Next-After`.
+      ...(truncated && lastSku !== null
+        ? { 'X-Export-Truncated': 'true', 'X-Export-Next-After': lastSku }
+        : {}),
     },
   });
 }
