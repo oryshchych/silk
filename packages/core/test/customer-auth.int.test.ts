@@ -452,7 +452,7 @@ describe('timing: the branches that send nothing cost about the same as the one 
   const spread = (cases: Record<string, number>): number =>
     Math.max(...Object.values(cases)) / Math.min(...Object.values(cases));
 
-  it('reset: a verified account, an unknown address and an admin address (round robin, median of 40, ratio under 2.5)', async () => {
+  it('reset: a verified account, an unknown address and an admin address (round robin, median of 40, ratio under 1.8)', async () => {
     const real = await account();
     const reset = async (email: string): Promise<void> => {
       await handle.db.transaction(async (tx) => {
@@ -471,7 +471,7 @@ describe('timing: the branches that send nothing cost about the same as the one 
         await reset(real.email);
       },
     });
-    expect(spread(cases), JSON.stringify(cases)).toBeLessThan(2.5);
+    expect(spread(cases), JSON.stringify(cases)).toBeLessThan(1.8);
   });
 
   it('registration: a new address, an existing customer and an admin address', async () => {
@@ -487,7 +487,7 @@ describe('timing: the branches that send nothing cost about the same as the one 
         await register('wall@example.test');
       },
     });
-    expect(spread(cases), JSON.stringify(cases)).toBeLessThan(2.5);
+    expect(spread(cases), JSON.stringify(cases)).toBeLessThan(1.8);
   });
 
   it('a decoy is never queued: no row with the decoy topic survives', async () => {

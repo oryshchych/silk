@@ -111,6 +111,39 @@ describe('0017 over a database that already holds an over-long review', () => {
       typeof cause === 'object' && cause !== null && 'detail' in cause ? cause.detail : '';
     expect(detail).toContain(reviewId);
     expect(await hasCheck()).toBe(false);
+    // Nothing of the failed migration is left behind: no column, no constraint.
+    const column = await upgradeRoot.query(
+      `SELECT 1 FROM information_schema.columns WHERE table_name = 'reviews' AND column_name = 'rejected_at'`,
+    );
+    expect(column.rowCount).toBe(0);
+  });
+
+  it('an over-long shop reply is caught by the same guard', async () => {
+    const { rows } = await upgradeRoot
+      .query<{ id: string }>(
+        `INSERT INTO reviews (product_id, customer_id, rating, body, admin_reply)
+       SELECT product_id, customer_id, 4, 'ok', $1 FROM reviews WHERE id = $2 RETURNING id`,
+        ['y'.repeat(2500), reviewId],
+      )
+      .catch(async () => {
+        // Same (product, customer) is unique: use the first review's reply instead.
+        await upgradeRoot.query(`UPDATE reviews SET admin_reply = $1 WHERE id = $2`, [
+          'y'.repeat(2500),
+          reviewId,
+        ]);
+        return { rows: [{ id: reviewId }] };
+      });
+    expect(rows).toHaveLength(1);
+    await upgradeRoot.query(`UPDATE reviews SET body = 'short' WHERE id = $1`, [reviewId]);
+    const failure: unknown = await runMigrations(migrateUrl).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    const cause: unknown = failure instanceof Error ? failure.cause : undefined;
+    expect(cause instanceof Error ? cause.message : '').toContain(
+      '0017: a review text is longer than 2000',
+    );
+    await upgradeRoot.query(`UPDATE reviews SET admin_reply = NULL WHERE id = $1`, [reviewId]);
   });
 
   it('once shortened it applies and the row is kept', async () => {

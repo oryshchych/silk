@@ -34,20 +34,27 @@ export class ReviewTooManyError extends DomainError {
   }
 }
 
-const plain = (max: number) =>
+// Control characters, bidirectional overrides and zero-width characters are dropped (an RTL override would
+// reorder a line visually even though the text is escaped). `keepLines` leaves LF for a body, never for a title.
+const INVISIBLE = /[\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g;
+const plain = (max: number, keepLines: boolean) =>
   z
     .string()
     .max(max * 2)
-    // Control characters except the line break are dropped; the text is stored as plain text and only
-    // ever rendered escaped (React in the page, `escapeHtml` in a mail).
-    .transform((value) => value.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, '').trim())
+    // The text is stored as plain text and only ever rendered escaped (React in the page).
+    .transform((value) =>
+      value
+        .replace(keepLines ? /[\u0000-\u0009\u000b-\u001f\u007f]/g : /[\u0000-\u001f\u007f]/g, '')
+        .replace(INVISIBLE, '')
+        .trim(),
+    )
     .pipe(z.string().max(max));
 
 export const reviewInputSchema = z.object({
   productId: z.uuid(),
   rating: z.number().int().min(1).max(5),
-  title: plain(120).transform((value) => (value === '' ? null : value)),
-  body: plain(2000).transform((value) => (value === '' ? null : value)),
+  title: plain(120, false).transform((value) => (value === '' ? null : value)),
+  body: plain(2000, true).transform((value) => (value === '' ? null : value)),
   fit: z.enum(fitValues).nullable(),
 });
 export type ReviewInput = z.output<typeof reviewInputSchema>;

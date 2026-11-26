@@ -46,8 +46,12 @@ export async function replyToReviewAction(input: unknown) {
     permission: 'reviews.moderate',
     schema: reviewReplySchema,
     input,
-    run: async ({ tx, input: parsed, session, audit }) => {
+    run: async ({ tx, input: parsed, session, audit, skipAudit }) => {
       const done = await replyToReview(tx, session.userId, parsed);
+      if (!done.changed) {
+        skipAudit();
+        return { changed: false, productId: done.productId };
+      }
       // The reply text is shown on the product page, not copied into the audit row.
       await audit({
         action: 'review.replied',
@@ -58,6 +62,6 @@ export async function replyToReviewAction(input: unknown) {
       return { changed: true, productId: done.productId };
     },
   });
-  if (result.ok) invalidateTags([productTag(result.data.productId)]);
+  if (result.ok && result.data.changed) invalidateTags([productTag(result.data.productId)]);
   return result;
 }
