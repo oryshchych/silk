@@ -961,10 +961,22 @@ export async function runAdminSmoke({
       ),
     );
     // A refused role never gets its body read (an endless body is not consumed), and the store sees nothing.
+    // The server answers 403 and closes the connection while the client is still writing, so the client may
+    // see the 403 or a reset: both are a refusal. What must hold is that the server did NOT drain the body
+    // (the producer stalls at the socket buffers, far below what a reading server would accept) and that the
+    // store saw nothing. The producer is paced and stops as soon as the request ends, so it never spins.
     const requestsBefore = fakeS3.requests;
+    const endlessEnd = new AbortController();
+    let endlessChunks = 0;
     const endless = new ReadableStream({
-      pull(controller) {
+      async pull(controller) {
+        if (endlessEnd.signal.aborted || endlessChunks >= 4_000) {
+          controller.close();
+          return;
+        }
         controller.enqueue(new Uint8Array(64 * 1024));
+        endlessChunks += 1;
+        await new Promise((resolve) => setTimeout(resolve, 1));
       },
     });
     const refusedFast = await upload(
@@ -974,12 +986,18 @@ export async function runAdminSmoke({
       {},
       {
         duplex: 'half',
-        signal: AbortSignal.timeout(8_000),
+        signal: AbortSignal.any([AbortSignal.timeout(8_000), endlessEnd.signal]),
       },
-    ).catch(() => null);
+    ).then(
+      (response) => ({ closed: false, status: response.status }),
+      () => ({ closed: true, status: 0 }),
+    );
+    endlessEnd.abort();
     check(
-      'media: a manager with an endless body gets 403 at once (the body is never read) and the store saw no request',
-      refusedFast?.status === 403 && fakeS3.requests === requestsBefore,
+      'media: a manager with an endless body is refused (403, or the connection is closed) and the body is never read: the server took far less than a reading server would, and the store saw no request',
+      (refusedFast.closed || refusedFast.status === 403) &&
+        endlessChunks < 1_000 &&
+        fakeS3.requests === requestsBefore,
     );
     // Memory is bounded by slots taken BEFORE the body is read: parallel uploads of one user are refused at once.
     const burst = await Promise.all(
