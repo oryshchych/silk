@@ -138,6 +138,7 @@ skipped, not ticked.
 - [ ] Colors use semantic tokens (`--surface`, `--text-primary`, ...); no hex in components; `grep -rE "blush|cream|pink" packages/ apps/web/src` is empty.
 - [ ] Images have `alt`, `width`, `height`. Interactive elements are keyboard-reachable with a visible focus ring; icon-only buttons have an accessible name.
 - [ ] The storefront is light-only: no server-side theme cookie on public pages (ADR-21). The locale comes from the URL only: no `Accept-Language` redirects.
+- [ ] Every message namespace a **client** component uses is passed to the client `NextIntlClientProvider` (`apps/web/src/app/[locale]/layout.tsx`), and a smoke check asserts the **rendered text** of the new pages in both locales (no raw `namespace.key`, no `MISSING_MESSAGE`). Lesson: the `account` namespace was missing for five slices and every account client component rendered raw keys.
 
 ### G. Security and environment
 
@@ -145,6 +146,8 @@ skipped, not ticked.
 - [ ] Admin mutations check the role **inside the action** and write `audit_log`.
 - [ ] Data leaving the server goes through explicit DTOs (`serialize`, no `passthrough`/loose objects); the **serialized** response is tested per role, not what the UI shows.
 - [ ] Webhooks fail closed: raw body, signature before parsing, invalid ones to `webhook_quarantine`.
+- [ ] Every outbox topic a PR writes (any `email.*`, `alert.*`, `fiscal.*` literal, constant or helper) has a queue in `OUTBOX_TOPICS` (`apps/worker/src/boss.ts`) **and** a delivery test that runs the real chain (domain writes the row, relay, pg-boss worker, router) and ends `sent`, not `stuck`. Lesson: the registration, reset and back-in-stock mails had no queue and would have ended `stuck` once the worker ran.
+- [ ] A cookie or header that the browser or another system reads is tested on the **wire format** the real server sends (the actual `Set-Cookie` value, flags and encoding), not on a unit round-trip that skips the framework. Lesson: `silk_sizes` was encoded twice on the wire and the "your size" hint never appeared, while its unit test passed.
 - [ ] A new environment variable is added in all places: `.env.example`, `packages/shared/src/env.schema.ts`, the `web` allowlist in `docker-compose.yml`, and the docs when behavior differs per environment. One image serves staging and production (ADR-10): runtime values, except `NEXT_PUBLIC_*`.
 
 ### H. Tests
