@@ -17,7 +17,9 @@ function fakeEnv() {
   const store = new Set<string>();
   let fbq: ((...args: unknown[]) => void) | undefined;
   const fbqCalls: unknown[][] = [];
+  const cleared: string[][] = [];
   const env: TrackerEnv = {
+    clearCookies: (prefixes) => cleared.push([...prefixes]),
     loadScript: (src) => scripts.push(src),
     dataLayer,
     getFbq: () => fbq,
@@ -29,7 +31,7 @@ function fakeEnv() {
     },
     seen: { has: (key) => store.has(key), add: (key) => void store.add(key) },
   };
-  return { env, scripts, dataLayer, fbqCalls, store };
+  return { env, scripts, dataLayer, fbqCalls, store, cleared };
 }
 
 /** gtag pushes `arguments` objects: turn them into plain arrays to compare. */
@@ -186,5 +188,45 @@ describe('after a decision', () => {
       tracker.track({ name: 'view_item', items: [{ ...item, id: String(i) }] });
     tracker.apply({ analytics: true, marketing: false });
     expect(commands(dataLayer).filter((c) => c[0] === 'event').length).toBe(20);
+  });
+
+  it('revoking advertising consent tells Meta, clears its cookies and stops its events', () => {
+    const { env, fbqCalls, cleared } = fakeEnv();
+    const tracker = createTracker(FULL, env);
+    tracker.apply({ analytics: true, marketing: true });
+    tracker.apply({ analytics: true, marketing: false });
+    expect(fbqCalls).toContainEqual(['consent', 'revoke']);
+    expect(cleared).toContainEqual(['_fbp', '_fbc', '_gcl']);
+    const before = fbqCalls.length;
+    tracker.track(view);
+    expect(fbqCalls.length).toBe(before);
+    tracker.apply({ analytics: true, marketing: true });
+    expect(fbqCalls).toContainEqual(['consent', 'grant']);
+  });
+
+  it('revoking analytics consent clears the Google cookies and nothing else', () => {
+    const { env, cleared } = fakeEnv();
+    const tracker = createTracker(FULL, env);
+    tracker.apply({ analytics: true, marketing: false });
+    tracker.apply({ analytics: false, marketing: false });
+    expect(cleared).toEqual([['_ga', '_gid', '_gat']]);
+  });
+
+  it('a first decision that refuses clears nothing (nothing was ever granted)', () => {
+    const { env, cleared, fbqCalls } = fakeEnv();
+    createTracker(FULL, env).apply({ analytics: false, marketing: false });
+    expect(cleared).toEqual([]);
+    expect(fbqCalls).toEqual([]);
+  });
+
+  it('a purchase seen while consent is refused does not spend its once-only key (a later opt-in still reports it)', () => {
+    const { env, dataLayer, store } = fakeEnv();
+    const tracker = createTracker(FULL, env);
+    tracker.apply({ analytics: false, marketing: false });
+    tracker.track(purchase);
+    expect(store.size).toBe(0);
+    tracker.apply({ analytics: true, marketing: false });
+    tracker.track(purchase);
+    expect(commands(dataLayer).filter((c) => c[1] === 'purchase')).toHaveLength(1);
   });
 });

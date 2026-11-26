@@ -29,6 +29,7 @@ async function loadView(reader: Reader, order: typeof orders.$inferSelect) {
   const items = await reader
     .select({
       name: orderItems.nameSnapshot,
+      productId: orderItems.productId,
       sku: orderItems.skuSnapshot,
       sizeLabel: orderItems.sizeLabel,
       colorName: orderItems.colorName,

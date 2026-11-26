@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   analyticsConfig,
+  invalidAnalyticsIds,
   consentModeSignals,
   DENIED,
   ga4Ecommerce,
@@ -52,6 +53,36 @@ describe('analyticsConfig', () => {
       }),
     ).toBeNull();
     expect(analyticsConfig('production', { ...ids, GA4_MEASUREMENT_ID: '../x' })?.ga4).toBeNull();
+  });
+});
+
+describe('identifier shapes', () => {
+  it('rejects 8 or more non-digits for a pixel, a trailing newline and look-alike digits', () => {
+    for (const META_PIXEL_ID of [
+      'abcdefgh',
+      '12345678\n',
+      '١٢٣٤٥٦٧٨',
+      '1234567',
+      `1${'2'.repeat(20)}`,
+    ]) {
+      expect(analyticsConfig('production', { META_PIXEL_ID }), META_PIXEL_ID).toBeNull();
+    }
+    expect(analyticsConfig('production', { GA4_MEASUREMENT_ID: 'G-ABCD1234\n' })).toBeNull();
+    expect(analyticsConfig('production', { GTM_CONTAINER_ID: 'GTM-ABC123\n' })).toBeNull();
+    expect(analyticsConfig('production', { META_PIXEL_ID: '12345678' })?.metaPixel).toBe(
+      '12345678',
+    );
+  });
+
+  it('names the identifiers that are set but malformed, never their values', () => {
+    expect(
+      invalidAnalyticsIds({
+        GA4_MEASUREMENT_ID: 'G-1&x=2',
+        GTM_CONTAINER_ID: 'GTM-ABC123',
+        META_PIXEL_ID: 'zz',
+      }),
+    ).toEqual(['GA4_MEASUREMENT_ID', 'META_PIXEL_ID']);
+    expect(invalidAnalyticsIds({})).toEqual([]);
   });
 });
 
@@ -195,7 +226,7 @@ describe('metaEvent', () => {
         value: 2500,
         currency: 'UAH',
         num_items: 2,
-        content_type: 'product',
+        content_type: 'product_group',
       },
     });
     expect(metaEvent({ name: 'view_item', items: [item()] })?.eventId).toBeUndefined();

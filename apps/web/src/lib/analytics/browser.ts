@@ -56,6 +56,23 @@ function browserEnv(): TrackerEnv {
     setFbq: (fbq) => {
       window.fbq = fbq;
     },
+    clearCookies: (prefixes) => {
+      const names = document.cookie
+        .split('; ')
+        .map((cookie) => cookie.split('=')[0] ?? '')
+        .filter((name) => prefixes.some((prefix) => name.startsWith(prefix)));
+      // The trackers set them on the registrable domain or the host: expire on every candidate.
+      const labels = window.location.hostname.split('.');
+      const domains = [
+        '',
+        ...labels.slice(0, -1).map((_, i) => `; Domain=.${labels.slice(i).join('.')}`),
+      ];
+      for (const name of names) {
+        for (const domain of domains) {
+          document.cookie = `${name}=; Max-Age=0; Path=/${domain}`;
+        }
+      }
+    },
     seen: {
       has: (key) => window.sessionStorage.getItem(`silk:${key}`) !== null,
       add: (key) => {

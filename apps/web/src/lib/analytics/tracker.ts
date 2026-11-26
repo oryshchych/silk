@@ -27,6 +27,8 @@ export interface TrackerEnv {
   /** Meta's `fbq` queue function; created by the tracker when absent. */
   getFbq: () => ((...args: unknown[]) => void) | undefined;
   setFbq: (fbq: (...args: unknown[]) => void) => void;
+  /** Expires the cookies whose names start with one of the prefixes (host and parent domains). */
+  clearCookies: (prefixes: readonly string[]) => void;
   /** Once-only memory for purchases (a tab's session storage); may throw, then dedupe is off. */
   seen: { has: (key: string) => boolean; add: (key: string) => void };
 }
@@ -88,6 +90,11 @@ export function createTracker(config: AnalyticsConfig, env: TrackerEnv): Tracker
   }
 
   function send(event: EcommerceEvent, granted: Consent): void {
+    const googleOn = granted.analytics && loaded.google;
+    const metaOn = granted.marketing && loaded.meta;
+    // Nothing would be sent: do not spend the once-only key either, so an opt-in later in the
+    // same tab can still report the purchase.
+    if (!googleOn && !metaOn) return;
     if (event.name === 'purchase' && event.reference !== undefined) {
       const key = `purchase:${event.reference}`;
       try {
@@ -97,7 +104,7 @@ export function createTracker(config: AnalyticsConfig, env: TrackerEnv): Tracker
         // No storage: the page's own once-only logic is the only guard.
       }
     }
-    if (granted.analytics && loaded.google) {
+    if (googleOn) {
       const ecommerce = ga4Ecommerce(event);
       if (config.gtm !== null) {
         env.dataLayer.push({ ecommerce: null });
@@ -106,7 +113,7 @@ export function createTracker(config: AnalyticsConfig, env: TrackerEnv): Tracker
         gtag('event', event.name, ecommerce);
       }
     }
-    const meta = granted.marketing && loaded.meta ? metaEvent(event) : null;
+    const meta = metaOn ? metaEvent(event) : null;
     if (meta !== null) {
       env.getFbq()?.(
         'track',
@@ -122,8 +129,20 @@ export function createTracker(config: AnalyticsConfig, env: TrackerEnv): Tracker
       return consent;
     },
     apply(next) {
+      const previous = consent;
       consent = next;
       gtag('consent', 'update', consentModeSignals(next));
+      // A withdrawal must stop what already runs, not only what is loaded next: tell Meta, and
+      // remove the identifiers the trackers keep in cookies.
+      if (previous?.analytics === true && !next.analytics)
+        env.clearCookies(['_ga', '_gid', '_gat']);
+      if (previous?.marketing === true && !next.marketing) {
+        if (loaded.meta) env.getFbq()?.('consent', 'revoke');
+        env.clearCookies(['_fbp', '_fbc', '_gcl']);
+      }
+      if (previous?.marketing === false && next.marketing && loaded.meta) {
+        env.getFbq()?.('consent', 'grant');
+      }
       if (next.analytics || (next.marketing && config.gtm !== null)) loadGoogle();
       if (next.marketing) loadMeta();
       const pending = buffer;

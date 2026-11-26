@@ -18,13 +18,16 @@ export function productItem(product: ProductDetailDto): AnalyticsItem {
   };
 }
 
-/** One item per variant, keyed by variant id: what "add to cart" reports for the chosen size and colour. */
+/**
+ * ONE id scheme on every event: the product id (the feed's `item_group_id`); the size and colour
+ * travel as `variant`. One item per variant, keyed by variant id: what "add to cart" reports.
+ */
 export function variantItems(product: ProductDetailDto): Record<string, AnalyticsItem> {
   return Object.fromEntries(
     product.variants.map((variant) => [
       variant.id,
       {
-        id: variant.sku,
+        id: product.id,
         name: product.name,
         brand: product.brand,
         category: product.category.name,
@@ -46,7 +49,7 @@ export const cardItems = (cards: readonly ProductCardDto[]): AnalyticsItem[] =>
   }));
 
 export const cartLineItem = (line: CartLineView): AnalyticsItem => ({
-  id: line.sku,
+  id: line.productId,
   name: line.name,
   variant: `${line.colorName}, ${line.sizeLabel}`,
   price: line.unitPrice,
@@ -56,7 +59,8 @@ export const cartLineItem = (line: CartLineView): AnalyticsItem => ({
 /** Revenue of an order is the goods after discounts; shipping is reported separately. */
 export const orderItems = (order: CustomerOrderDto): AnalyticsItem[] =>
   order.items.map((item) => ({
-    id: item.sku,
+    // A product deleted since the order falls back to the variant SKU.
+    id: item.productId ?? item.sku,
     name: item.name,
     variant: `${item.colorName}, ${item.sizeLabel}`,
     // The list price per unit; the revenue after discounts goes in the event's `value`.

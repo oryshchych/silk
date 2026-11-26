@@ -31,6 +31,19 @@ export const PIXEL_ID = /^\d{8,20}$/;
  * Staging and local never load a tracker, so test traffic cannot pollute the real property.
  * An identifier that fails its pattern is treated as absent, so it can never reach a script URL.
  */
+/** The names of identifiers that are set but not shaped like one (never the values). */
+export function invalidAnalyticsIds(ids: AnalyticsIds): string[] {
+  const bad: string[] = [];
+  const check = (name: keyof AnalyticsIds, pattern: RegExp): void => {
+    const value = ids[name];
+    if (value !== undefined && !pattern.test(value)) bad.push(name);
+  };
+  check('GA4_MEASUREMENT_ID', GA4_ID);
+  check('GTM_CONTAINER_ID', GTM_ID);
+  check('META_PIXEL_ID', PIXEL_ID);
+  return bad;
+}
+
 export function analyticsConfig(appEnv: string, ids: AnalyticsIds): AnalyticsConfig | null {
   if (appEnv !== 'production') return null;
   const ga4 =
@@ -95,7 +108,7 @@ export const CURRENCY = 'UAH';
 export const hryvnias = (amount: Money): number => Number(toHryvniasText(amount));
 
 export interface AnalyticsItem {
-  /** Variant SKU where a variant is known (it is the feed `id`), else the product id. */
+  /** The product id on EVERY event: it is the feed's `item_group_id`, so Meta and GA4 see one id per product. */
   id: string;
   name: string;
   brand?: string;
@@ -183,7 +196,8 @@ export function metaEvent(event: EcommerceEvent): MetaEvent | null {
   return {
     name,
     params: {
-      content_type: 'product',
+      // The ids are product (group) ids: Meta matches them to the catalog's `item_group_id`.
+      content_type: 'product_group',
       content_ids: items.map((item) => item.id),
       contents: items.map((item) => ({
         id: item.id,

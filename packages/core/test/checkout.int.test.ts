@@ -713,6 +713,8 @@ describe('cart view and order lookup', () => {
     const byToken = await getOrderByAccessToken(admin.db, placed.orderNumber, token);
     expect(byToken?.orderNumber).toBe(placed.orderNumber);
     expect(Object.keys(byToken ?? {})).not.toContain('adminNote');
+    // Analytics ids: the line carries its product (a uuid), not a snapshot or a cost.
+    expect(byToken?.items[0]?.productId).toMatch(/^[0-9a-f-]{36}$/);
     expect(JSON.stringify(byToken)).not.toMatch(/unitCost|ip"/);
     expect(await getOrderByAccessToken(admin.db, placed.orderNumber, `${token}x`)).toBeNull();
     expect(await getOrderByAccessToken(admin.db, 'nonsense', token)).toBeNull();
