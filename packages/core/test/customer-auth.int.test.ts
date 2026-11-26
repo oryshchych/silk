@@ -429,47 +429,65 @@ describe('password reset', () => {
 describe('timing: the branches that send nothing cost about the same as the one that sends', () => {
   const median = (values: number[]): number =>
     [...values].sort((x, y) => x - y)[Math.floor(values.length / 2)] ?? 0;
-  async function sample(run: (i: number) => Promise<void>, n = 40): Promise<number> {
-    const times: number[] = [];
-    for (let i = 0; i < n; i += 1) {
-      const start = performance.now();
-      await run(i);
-      times.push(performance.now() - start);
+  /**
+   * The cases are measured ROUND ROBIN (one run of each, then the next round), so a busy machine slows
+   * every case alike instead of whichever happened to run during the load; the median of each case is compared.
+   */
+  async function compare(
+    cases: Record<string, (i: number) => Promise<void>>,
+    rounds = 40,
+  ): Promise<Record<string, number>> {
+    const times: Record<string, number[]> = Object.fromEntries(
+      Object.keys(cases).map((k) => [k, []]),
+    );
+    for (let i = 0; i < rounds; i += 1) {
+      for (const [name, run] of Object.entries(cases)) {
+        const start = performance.now();
+        await run(i);
+        times[name]?.push(performance.now() - start);
+      }
     }
-    return median(times);
+    return Object.fromEntries(Object.entries(times).map(([name, list]) => [name, median(list)]));
   }
+  const spread = (cases: Record<string, number>): number =>
+    Math.max(...Object.values(cases)) / Math.min(...Object.values(cases));
 
-  it('reset: a verified account, an unknown address and an admin address (median of 40, ratio under 2.5)', async () => {
+  it('reset: a verified account, an unknown address and an admin address (round robin, median of 40, ratio under 2.5)', async () => {
     const real = await account();
-    const reset = (email: string) => async () => {
+    const reset = async (email: string): Promise<void> => {
       await handle.db.transaction(async (tx) => {
         await requestPasswordReset(tx, { email, locale: 'uk', client });
       });
     };
-    await sample(reset(real.email), 5);
-    const cases = {
-      unknown: await sample((i) => reset(`nobody-${String(i)}@example.test`)()),
-      admin: await sample(reset('wall@example.test')),
+    const cases = await compare({
+      unknown: async (i) => {
+        await reset(`nobody-${String(i)}@example.test`);
+      },
+      admin: async () => {
+        await reset('wall@example.test');
+      },
       // Past the hourly cap the real branch also sends nothing, but it did the same work: that is the point.
-      verified: await sample((i) => reset(i % 4 === 0 ? real.email : real.email)()),
-    };
-    const slowest = Math.max(...Object.values(cases));
-    const fastest = Math.min(...Object.values(cases));
-    expect(slowest / fastest, JSON.stringify(cases)).toBeLessThan(2.5);
+      verified: async () => {
+        await reset(real.email);
+      },
+    });
+    expect(spread(cases), JSON.stringify(cases)).toBeLessThan(2.5);
   });
 
   it('registration: a new address, an existing customer and an admin address', async () => {
     const real = await account();
-    const reg = (email: string) => async () => {
-      await register(email);
-    };
-    const cases = {
-      fresh: await sample((i) => reg(`fresh-${String(i)}-${String(counter)}@example.test`)()),
-      existing: await sample(reg(real.email)),
-      admin: await sample(reg('wall@example.test')),
-    };
-    const ratio = Math.max(...Object.values(cases)) / Math.min(...Object.values(cases));
-    expect(ratio, JSON.stringify(cases)).toBeLessThan(2.5);
+    const cases = await compare({
+      fresh: async (i) => {
+        await register(`fresh-${String(i)}-${String(counter)}@example.test`);
+      },
+      existing: async () => {
+        await register(real.email);
+      },
+      admin: async () => {
+        await register('wall@example.test');
+      },
+    });
+    expect(spread(cases), JSON.stringify(cases)).toBeLessThan(2.5);
   });
 
   it('a decoy is never queued: no row with the decoy topic survives', async () => {

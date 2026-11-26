@@ -33,7 +33,12 @@ interface Who {
   ip: string | null;
 }
 
-export async function addToWishlist(tx: Tx, who: Who, productId: string): Promise<boolean> {
+export async function addToWishlist(
+  tx: Tx,
+  who: Who,
+  productId: string,
+  maxItems = MAX_WISHLIST,
+): Promise<boolean> {
   await tx.execute(
     sql`SELECT pg_advisory_xact_lock(hashtextextended(${`wishlist:${who.customerId}`}, 0))`,
   );
@@ -51,7 +56,7 @@ export async function addToWishlist(tx: Tx, who: Who, productId: string): Promis
     .onConflictDoNothing()
     .returning({ productId: wishlistItems.productId });
   if (inserted.length === 0) return false;
-  if ((count?.n ?? 0) >= MAX_WISHLIST) throw new WishlistFullError();
+  if ((count?.n ?? 0) >= maxItems) throw new WishlistFullError();
   await writeAudit(tx, {
     userId: who.userId,
     action: 'customer.wishlist_added',

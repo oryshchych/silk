@@ -3,6 +3,7 @@
 import { unsubscribeByToken } from '@store/core/account-alerts';
 import { z } from 'zod';
 
+import { requestOriginOk } from '@/lib/admin/bound-action';
 import { authConfig } from '@/lib/admin/config';
 import { getDb } from '@/lib/db';
 import { createRateLimiter } from '@/lib/rate-limit';
@@ -20,6 +21,8 @@ export type UnsubscribeResult =
 export async function unsubscribeStockAlertAction(input: unknown): Promise<UnsubscribeResult> {
   const parsed = z.object({ token: z.string().min(1).max(200) }).safeParse(input);
   if (!parsed.success) return { status: 'error', code: 'invalid' };
+  // The link is opened in the browser and its button posts from the same site: a foreign Origin is refused.
+  if (!(await requestOriginOk())) return { status: 'error', code: 'invalid' };
   if (!(await checkLimit(limiter)).allowed) return { status: 'error', code: 'rateLimited' };
   const config = await authConfig();
   const db = await getDb();

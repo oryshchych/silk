@@ -134,6 +134,46 @@ describe('the restock job and the mail', () => {
     expect(email.sent).toHaveLength(0);
   });
 
+  it('a size that sold out AGAIN before the mail was built: no mail, the alert is waiting again', async () => {
+    await app.db.execute(sql`UPDATE product_variants SET stock_quantity = 7 WHERE id = ${variant}`);
+    await handlers()[JOB_NAMES.notifyRestocked]();
+    const message = await queuedMessage();
+    if (message === null) throw new Error('nothing queued');
+    await app.db.execute(sql`UPDATE product_variants SET stock_quantity = 0 WHERE id = ${variant}`);
+    const email = new Recorder();
+    await sender(email).send(message);
+    expect(email.sent).toHaveLength(0);
+    const [row] = await app.db
+      .execute<{ notified_at: Date | null }>(sql`SELECT notified_at FROM stock_notifications`)
+      .then((r) => r.rows);
+    expect(row?.notified_at).toBeNull();
+    // It is claimed again by the next restock, not lost.
+    await app.db.execute(sql`UPDATE product_variants SET stock_quantity = 3 WHERE id = ${variant}`);
+    await handlers()[JOB_NAMES.notifyRestocked]();
+    expect(
+      await app.db.select().from(outbox).where(eq(outbox.topic, 'email.back-in-stock')),
+    ).toHaveLength(2);
+  });
+
+  it('a popular restock drains in one run, in bounded batches (450 alerts, not 200)', async () => {
+    await app.db.execute(
+      sql`INSERT INTO stock_notifications (variant_id, email, locale)
+          SELECT ${variant}::uuid, 'fan-' || g || '@example.test', 'uk' FROM generate_series(1, 450) g`,
+    );
+    await app.db.execute(
+      sql`UPDATE product_variants SET stock_quantity = 900 WHERE id = ${variant}`,
+    );
+    await handlers()[JOB_NAMES.notifyRestocked]();
+    // 450 plus the one subscribed in beforeEach.
+    expect(
+      await app.db.select().from(outbox).where(eq(outbox.topic, 'email.back-in-stock')),
+    ).toHaveLength(451);
+    await handlers()[JOB_NAMES.notifyRestocked]();
+    expect(
+      await app.db.select().from(outbox).where(eq(outbox.topic, 'email.back-in-stock')),
+    ).toHaveLength(451);
+  });
+
   it('renders Ukrainian copy', () => {
     const rendered = renderBackInStock({
       locale: 'uk',

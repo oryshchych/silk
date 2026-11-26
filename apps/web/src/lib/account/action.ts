@@ -2,10 +2,10 @@ import type { CustomerSession } from '@store/core/customer-session';
 import type { Tx } from '@store/db/types';
 import type { z } from 'zod';
 
-import { requestOriginOk } from '@/lib/admin/bound-action';
-import { getDb } from '@/lib/db';
-import { createRateLimiter } from '@/lib/rate-limit';
-import { checkLimit, currentClient } from '@/lib/request-limits';
+import { requestOriginOk } from '../admin/bound-action';
+import { getDb } from '../db';
+import { createRateLimiter } from '../rate-limit';
+import { checkLimit, currentClient } from '../request-limits';
 
 import { currentCustomer } from './session';
 

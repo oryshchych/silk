@@ -21,6 +21,11 @@ export const OUTBOX_TOPICS = [
   'alert.refund-unresolved',
   'email.waybill-created',
   'alert.waybill-for-cancelled-order',
+  // Phase 7: the account links (written by `requestRegistration` and `requestPasswordReset`) and the
+  // back-in-stock mail. Without a queue each of these ends `stuck`: nobody could register or reset.
+  'email.account-verify',
+  'email.password-reset',
+  'email.back-in-stock',
 ] as const;
 
 /** Jobs that exhausted their retries land here. Someone must watch this queue. */

@@ -46,7 +46,12 @@ interface Who {
 }
 
 /** Subscribes the account's address to a variant that cannot be bought now. Returns the alert id. */
-export async function subscribeStockAlert(tx: Tx, who: Who, variantId: string): Promise<string> {
+export async function subscribeStockAlert(
+  tx: Tx,
+  who: Who,
+  variantId: string,
+  maxAlerts = MAX_ALERTS,
+): Promise<string> {
   if (!UUID.test(variantId)) throw new AlertVariantNotFoundError();
   await tx.execute(
     sql`SELECT pg_advisory_xact_lock(hashtextextended(${`alerts:${who.customerId}`}, 0))`,
@@ -72,7 +77,7 @@ export async function subscribeStockAlert(tx: Tx, who: Who, variantId: string): 
     .where(
       and(eq(stockNotifications.variantId, variantId), eq(stockNotifications.email, who.email)),
     );
-  if (existing === undefined && (count?.n ?? 0) >= MAX_ALERTS) throw new AlertLimitError();
+  if (existing === undefined && (count?.n ?? 0) >= maxAlerts) throw new AlertLimitError();
   const [row] = await tx
     .insert(stockNotifications)
     .values({ variantId, email: who.email, locale: who.locale })
@@ -201,4 +206,19 @@ export async function notifyRestocked(tx: Tx, limit = 200): Promise<number> {
       .onConflictDoNothing();
   }
   return claimed.rows.length;
+}
+
+/**
+ * At send time: if the size sold out again after the alert was claimed, the alert goes back to waiting
+ * (one statement, so nothing is lost and nothing is mailed "back in stock" for a size that is gone).
+ * Returns true when it was re-armed. The worker passes its database handle; this is a single UPDATE.
+ */
+export async function rearmIfSoldOut(db: Reader, alertId: string): Promise<boolean> {
+  const result = await db.execute(
+    sql`UPDATE stock_notifications n SET notified_at = NULL
+          FROM product_variants v
+         WHERE n.id = ${alertId}::uuid AND v.id = n.variant_id AND n.notified_at IS NOT NULL
+           AND NOT (v.is_active AND v.stock_quantity - v.reserved_quantity > 0)`,
+  );
+  return (result.rowCount ?? 0) > 0;
 }
