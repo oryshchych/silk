@@ -9,6 +9,17 @@ import { checkLimit, currentClient } from '@/lib/request-limits';
 
 import { currentCustomer } from './session';
 
+const INVALID_CODES: readonly string[] = [
+  'ADDRESS_LIMIT',
+  'ALERT_AVAILABLE',
+  'ALERT_LIMIT',
+  'WISHLIST_FULL',
+  'REVIEW_EXISTS',
+  'REVIEW_RATE',
+  'RETURN_ITEMS',
+  'RETURN_LIMIT',
+];
+
 /** Mutations of a signed-in customer: a person edits a few things a minute, a script hundreds. */
 const limiter = createRateLimiter({ limit: 60, windowMs: 60_000 });
 
@@ -52,8 +63,10 @@ export async function customerAction<S extends z.ZodType, T>(
     if ((options.notFoundCodes ?? ['ADDRESS_NOT_FOUND']).includes(code)) {
       return { ok: false, code: 'notFound' };
     }
-    if (code === 'ADDRESS_LIMIT' || code.startsWith('CHECKOUT_'))
+    // A refusal the person caused (a limit, a duplicate, a size that can be bought now): the UI says so, no error is logged.
+    if (INVALID_CODES.includes(code) || code.startsWith('CHECKOUT_')) {
       return { ok: false, code: 'invalid' };
+    }
     process.stderr.write(
       `${JSON.stringify({ level: 'error', scope: 'account-action', name: error instanceof Error ? error.name : 'unknown' })}\n`,
     );

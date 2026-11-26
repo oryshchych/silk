@@ -362,7 +362,8 @@
       "orders": "Orders",
       "customers": "Customers",
       "users": "Users",
-      "reviews": "Reviews"
+      "reviews": "Reviews",
+      "returns": "Returns"
     },
     "dashboard": {
       "title": "Overview",
@@ -932,6 +933,49 @@
       "reply": "Reply from the shop (shown on the product page)",
       "saveReply": "Save the reply",
       "saved": "Saved."
+    },
+    "returns": {
+      "title": "Returns",
+      "filter": "Filter",
+      "filters": {
+        "open": "Open",
+        "done": "Finished"
+      },
+      "empty": "No requests.",
+      "back": "Back to the list",
+      "status": {
+        "requested": "New",
+        "approved": "Approved",
+        "rejected": "Refused",
+        "in_transit": "On its way",
+        "received": "Received",
+        "refunded": "Refunded",
+        "closed": "Closed"
+      },
+      "reason": {
+        "defect": "Defect",
+        "wrong_item": "Wrong item sent",
+        "not_as_described": "Not as described",
+        "changed_mind": "Changed mind",
+        "wrong_size": "Size",
+        "other": "Other"
+      },
+      "requested": "requested",
+      "received": "received",
+      "restocked": "restocked",
+      "suggested": "Suggested amount",
+      "agreed": "Agreed",
+      "refundState": "Refund state",
+      "restock": "Put the goods back on the shelf when received",
+      "note": "Note",
+      "approve": "Approve",
+      "reject": "Refuse",
+      "receiveHint": "Stock changes only here, when the parcel is physically at the warehouse. Enter the TOTAL units received so far.",
+      "receivedTotal": "received in total",
+      "receive": "Record the receipt",
+      "refund": "Refund the money",
+      "close": "Close without a refund",
+      "saved": "Saved."
     }
   },
   "consent": {
@@ -987,7 +1031,8 @@
       "profile": "Profile",
       "addresses": "Addresses",
       "wishlist": "Wishlist",
-      "reviews": "My reviews"
+      "reviews": "My reviews",
+      "returns": "Returns"
     },
     "noOrders": "No orders yet.",
     "reorder": "Order again",
@@ -1042,6 +1087,35 @@
     "reviewSubmit": "Send the review",
     "reviewSent": "Thank you! The review will appear on the product page after it is checked.",
     "reviewInvalid": "That did not work: you may have reviewed this product already or sent too many today.",
-    "reviewNotAllowed": "Only buyers of this product can review it."
+    "reviewNotAllowed": "Only buyers of this product can review it.",
+    "returnsPolicy": "The return terms are being finalised: the policy text will appear here. A manager reviews each request.",
+    "myReturns": "My requests",
+    "noReturns": "No requests.",
+    "newReturn": "New request",
+    "noEligible": "No delivered orders can still be returned.",
+    "returnDeadline": "You can send a request until {date}.",
+    "returnQuantity": "Quantity to return",
+    "returnReason": "Reason",
+    "returnComment": "Comment",
+    "returnSubmit": "Send the request",
+    "returnSent": "Request sent. We will get in touch.",
+    "returnInvalid": "That did not work: check the lines and quantities, or the return window has passed.",
+    "returnStatus": {
+      "requested": "Under review",
+      "approved": "Approved, waiting for the parcel",
+      "rejected": "Refused",
+      "in_transit": "On its way",
+      "received": "Parcel received",
+      "refunded": "Refunded",
+      "closed": "Closed"
+    },
+    "reason": {
+      "defect": "Defect",
+      "wrong_item": "Wrong item sent",
+      "not_as_described": "Not as described",
+      "changed_mind": "Changed my mind",
+      "wrong_size": "Wrong size",
+      "other": "Other"
+    }
   }
 }

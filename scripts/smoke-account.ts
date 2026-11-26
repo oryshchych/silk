@@ -657,6 +657,83 @@ export async function runAccountSmoke(ctx: Context): Promise<void> {
       );
     }
 
+    // 5d. Returns, with two customers: A's delivered order, B cannot touch it, the request changes nothing yet.
+    await handle.pool.query(
+      `UPDATE orders SET status = 'delivered', delivered_at = now() WHERE id = $1`,
+      [orderOfA.id],
+    );
+    const { rows: lines } = await handle.pool.query<{
+      id: string;
+      variant_id: string | null;
+      quantity: number;
+    }>(`SELECT id, variant_id, quantity FROM order_items WHERE order_id = $1 ORDER BY id LIMIT 1`, [
+      orderOfA.id,
+    ]);
+    const line = lines[0];
+    if (line !== undefined) {
+      const stockOf = async (): Promise<number> =>
+        (
+          await handle.pool.query<{ s: number }>(
+            `SELECT stock_quantity AS s FROM product_variants WHERE id = $1`,
+            [line.variant_id],
+          )
+        ).rows[0]?.s ?? -1;
+      const stockBefore = await stockOf();
+      const body = {
+        orderNumber: orderOfA.order_number,
+        reason: 'wrong_size',
+        comment: 'too small',
+        items: [{ orderItemId: line.id, quantity: 1 }],
+      };
+      const foreign = await act('requestReturnAction', body, jarB, newClient(), '/account/returns');
+      check(
+        "IDOR: B cannot open a return for A's order (not found)",
+        foreign.body.includes('"code":"notFound"'),
+        brief(foreign),
+      );
+      const noSession = await act(
+        'requestReturnAction',
+        body,
+        new Map(),
+        newClient(),
+        '/account/returns',
+      );
+      check(
+        'a return request without a session is refused before the body is read',
+        noSession.body.includes('"code":"unauthorized"'),
+        brief(noSession),
+      );
+      const made = await act('requestReturnAction', body, jarA, newClient(), '/account/returns');
+      check(
+        'A opens a return for their delivered order',
+        made.body.includes('"ok":true'),
+        brief(made),
+      );
+      const tooMany = await act(
+        'requestReturnAction',
+        { ...body, items: [{ orderItemId: line.id, quantity: line.quantity + 5 }] },
+        jarA,
+        newClient(),
+        '/account/returns',
+      );
+      check(
+        'more units than were ordered is refused',
+        tooMany.body.includes('"code":"invalid"'),
+        brief(tooMany),
+      );
+      const listA = await page('/account/returns', jarA);
+      const listB = await page('/account/returns', jarB);
+      check(
+        'A sees the request (RET- number), B does not',
+        /RET-\d{4}-\d{5}/.test(listA.html) && !/RET-\d{4}-\d{5}/.test(listB.html),
+        brief(listA),
+      );
+      check('the request changed NO stock', (await stockOf()) === stockBefore, {
+        before: stockBefore,
+        now: await stockOf(),
+      });
+    }
+
     // 6. Limits: mails and sign-in attempts from one client run out.
     const hammer = newClient();
     let mailLimited = false;

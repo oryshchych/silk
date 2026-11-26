@@ -6,6 +6,7 @@ import { z } from 'zod';
 
 import { addAddress, addressInputSchema, deleteAddress } from '@store/core/account-addresses';
 import { cancelStockAlert, subscribeStockAlert } from '@store/core/account-alerts';
+import { createReturnRequest, returnInputSchema } from '@store/core/returns';
 import { reviewInputSchema, submitReview } from '@store/core/reviews';
 import { reorderMyOrder } from '@store/core/account-orders';
 import { addToWishlist, removeFromWishlist } from '@store/core/account-wishlist';
@@ -203,6 +204,21 @@ export async function submitReviewAction(input: unknown): Promise<CustomerAction
         { customerId: who.customer.customerId, userId: who.customer.userId, ip: who.ip },
         data,
       ),
-    { notFoundCodes: [] },
+    { notFoundCodes: ['REVIEW_NOT_ALLOWED'] },
+  );
+}
+
+/** A return request for one of MY delivered orders: ownership, window and units are decided in the database. */
+export async function requestReturnAction(input: unknown): Promise<CustomerActionResult<string>> {
+  return await customerAction(
+    input,
+    returnInputSchema,
+    async (tx, who, data) =>
+      await createReturnRequest(
+        tx,
+        { customerId: who.customer.customerId, userId: who.customer.userId, ip: who.ip },
+        data,
+      ),
+    { notFoundCodes: ['RETURN_NOT_ELIGIBLE'] },
   );
 }

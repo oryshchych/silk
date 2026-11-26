@@ -27,6 +27,8 @@ import {
   productImages,
   productVariants,
   products,
+  returnRequestItems,
+  returnRequests,
   reviews,
 } from '../packages/db/src/schema.ts';
 import net from 'node:net';
@@ -626,6 +628,82 @@ export async function runAdminSmoke({
       check(
         'reviews: refusing it again removes the text from the product page',
         rejected.body.includes('"ok":true') && !gone.includes(pendingReview.body ?? 'x-no-body'),
+      );
+    }
+    // Returns (phase 7): the review needs `returns.manage`, the receipt is the only step that moves stock.
+    const openReturn = (await db.select().from(returnRequests)).find(
+      (row) => row.status === 'requested',
+    );
+    if (openReturn !== undefined) {
+      const returnLine = (await db.select().from(returnRequestItems)).find(
+        (row) => row.returnRequestId === openReturn.id,
+      );
+      const orderLine = (await db.select().from(orderItems)).find(
+        (row) => row.id === returnLine?.orderItemId,
+      );
+      const variantNow = async (): Promise<number> =>
+        (await db.select().from(productVariants)).find((row) => row.id === orderLine?.variantId)
+          ?.stockQuantity ?? -1;
+      const returnPath = `/admin/returns/${openReturn.id}`;
+      const contentList = await get('/admin/returns', cookie(contentToken));
+      const managerList = await get('/admin/returns', cookie(managerToken));
+      check(
+        'returns: a manager sees the queue; a content role gets the not-found page with no return data',
+        managerList.status === 200 && !contentList.html.includes(openReturn.requestNumber),
+      );
+      const forbidden = await form(
+        'approveReturnAction',
+        { id: openReturn.id, restock: true },
+        cookie(contentToken),
+        returnPath,
+      );
+      check(
+        'returns: a content role cannot approve (FORBIDDEN)',
+        forbidden.body.includes('FORBIDDEN'),
+      );
+      const stockBefore = await variantNow();
+      const approvedReturn = await form(
+        'approveReturnAction',
+        { id: openReturn.id, restock: true },
+        cookie(managerToken),
+        returnPath,
+      );
+      check(
+        'returns: a manager approves; stock is unchanged by an approval',
+        approvedReturn.body.includes('"ok":true') && (await variantNow()) === stockBefore,
+      );
+      const early = await form(
+        'refundReturnAction',
+        { id: openReturn.id },
+        cookie(adminToken),
+        returnPath,
+      );
+      check('returns: a refund before the receipt is refused', !early.body.includes('"ok":true'));
+      const receipt = {
+        id: openReturn.id,
+        items: [{ itemId: returnLine?.id ?? '', receivedQuantity: returnLine?.quantity ?? 1 }],
+      };
+      const received = await form('receiveReturnAction', receipt, cookie(managerToken), returnPath);
+      const stockAfter = await variantNow();
+      check(
+        'returns: the physical receipt puts the units back on the shelf, once',
+        received.body.includes('"changed":true') &&
+          stockAfter === stockBefore + (returnLine?.quantity ?? 1),
+      );
+      const again = await form('receiveReturnAction', receipt, cookie(managerToken), returnPath);
+      check(
+        'returns: the same receipt again changes nothing',
+        again.body.includes('"changed":false') && (await variantNow()) === stockAfter,
+      );
+      const managerRefund = await form(
+        'refundReturnAction',
+        { id: openReturn.id },
+        cookie(managerToken),
+        returnPath,
+      );
+      check(
+        'returns: a manager cannot refund (orders.refund needed)',
+        managerRefund.body.includes('FORBIDDEN'),
       );
     }
     // Customers and the CSV routes (phase 5): the same role rules on the real pages and files.

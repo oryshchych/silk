@@ -14,6 +14,7 @@ export const paths = {
   account: '/account',
   accountOrders: '/account/orders',
   accountOrder: (number: string): string => `/account/orders/${number}`,
+  accountReturns: '/account/returns',
   accountReviews: '/account/reviews',
   accountWishlist: '/account/wishlist',
   unsubscribe: '/unsubscribe',

@@ -22,7 +22,7 @@ import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import type { Reader, Tx } from '@store/db/types';
-import { adminReturnDto, type AdminReturnDto } from '@store/shared/dto/return';
+import { adminReturnDto, returnStatusValues, type AdminReturnDto } from '@store/shared/dto/return';
 import { serialize } from '@store/shared/dto/serialize';
 import { money, type Money } from '@store/shared/money';
 
@@ -98,7 +98,13 @@ export async function listReturns(
   reader: Reader,
   filter: 'open' | 'done',
 ): Promise<
-  { id: string; requestNumber: string; orderNumber: string; status: string; createdAt: string }[]
+  {
+    id: string;
+    requestNumber: string;
+    orderNumber: string;
+    status: (typeof returnStatusValues)[number];
+    createdAt: string;
+  }[]
 > {
   const where =
     filter === 'open'
@@ -119,7 +125,7 @@ export async function listReturns(
     id: r.id,
     requestNumber: r.request_number,
     orderNumber: r.order_number,
-    status: r.status,
+    status: z.enum(returnStatusValues).parse(r.status),
     createdAt: new Date(r.created_at).toISOString(),
   }));
 }
