@@ -24,6 +24,7 @@ import { reserveAdminRefund } from '../src/orders-admin/refund.ts';
 import {
   approveReturn,
   closeReturn,
+  syncAllReturnRefunds,
   getReturn,
   receiveReturn,
   rejectReturn,
@@ -531,5 +532,249 @@ describe('the refund: at most one, through the phase 5 flow', () => {
       }),
     ).rejects.toThrow();
     expect(money(1)).toBe(1);
+  });
+});
+
+describe('the refund pays what was RECEIVED, retries after a failed one, and the invariants', () => {
+  beforeEach(async () => {
+    seq += 1;
+    a = await customer(`amount-${String(seq)}@example.test`);
+  });
+  const reserve = async (id: string, h: DbHandle = handle) =>
+    await h.db.transaction(
+      async (tx) => await reserveReturnRefund(tx, { userId: actor }, { id, providers }),
+    );
+  const orderTotals = async (orderId: string) =>
+    (
+      await handle.db.execute<{ total: number; lt: number }>(
+        sql`SELECT o.total, (SELECT line_total FROM order_items WHERE order_id = o.id) AS lt FROM orders o WHERE o.id = ${orderId}`,
+      )
+    ).rows[0];
+  const refundOf = async (orderId: string) =>
+    await handle.db.select().from(refundOperations).where(eq(refundOperations.orderId, orderId));
+
+  it('B1: ordered 3, requested 3, received 1: the refund is one third of the line, not the whole order', async () => {
+    const o = await deliveredOrder(a, 3);
+    const id = await request(a, o.number, o.itemId, 3);
+    await approve(id);
+    await receive(id, (await lineOf(id))?.id ?? '', 1);
+    await reserve(id);
+    const ops = await refundOf(o.orderId);
+    const t = await orderTotals(o.orderId);
+    expect(ops).toHaveLength(1);
+    expect(ops[0]?.amount).toBe(Math.round((t?.lt ?? 0) / 3));
+    expect(ops[0]?.amount).toBeLessThan(t?.total ?? 0);
+  });
+
+  it('S3: an indivisible line returned in three parts refunds EXACTLY the line total (333 + 334 + 333, no kopiyka lost)', async () => {
+    const o = await deliveredOrder(a, 3);
+    await handle.db.execute(
+      sql`UPDATE order_items SET unit_price = 334, line_discount = 2, line_total = 1000 WHERE id = ${o.itemId}`,
+    );
+    const amounts: number[] = [];
+    for (let i = 0; i < 3; i += 1) {
+      const id = await request(a, o.number, o.itemId, 1);
+      await approve(id);
+      await receive(id, (await lineOf(id))?.id ?? '', 1);
+      await handle.db.execute(
+        sql`UPDATE refund_operations SET state = 'succeeded' WHERE order_id = ${o.orderId}`,
+      );
+      // The captured budget of the fixture is the whole order, so the parts fit.
+      await reserve(id);
+      const ops = await refundOf(o.orderId);
+      amounts.push(ops[ops.length - 1]?.amount ?? 0);
+    }
+    expect(amounts.sort((x, y) => x - y)).toEqual([333, 333, 334]);
+    expect(amounts.reduce((x, y) => x + y, 0)).toBe(1000);
+  });
+
+  it('S2: approval cannot grant more than the returned units are worth; a receipt after a refund started is refused', async () => {
+    const o = await deliveredOrder(a, 2);
+    const id = await request(a, o.number, o.itemId, 1);
+    const t = await orderTotals(o.orderId);
+    await expect(approve(id, { refundAmount: t?.total ?? 0 })).rejects.toThrow(/worth/);
+    await approve(id, { refundAmount: 1 });
+    await receive(id, (await lineOf(id))?.id ?? '', 1);
+    await reserve(id);
+    await expect(receive(id, (await lineOf(id))?.id ?? '', 1)).rejects.toThrow();
+    // The agreed amount is a CEILING: the refund is min(agreed, received value).
+    expect((await refundOf(o.orderId))[0]?.amount).toBe(1);
+  });
+
+  it('B2: a FAILED refund releases the return: it can be retried (a new operation) or closed; unknown and succeeded still block', async () => {
+    const o = await deliveredOrder(a, 2);
+    const id = await request(a, o.number, o.itemId, 1);
+    await approve(id);
+    await receive(id, (await lineOf(id))?.id ?? '', 1);
+    await reserve(id);
+    await handle.db.execute(
+      sql`UPDATE refund_operations SET state = 'unknown' WHERE order_id = ${o.orderId}`,
+    );
+    await expect(reserve(id)).rejects.toThrow(/already/);
+    await handle.db.execute(
+      sql`UPDATE refund_operations SET state = 'failed' WHERE order_id = ${o.orderId}`,
+    );
+    await reserve(id);
+    const ops = await refundOf(o.orderId);
+    expect(ops).toHaveLength(2);
+    expect(ops.filter((op) => op.state !== 'failed')).toHaveLength(1);
+    expect(new Set(ops.map((op) => op.returnRequestId))).toEqual(new Set([id]));
+    // Two live refunds for one return cannot exist (the partial unique index): pinned by name.
+    await expect(
+      handle.pool.query(`UPDATE refund_operations SET state = 'pending' WHERE order_id = $1`, [
+        o.orderId,
+      ]),
+    ).rejects.toMatchObject({ code: '23505', constraint: 'refund_ops_return_live_uq' });
+    // And the failed one can be given up on instead.
+    const o2 = await deliveredOrder(a, 2);
+    const id2 = await request(a, o2.number, o2.itemId, 1);
+    await approve(id2);
+    await receive(id2, (await lineOf(id2))?.id ?? '', 1);
+    await reserve(id2);
+    await handle.db.execute(
+      sql`UPDATE refund_operations SET state = 'failed' WHERE order_id = ${o2.orderId}`,
+    );
+    await handle.db.transaction(async (tx) => {
+      await closeReturn(tx, { userId: actor }, id2);
+    });
+    expect((await getReturn(handle.db, id2))?.status).toBe('closed');
+  });
+
+  it('S4: the status change to refunded is audited (by the action and by the worker sweep), and the sweep catches up', async () => {
+    const o = await deliveredOrder(a, 2);
+    const id = await request(a, o.number, o.itemId, 1);
+    await approve(id);
+    await receive(id, (await lineOf(id))?.id ?? '', 1);
+    await reserve(id);
+    await handle.db.execute(
+      sql`UPDATE refund_operations SET state = 'succeeded' WHERE order_id = ${o.orderId}`,
+    );
+    const done = await handle.db.transaction(async (tx) => await syncAllReturnRefunds(tx));
+    expect(done).toContain(id);
+    expect((await getReturn(handle.db, id))?.status).toBe('refunded');
+    const audit = await handle.db.execute<{ n: number }>(
+      sql`SELECT count(*)::int AS n FROM audit_log WHERE action = 'return.refunded' AND entity_id = ${id}`,
+    );
+    expect(audit.rows[0]?.n).toBe(1);
+    expect(await handle.db.transaction(async (tx) => await syncAllReturnRefunds(tx))).not.toContain(
+      id,
+    );
+  });
+
+  it('S5: the database ties a return to a refund of the SAME order, to a consistent status, and an amount (by constraint name)', async () => {
+    const o1 = await deliveredOrder(a, 2);
+    const o2 = await deliveredOrder(a, 2);
+    const id = await request(a, o1.number, o1.itemId, 1);
+    await approve(id);
+    const foreign = await handle.db.execute<{ id: string }>(
+      sql`INSERT INTO refund_operations (order_id, amount) VALUES (${o2.orderId}, 10) RETURNING id`,
+    );
+    await expect(
+      handle.pool.query(`UPDATE return_requests SET refund_operation_id = $1 WHERE id = $2`, [
+        foreign.rows[0]?.id,
+        id,
+      ]),
+    ).rejects.toMatchObject({
+      code: '23503',
+      constraint: 'return_requests_refund_op_same_order_fk',
+    });
+    await expect(
+      handle.pool.query(`UPDATE return_requests SET received_at = now() WHERE id = $1`, [id]),
+    ).rejects.toMatchObject({ code: '23514', constraint: 'return_requests_received_status' });
+    const b = await customer(`amountless-${String(seq)}@example.test`);
+    const o3 = await deliveredOrder(b, 1);
+    const id3 = await request(b, o3.number, o3.itemId, 1);
+    const own = await handle.db.execute<{ id: string }>(
+      sql`INSERT INTO refund_operations (order_id, amount) VALUES (${o3.orderId}, 10) RETURNING id`,
+    );
+    await expect(
+      handle.pool.query(`UPDATE return_requests SET refund_operation_id = $1 WHERE id = $2`, [
+        own.rows[0]?.id,
+        id3,
+      ]),
+    ).rejects.toMatchObject({ code: '23514', constraint: 'return_requests_refund_needs_amount' });
+    await expect(
+      handle.pool.query(`DELETE FROM refund_operations WHERE id = $1`, [foreign.rows[0]?.id]),
+    ).resolves.toBeDefined();
+  });
+
+  it('S7: bidi overrides and zero-width characters are stripped from the customer comment and the moderator note', async () => {
+    const o = await deliveredOrder(a, 2);
+    const parsed = input(o.number, o.itemId, 1, { comment: 'ok\u202Eevil\u200B\u2066x' });
+    expect(parsed.comment).toBe('okevilx');
+    const id = await request(a, o.number, o.itemId, 1);
+    const { rejectSchema } = await import('../src/returns/admin.ts');
+    expect(rejectSchema.parse({ id, note: 'no\u202Ethanks\u200B' }).note).toBe('nothanks');
+  });
+});
+
+describe('S1: the guards are exercised DETERMINISTICALLY (a competing transaction holds the lock)', () => {
+  beforeEach(async () => {
+    seq += 1;
+    a = await customer(`locks-${String(seq)}@example.test`);
+  });
+
+  /** Runs `work` while another connection holds `hold`; reports whether `work` finished BEFORE the lock was released. */
+  async function whileHeld(
+    hold: string,
+    work: () => Promise<unknown>,
+  ): Promise<{ finishedEarly: boolean }> {
+    const holder = world.connect(1);
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let locked: () => void = () => undefined;
+    const acquired = new Promise<void>((resolve) => {
+      locked = resolve;
+    });
+    const heldTx = holder.db.transaction(async (tx) => {
+      await tx.execute(sql.raw(hold));
+      locked();
+      await gate;
+    });
+    await acquired;
+    let finished = false;
+    const running = work().then(
+      () => {
+        finished = true;
+      },
+      () => {
+        finished = true;
+      },
+    );
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    const finishedEarly = finished;
+    release();
+    await heldTx;
+    await running;
+    return { finishedEarly };
+  }
+
+  it('a receipt WAITS while another transaction holds the per-return lock, and while it holds the order row', async () => {
+    const o = await deliveredOrder(a, 3);
+    const id = await request(a, o.number, o.itemId, 2);
+    await approve(id);
+    const line = (await lineOf(id))?.id ?? '';
+    const returnLock = `SELECT pg_advisory_xact_lock(hashtextextended('return:${id}', 0))`;
+    expect(
+      (await whileHeld(returnLock, async () => await receive(id, line, 1))).finishedEarly,
+    ).toBe(false);
+    const orderRow = `SELECT id FROM orders WHERE id = '${o.orderId}' FOR UPDATE`;
+    expect((await whileHeld(orderRow, async () => await receive(id, line, 2))).finishedEarly).toBe(
+      false,
+    );
+    expect((await lineOf(id))?.received_quantity).toBe(2);
+  });
+
+  it('a new request WAITS while another transaction holds the order row (FOR NO KEY UPDATE, which a plain foreign-key insert does not conflict with: only the explicit lock waits)', async () => {
+    const o = await deliveredOrder(a, 3);
+    const orderRow = `SELECT id FROM orders WHERE id = '${o.orderId}' FOR NO KEY UPDATE`;
+    const result = await whileHeld(orderRow, async () => await request(a, o.number, o.itemId, 1));
+    expect(result.finishedEarly).toBe(false);
+    const orderRows = await handle.db.execute<{ n: number }>(
+      sql`SELECT count(*)::int AS n FROM return_requests WHERE order_id = ${o.orderId}`,
+    );
+    expect(orderRows.rows[0]?.n).toBe(1);
   });
 });

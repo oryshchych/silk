@@ -12,6 +12,9 @@ import {
 } from '@/actions/admin-returns';
 import type { AdminReturnDto } from '@store/shared/dto/return';
 
+/** Only what the buttons need: the customer's e-mail, comment and the admin note never go into the client payload. */
+export type ReturnView = Pick<AdminReturnDto, 'id' | 'status' | 'reason' | 'refundState' | 'items'>;
+
 import { StatusLine } from './fields';
 import { readForm, textOf, useAdminAction } from './use-admin-action';
 
@@ -19,7 +22,7 @@ const field = 'mt-1 block min-h-11 w-full rounded-md border border-border bg-sur
 const button = 'min-h-11 min-w-11 rounded-md border border-border px-4 disabled:opacity-60';
 
 /** The buttons a status allows. Every one is checked again by the action and by the database. */
-export function ReturnActions({ dto, canRefund }: { dto: AdminReturnDto; canRefund: boolean }) {
+export function ReturnActions({ view: dto, canRefund }: { view: ReturnView; canRefund: boolean }) {
   const t = useTranslations('admin.returns');
   const router = useRouter();
   const { message, pending, run } = useAdminAction();
@@ -125,7 +128,7 @@ export function ReturnActions({ dto, canRefund }: { dto: AdminReturnDto; canRefu
           </button>
         </form>
       ) : null}
-      {dto.status === 'received' && dto.refundState === null ? (
+      {dto.status === 'received' && (dto.refundState === null || dto.refundState === 'failed') ? (
         <div className="flex flex-wrap gap-2">
           {canRefund ? (
             <button

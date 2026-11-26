@@ -12,6 +12,7 @@ import type { PgBoss } from 'pg-boss';
 import { DomainError } from '@store/core/errors';
 
 import { notifyRestocked } from '@store/core/account-alerts';
+import { syncAllReturnRefunds } from '@store/core/returns-admin';
 import { purgeEmailTokens, purgePendingAccounts } from '@store/core/customer-auth';
 import { findReservedDrift, releaseExpiredOrders } from '@store/core/expiry';
 import { findReceiptGaps } from '@store/core/fiscal-gaps';
@@ -121,10 +122,13 @@ export function createJobHandlers(deps: JobDeps): JobHandlers {
         providers: deps.providers,
         runInTransaction: async (fn) => await deps.db.transaction(fn),
       });
+      // A return whose refund the sweep (or the provider's answer) just settled becomes refunded, audited.
+      const returns = await deps.db.transaction(async (tx) => await syncAllReturnRefunds(tx));
       line({
         level: result.failed > 0 || result.alerted > 0 ? 'warn' : 'info',
         scope: JOB_NAMES.sweepRefunds,
         ...result,
+        returnsRefunded: returns.length,
       });
     },
     [JOB_NAMES.cleanQuarantine]: async () => {

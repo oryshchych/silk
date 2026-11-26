@@ -12,6 +12,8 @@ import {
   reserveReturnRefund,
   syncReturnRefund,
 } from '@store/core/returns-admin';
+import { can } from '@store/core/auth-permissions';
+import { DomainError } from '@store/core/errors';
 import { processRefund, type ProviderMap } from '@store/core/refunds';
 
 import { adminAction } from '@/lib/admin/bound-action';
@@ -35,7 +37,12 @@ export async function approveReturnAction(input: unknown) {
         action: 'return.approved',
         entity: 'return_request',
         entityId: parsed.id,
-        diff: { restock: parsed.restock, refundAmount: done.refundAmount },
+        diff: {
+          from: 'requested',
+          to: 'approved',
+          restock: parsed.restock,
+          refundAmount: done.refundAmount,
+        },
       });
       return { ok: true };
     },
@@ -90,7 +97,12 @@ export async function closeReturnAction(input: unknown) {
     input,
     run: async ({ tx, input: parsed, session, audit }) => {
       await closeReturn(tx, { userId: session.userId }, parsed.id);
-      await audit({ action: 'return.closed', entity: 'return_request', entityId: parsed.id });
+      await audit({
+        action: 'return.closed',
+        entity: 'return_request',
+        entityId: parsed.id,
+        diff: { from: 'received', to: 'closed' },
+      });
       return { ok: true };
     },
   });
@@ -108,6 +120,9 @@ export async function refundReturnAction(input: unknown) {
     schema: idSchema,
     input,
     run: async ({ tx, input: parsed, session, audit }) => {
+      // A refund needs BOTH permissions: `orders.refund` moves the money, `returns.manage` owns the return.
+      if (!can(session.role, 'returns.manage'))
+        throw new DomainError('FORBIDDEN', 'returns.manage is required');
       providers = await getPaymentProviders();
       const done = await reserveReturnRefund(
         tx,
@@ -120,7 +135,7 @@ export async function refundReturnAction(input: unknown) {
         entityId: parsed.id,
         diff: { operations: done.operationIds },
       });
-      return { id: parsed.id, operationIds: done.operationIds };
+      return { id: parsed.id, operationIds: done.operationIds, actorId: session.userId };
     },
   });
   if (!reserved.ok) return reserved;
@@ -138,7 +153,9 @@ export async function refundReturnAction(input: unknown) {
     }
   }
   try {
-    await db.transaction(async (tx) => await syncReturnRefund(tx, reserved.data.id));
+    await db.transaction(
+      async (tx) => await syncReturnRefund(tx, reserved.data.id, reserved.data.actorId),
+    );
   } catch {
     // The refund is committed; the status catches up the next time the return is opened.
   }

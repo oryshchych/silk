@@ -1193,6 +1193,15 @@ describe('0017_review_moderation constraints and 0018_review_indexes', () => {
   });
 });
 
+describe('0020_return_invariants', () => {
+  it('the customer list and the open-request count have an index led by the customer', async () => {
+    const { rows } = await app.query<{ indexdef: string }>(
+      `SELECT indexdef FROM pg_indexes WHERE indexname = 'return_requests_customer_idx'`,
+    );
+    expect(rows[0]?.indexdef).toContain('(customer_id, created_at)');
+  });
+});
+
 describe('0019_returns_flow', () => {
   it('a return has at most one refund operation (partial unique index) and the stock history accepts the reason `return`', async () => {
     const { id: order } = await one<{ id: string }>(
@@ -1217,15 +1226,15 @@ describe('0019_returns_flow', () => {
       ).id;
     const first = await make('a');
     const second = await make('b');
-    await app.query(`UPDATE return_requests SET refund_operation_id = $1 WHERE id = $2`, [
-      refund,
-      first,
-    ]);
+    await app.query(
+      `UPDATE return_requests SET refund_amount = 50, refund_operation_id = $1 WHERE id = $2`,
+      [refund, first],
+    );
     await expect(
-      app.query(`UPDATE return_requests SET refund_operation_id = $1 WHERE id = $2`, [
-        refund,
-        second,
-      ]),
+      app.query(
+        `UPDATE return_requests SET refund_amount = 50, refund_operation_id = $1 WHERE id = $2`,
+        [refund, second],
+      ),
     ).rejects.toMatchObject({ code: '23505', constraint: 'return_requests_refund_op_uq' });
     await expect(
       app.query(`UPDATE return_requests SET refund_amount = -1 WHERE id = $1`, [second]),

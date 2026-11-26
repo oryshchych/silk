@@ -188,9 +188,15 @@ product page byte for byte for an anonymous and a signed-in visitor.
   return"): a conditional UPDATE of the line's received quantity, ONE atomic `stock_quantity + delta`, a `stock_adjustments` row (reason
   `return`), all in one transaction under the per-return advisory lock, then the order (3), lines (4) and variants (8) via
   `acquireLocks`. A repeat of the same total, or a parallel call, applies the difference once. Approving or refusing never touches stock.
-- **Money moves through the phase 5 flow.** `reserveReturnRefund` (needs `orders.refund`) only after the receipt, at most one operation
-  per return (claim under the lock plus a partial unique index), bounded by the order's refund budget, a retry carries the return id as
-  its request id; the provider is called after the commit; the return becomes "refunded" only when the operation SUCCEEDED.
+- **Money moves through the phase 5 flow.** `reserveReturnRefund` (needs `orders.refund` AND `returns.manage`) only after the receipt, and
+  the amount is decided on the server from what was RECEIVED: `min(the amount agreed at approval, prorate(line total, received units))`
+  with cumulative proration per order line (several partial returns add up to exactly the line total). At most one LIVE operation per
+  return (claim under the lock, a composite key tying it to the same order, a partial unique index on each side); a FAILED refund is
+  released and may be retried with a new request id, one that is pending, in flight, unknown or succeeded blocks a new one; the order's
+  refund budget still bounds the money. The provider is called after the commit. The return becomes "refunded" only when the operation
+  SUCCEEDED, by the refund action or the worker's sweep, with an audit row (`return.refunded`); the admin page only reads. A receipt
+  is refused once a refund is linked, and an approval cannot grant more than the returned units are worth (a goodwill amount is a manual
+  refund on the order).
 - **Reviews:** `reviews.moderate` approves, refuses and replies; every decision recomputes the product's rating and fit counters from the
   approved rows in the same transaction and drops the product's cached page after the commit; the audit rows name the decision, never the text.
   `AggregateRating` markup is emitted only when the page shows approved reviews, with the same count (a smoke check compares them).

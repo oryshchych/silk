@@ -16,7 +16,7 @@
 
 import {
   pgTable, pgEnum, uuid, text, varchar, integer, smallint, boolean,
-  timestamp, date, jsonb, index, uniqueIndex, primaryKey, check, real,
+  timestamp, date, jsonb, index, uniqueIndex, primaryKey, check, real, foreignKey,
   customType,
 } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
@@ -1209,11 +1209,21 @@ export const returnRequests = pgTable('return_requests', {
   /** When the parcel was first received at the warehouse (the stock changes then, never before). */
   receivedAt: timestamp('received_at', { withTimezone: true }),
   /** The refund of this return: ONE operation at most (the partial unique index below), so no double refund. */
-  refundOperationId: uuid('refund_operation_id').references(() => refundOperations.id, { onDelete: 'restrict' }),
+  refundOperationId: uuid('refund_operation_id'),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 }, (t) => [
   check('return_requests_refund_nonneg', sql`${t.refundAmount} IS NULL OR ${t.refundAmount} >= 0`),
+  /** The refund must be of the SAME order as the return (the composite key also exists on `refund_operations`). */
+  foreignKey({
+    name: 'return_requests_refund_op_same_order_fk',
+    columns: [t.refundOperationId, t.orderId],
+    foreignColumns: [refundOperations.id, refundOperations.orderId],
+  }).onDelete('restrict'),
+  /** A receipt exists only on a return that went past `approved`. */
+  check('return_requests_received_status', sql`${t.receivedAt} IS NULL OR ${t.status} IN ('received', 'refunded', 'closed')`),
+  check('return_requests_refund_needs_amount', sql`${t.refundOperationId} IS NULL OR ${t.refundAmount} IS NOT NULL`),
+  index('return_requests_customer_idx').on(t.customerId, t.createdAt).where(sql`${t.customerId} IS NOT NULL`),
   uniqueIndex('return_requests_refund_op_uq').on(t.refundOperationId).where(sql`${t.refundOperationId} IS NOT NULL`),
   uniqueIndex('return_requests_number_uq').on(t.requestNumber),
   index('return_requests_order_idx').on(t.orderId),
@@ -1412,6 +1422,9 @@ export const refundOperations = pgTable('refund_operations', {
   index('refund_order_idx').on(t.orderId, t.createdAt),
   index('refund_open_idx').on(t.createdAt)
     .where(sql`${t.state} IN ('pending', 'in_flight', 'unknown')`),
+  /** At most ONE live (or succeeded) refund per return: a FAILED one does not count, so a retry is possible. */
+  uniqueIndex('refund_ops_return_live_uq').on(t.returnRequestId)
+    .where(sql`${t.returnRequestId} IS NOT NULL AND ${t.state} IN ('pending', 'in_flight', 'unknown', 'succeeded')`),
   check('refund_amount_positive', sql`${t.amount} > 0`),
 ]);
 

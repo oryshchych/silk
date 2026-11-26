@@ -50,7 +50,13 @@ export class ReturnLimitError extends DomainError {
 const plain = z
   .string()
   .max(2000)
-  .transform((value) => value.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, '').trim())
+  .transform((value) =>
+    value
+      .replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, '')
+      // A bidirectional override would reorder a line visually even though the text is escaped.
+      .replace(/[\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g, '')
+      .trim(),
+  )
   .pipe(z.string().max(1000))
   .transform((value) => (value === '' ? null : value));
 

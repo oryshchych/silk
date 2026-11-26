@@ -1,5 +1,5 @@
 import { can } from '@store/core/auth-permissions';
-import { getReturn, syncReturnRefund } from '@store/core/returns-admin';
+import { getReturn } from '@store/core/returns-admin';
 import { formatMoney } from '@store/shared/money';
 import { getTranslations } from 'next-intl/server';
 import { cookies } from 'next/headers';
@@ -16,8 +16,6 @@ export default async function AdminReturnPage({ params }: { params: Promise<{ id
   const parsed = z.uuid().safeParse((await params).id);
   if (!parsed.success) notFound();
   const db = await getDb();
-  // The status catches up with a refund that settled after the action returned (idempotent).
-  await db.transaction(async (tx) => await syncReturnRefund(tx, parsed.data));
   const dto = await getReturn(db, parsed.data);
   if (dto === null) notFound();
   const locale = parseAdminLocale((await cookies()).get(LOCALE_COOKIE)?.value);
@@ -52,7 +50,16 @@ export default async function AdminReturnPage({ params }: { params: Promise<{ id
           : ` · ${t('agreed')}: ${formatMoney(dto.refundAmount, locale)}`}
         {dto.refundState === null ? '' : ` · ${t('refundState')}: ${dto.refundState}`}
       </p>
-      <ReturnActions dto={dto} canRefund={can(session.role, 'orders.refund')} />
+      <ReturnActions
+        view={{
+          id: dto.id,
+          status: dto.status,
+          reason: dto.reason,
+          refundState: dto.refundState,
+          items: dto.items,
+        }}
+        canRefund={can(session.role, 'orders.refund')}
+      />
     </div>
   );
 }
