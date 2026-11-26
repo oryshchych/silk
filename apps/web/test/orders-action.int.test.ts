@@ -44,6 +44,7 @@ vi.mock('@/lib/admin/bound-action', wired);
 vi.mock('../src/lib/admin/bound-action', wired);
 // The module imports these through the web app's `@/` alias; the chain under test never calls them.
 vi.mock('@/lib/db', () => ({ getDb: () => Promise.reject(new Error('not used here')) }));
+vi.mock('@/lib/waybill-carrier', () => ({ getWaybillCarrier: () => Promise.resolve(null) }));
 vi.mock('@/lib/payment-providers', () => ({ getPaymentProviders: () => Promise.resolve({}) }));
 
 const actions = await import('../src/actions/admin-orders');
