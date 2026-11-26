@@ -49,12 +49,11 @@ Infra: staging `https://staging.damazla.com` (basic auth), Hetzner CAX11, Dokplo
 
 - `select_item`, `add_shipping_info`, `add_payment_info`, Conversions API (Q61); Merchant Center and Meta validators (Q62)
 - Real-device LCP and CLS, the real CDN, the cart markup, the lead-photo preload after a colour switch; the placeholder-lead smoke path ran only in CI
-- Code splitting by hand: the App Router splits per route, nothing heavy to lazy load; fonts are the system stack (no preload)
+- Code splitting is per route only; fonts are the system stack (nothing to preload)
 
 ## Caveats
 
 - Local smoke shows 18 unrelated FAILs on a stale dev database; CI is authoritative
-- Flaky candidates under full-suite load (`NOTES.md`): an auth timing test, the category-cycle race test
 
 ## Deviations from the plan
 - `hit_count` is counted in process and written in batches, not through the outbox (ADR-14 amendment)
