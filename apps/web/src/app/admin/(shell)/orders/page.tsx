@@ -11,7 +11,7 @@ import { formatWhen } from '@/lib/admin/format';
 import { requirePermission } from '@/lib/admin/session';
 import { getDb } from '@/lib/db';
 
-const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const day = z.iso.date();
 // `.catch(undefined)`: a garbled filter in the address is ignored, never a 500.
 const searchSchema = z.object({
   q: z.string().trim().max(100).optional().catch(undefined),

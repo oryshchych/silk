@@ -132,6 +132,7 @@ export default async function AdminOrderPage({ params }: { params: Promise<{ id:
         steps={steps}
         canCancel={can(session.role, 'orders.cancel') && order.actions.includes('cancel')}
         canNote={canManage}
+        hasReceivedMoney={order.capturedTotal > order.refundedTotal}
         canConfirmTransfer={
           can(session.role, 'orders.confirm_payment') &&
           order.paymentProvider === 'bank_transfer' &&

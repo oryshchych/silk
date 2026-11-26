@@ -49,6 +49,12 @@ export interface AdminOrderFilters {
 
 const escapeLike = (value: string): string => value.replace(/[\\%_]/g, (char) => `\\${char}`);
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
+/** A real calendar day: `2026-02-30` and `2026-13-45` have the right shape and are not days. */
+const isRealDay = (value: string): boolean => {
+  if (!DAY.test(value)) return false;
+  const date = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
+};
 
 /**
  * What a search term can mean, decided by its shape: an order number (`LS-2026-000123`, whole or
@@ -82,14 +88,17 @@ export async function listAdminOrders(
   db: Reader,
   filters: AdminOrderFilters,
 ): Promise<AdminPage<AdminOrderRowDto>> {
-  const page = Math.max(1, Math.min(filters.page ?? 1, MAX_PAGE));
+  const requested = filters.page ?? 1;
+  const page = Number.isFinite(requested)
+    ? Math.max(1, Math.min(Math.trunc(requested), MAX_PAGE))
+    : 1;
   // A NUL byte would make Postgres refuse the query (22021): it cannot be part of a term.
   const term = (filters.q ?? '')
     .replace(/\u0000/g, '')
     .trim()
     .slice(0, MAX_QUERY);
   const day = (value: string | undefined): string | undefined =>
-    value !== undefined && DAY.test(value) ? value : undefined;
+    value !== undefined && isRealDay(value) ? value : undefined;
   const from = day(filters.from);
   const to = day(filters.to);
   const where = and(
@@ -179,8 +188,10 @@ export function availableActions(order: {
   if (order.status === 'pending' && (isCod || order.paymentStatus === 'paid'))
     actions.push('confirm');
   if (order.status === 'confirmed') actions.push('process');
-  if (open && (isCod ? order.status !== 'pending' : order.paymentStatus === 'paid'))
+  // Ship comes after confirm: the steps are not skipped (shipOrder enforces it for the admin).
+  if (open && order.status !== 'pending' && (isCod || order.paymentStatus === 'paid')) {
     actions.push('ship');
+  }
   if (order.status === 'shipped') actions.push('deliver');
   if (open) actions.push('cancel');
   return actions;
@@ -220,7 +231,6 @@ export async function getAdminOrder(
         mappedStatus: paymentEvents.mappedStatus,
         amount: paymentEvents.amount,
         appliedAt: paymentEvents.appliedAt,
-        error: paymentEvents.error,
         at: paymentEvents.createdAt,
       })
       .from(paymentEvents)

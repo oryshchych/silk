@@ -172,6 +172,50 @@ describe('role matrix', () => {
   );
 });
 
+describe('review round 1', () => {
+  it('ship needs a confirmed order and audits the real previous status', async () => {
+    const id = await place();
+    await markPaid(id);
+    expect(await actions.shipOrderAction({ orderId: id })).toEqual({
+      ok: false,
+      code: 'ORDER_NOT_SHIPPABLE',
+    });
+    expect((await actions.confirmOrderAction({ orderId: id })).ok).toBe(true);
+    expect((await actions.processOrderAction({ orderId: id })).ok).toBe(true);
+    expect((await actions.shipOrderAction({ orderId: id })).ok).toBe(true);
+    const diffs = JSON.stringify(await audits(id));
+    expect(diffs).toContain('"from":"processing"');
+    expect(diffs).not.toContain('open');
+  });
+
+  it('cancelling a paid order tells the person that money is owed', async () => {
+    const id = await place();
+    await markPaid(id);
+    const result = await actions.cancelOrderAction({ orderId: id, reason: 'customer called' });
+    expect(result).toMatchObject({ ok: true, data: { changed: true, heldAuthorization: false } });
+    expect(result.ok && 'refundDue' in result.data ? result.data.refundDue : 0).toBeGreaterThan(0);
+  });
+
+  it('a transfer that also confirms the order audits both changes', async () => {
+    const id = await place('bank_transfer');
+    const total = Number(
+      cell((await q('SELECT total FROM orders WHERE id = $1', [id]))[0], 'total'),
+    );
+    expect(
+      (
+        await actions.confirmTransferAction({
+          orderId: id,
+          bankReference: 'BANK-AUDIT',
+          amount: toHryvniasText(money(total)),
+        })
+      ).ok,
+    ).toBe(true);
+    const diffs = JSON.stringify(await audits(id));
+    expect(diffs).toContain('"payment_status"');
+    expect(diffs).toContain('"to":"confirmed"');
+  });
+});
+
 describe('validation, replay, refusal', () => {
   it('a cancellation without a reason (or a blank one) is INVALID_INPUT and changes nothing', async () => {
     const id = await place();

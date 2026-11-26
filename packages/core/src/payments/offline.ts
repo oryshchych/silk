@@ -34,6 +34,10 @@ export interface ConfirmResult {
   orderId: string;
   /** False when an earlier call already did it. */
   changed: boolean;
+  /** A transfer receipt: the payment status before it (what an audit row records as `from`). */
+  paymentFrom?: string;
+  /** A transfer receipt that also confirmed the order: the status change it made. */
+  statusChange?: { from: string; to: string };
 }
 
 async function lockedOrder(tx: Tx, orderId: string): Promise<Order> {
@@ -235,5 +239,12 @@ export async function confirmTransferReceived(
       dedupKey: `${reserved ? 'payment-received' : 'late-payment'}:${order.id}`,
     })
     .onConflictDoNothing();
-  return { orderId: order.id, changed: true };
+  return {
+    orderId: order.id,
+    changed: true,
+    paymentFrom: order.paymentStatus,
+    ...(reserved && order.status === 'pending'
+      ? { statusChange: { from: 'pending', to: 'confirmed' } }
+      : {}),
+  };
 }

@@ -19,7 +19,6 @@ describe('availableActions', () => {
     ]);
     expect(availableActions({ ...base, status: 'pending', paymentStatus: 'paid' })).toEqual([
       'confirm',
-      'ship',
       'cancel',
     ]);
     expect(availableActions({ ...base, status: 'confirmed', paymentStatus: 'paid' })).toEqual([

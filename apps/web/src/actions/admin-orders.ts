@@ -73,12 +73,13 @@ export async function shipOrderAction(input: unknown) {
         source: ADMIN_SOURCE,
         actorUserId: session.userId,
         auditByCaller: true,
+        requireConfirmed: true,
       });
       if (!done.changed) {
         skipAudit();
         return { changed: false };
       }
-      await audit(transitionAudit(parsed.orderId, 'status', 'open', 'shipped'));
+      await audit(transitionAudit(parsed.orderId, 'status', done.from, 'shipped'));
       return { changed: true };
     },
   });
@@ -100,12 +101,20 @@ export async function cancelOrderAction(input: unknown) {
       });
       if (!done.changed) {
         skipAudit();
-        return { changed: false };
+        return { changed: false, refundDue: 0, heldAuthorization: false };
       }
       await audit(
-        transitionAudit(parsed.orderId, 'status', 'open', 'cancelled', { reason: parsed.reason }),
+        transitionAudit(parsed.orderId, 'status', done.from, 'cancelled', {
+          reason: parsed.reason,
+        }),
       );
-      return { changed: true };
+      // Money that was received is not given back by a cancellation: tell the person, who starts the
+      // refund from the card (the same figure goes to the owner through the outbox).
+      return {
+        changed: true,
+        refundDue: Math.max(0, done.refundable ?? 0),
+        heldAuthorization: done.heldAuthorization === true,
+      };
     },
   });
 }
@@ -147,7 +156,11 @@ export async function confirmTransferAction(input: unknown) {
         skipAudit();
         return { changed: false };
       }
-      await audit(transitionAudit(parsed.orderId, 'payment_status', 'pending', 'paid'));
+      await audit(
+        transitionAudit(parsed.orderId, 'payment_status', done.paymentFrom ?? 'pending', 'paid', {
+          ...(done.statusChange === undefined ? {} : { status: done.statusChange }),
+        }),
+      );
       return { changed: true };
     },
   });

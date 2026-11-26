@@ -14,7 +14,7 @@ import {
 } from '@/actions/admin-orders';
 
 import { StatusLine } from './fields';
-import { readForm, textOf, useAdminAction } from './use-admin-action';
+import { dataField, readForm, textOf, useAdminAction } from './use-admin-action';
 
 type Step = 'confirm' | 'process' | 'ship' | 'deliver';
 const RUNNERS = {
@@ -35,6 +35,8 @@ export interface OrderActionsProps {
   canNote: boolean;
   /** Offer "transfer received": a transfer order that is not paid yet, for a role that may confirm it. */
   canConfirmTransfer: boolean;
+  /** Money was received: cancelling does not give it back, a refund is a separate step. */
+  hasReceivedMoney: boolean;
 }
 
 /** The workflow buttons, the cancellation form (a comment is required) and the internal note. */
@@ -108,7 +110,13 @@ export function OrderActions(props: OrderActionsProps) {
             run(
               async () =>
                 await cancelOrderAction({ orderId: props.orderId, reason: textOf(data, 'reason') }),
-              t('done'),
+              (result) => {
+                const due = dataField(result, 'refundDue');
+                const hold = dataField(result, 'heldAuthorization');
+                return (typeof due === 'number' && due > 0) || hold === true
+                  ? t('cancelledRefundDue')
+                  : t('done');
+              },
               refresh,
             );
           }}
@@ -117,6 +125,9 @@ export function OrderActions(props: OrderActionsProps) {
             {t('cancelReason')}
             <input name="reason" required minLength={3} maxLength={500} className={field} />
           </label>
+          {props.hasReceivedMoney ? (
+            <p className="basis-full text-sm text-text-muted">{t('cancelRefundWarning')}</p>
+          ) : null}
           <button type="submit" disabled={pending} className={button}>
             {t('step.cancel')}
           </button>

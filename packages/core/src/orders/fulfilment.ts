@@ -39,6 +39,12 @@ export interface FulfilmentResult {
   orderId: string;
   /** False when an earlier call already did it: nothing changed. */
   changed: boolean;
+  /** The status the order had before this call: what an audit row records as `from`. */
+  from: string;
+  /** Cancel only: money received that nobody has refunded yet (a human starts the refund). */
+  refundable?: number;
+  /** Cancel only: a card hold is still open at the provider and must be released. */
+  heldAuthorization?: boolean;
 }
 
 type Order = typeof orders.$inferSelect;
@@ -129,15 +135,27 @@ async function recordTransition(
  */
 export async function shipOrder(
   tx: Tx,
-  input: { orderId: string; source: string } & Actor,
+  input: {
+    orderId: string;
+    source: string;
+    /**
+     * The admin workflow: only a confirmed or processing order ships (confirm and process are not
+     * skipped). Off by default: the skeleton jump from pending stays for the webhook and worker
+     * paths and their tests (see `transitions.ts`).
+     */
+    requireConfirmed?: boolean;
+  } & Actor,
 ): Promise<FulfilmentResult> {
   const order = await lockedOrder(tx, input.orderId);
   if (order === undefined) throw new OrderNotShippableError('no such order');
   if (order.status === 'shipped' || order.status === 'delivered') {
-    return { orderId: order.id, changed: false };
+    return { orderId: order.id, changed: false, from: order.status };
   }
   if (!canTransition(order.status, 'shipped')) {
     throw new OrderNotShippableError(`the order is ${order.status}`);
+  }
+  if (input.requireConfirmed === true && order.status === 'pending') {
+    throw new OrderNotShippableError('confirm the order first');
   }
   // What lets an order ship (owner queue Q16): a settled payment (card, or a bank transfer the
   // manager confirmed with a bank reference), or, for cash on delivery, the manager's
@@ -202,7 +220,7 @@ export async function shipOrder(
   // Cash on delivery: the receipt for the goods is made when the parcel is handed to the post, as
   // a queue job (ADR-16): a fiscal failure never blocks or undoes the shipment.
   if (isCod) await enqueueSaleReceipt(tx, { orderId: order.id, paymentForm: 'cash_on_delivery' });
-  return { orderId: order.id, changed: true };
+  return { orderId: order.id, changed: true, from: order.status };
 }
 
 /**
@@ -226,24 +244,26 @@ export async function cancelOrder(
 ): Promise<FulfilmentResult> {
   const order = await lockedOrder(tx, input.orderId);
   if (order === undefined) throw new OrderNotCancellableError('no such order');
-  if (order.status === 'cancelled') return { orderId: order.id, changed: false };
+  if (order.status === 'cancelled')
+    return { orderId: order.id, changed: false, from: order.status };
   if (input.expiredOnly === true) {
     if (order.status !== 'pending' || order.paymentStatus !== 'pending') {
-      return { orderId: order.id, changed: false };
+      return { orderId: order.id, changed: false, from: order.status };
     }
     const due = await tx.execute<{ due: boolean }>(
       sql`SELECT count(*) > 0 AND bool_and(expires_at IS NOT NULL AND expires_at <= now()) AS due
             FROM stock_reservations
            WHERE order_id = ${order.id} AND released_at IS NULL`,
     );
-    if (due.rows[0]?.due !== true) return { orderId: order.id, changed: false };
+    if (due.rows[0]?.due !== true) return { orderId: order.id, changed: false, from: order.status };
     // A card attempt whose result is not known (lost or late webhook) must be reconciled with the
     // provider first (AGENTS.md 2.5, owner queue Q27): cancelling now could cancel a paid order.
     const open = await tx.execute<{ n: number }>(
       sql`SELECT count(*)::int AS n FROM payment_attempts
            WHERE order_id = ${order.id} AND state IN ('pending', 'in_flight', 'unknown')`,
     );
-    if ((open.rows[0]?.n ?? 0) > 0) return { orderId: order.id, changed: false };
+    if ((open.rows[0]?.n ?? 0) > 0)
+      return { orderId: order.id, changed: false, from: order.status };
   }
   if (!canTransition(order.status, 'cancelled')) {
     throw new OrderNotCancellableError(`the order is ${order.status}`);
@@ -352,5 +372,5 @@ export async function cancelOrder(
       })
       .onConflictDoNothing();
   }
-  return { orderId: order.id, changed: true };
+  return { orderId: order.id, changed: true, from: order.status, refundable, heldAuthorization };
 }

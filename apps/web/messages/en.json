@@ -736,7 +736,9 @@
         "np_courier": "Nova Poshta courier",
         "ukrposhta": "Ukrposhta",
         "pickup": "Pickup"
-      }
+      },
+      "cancelledRefundDue": "The order is cancelled, but the money received is NOT returned. A refund is a separate step.",
+      "cancelRefundWarning": "Cancelling does not return the money received. Start a refund after cancelling."
     }
   }
 }

@@ -22,6 +22,8 @@ import { createOrder } from '../src/orders/create-order.ts';
 import { getAdminOrder, listAdminOrders, ORDERS_PAGE_SIZE } from '../src/orders-admin/read.ts';
 import { addOrderNote, advanceOrder } from '../src/orders-admin/workflow.ts';
 import { Barrier } from './barrier.ts';
+import { confirmTransferReceived } from '../src/payments/offline.ts';
+import { money } from '@store/shared/money';
 import { createWorld, type TestWorld } from './fixtures.ts';
 
 const USER = '00000000-0000-4000-8000-0000000000aa';
@@ -426,5 +428,122 @@ describe('the card, serialised per role', () => {
 
   it('returns null for an unknown order', async () => {
     expect(await getAdminOrder(admin.db, '00000000-0000-4000-8000-00000000dead', false)).toBeNull();
+  });
+});
+
+describe('review round 1: real `from`, refund signal, enforced steps, dates, transfer races', () => {
+  it('ship from the admin refuses a pending order (confirm first); the result names the real previous status', async () => {
+    const orderId = await place();
+    await markPaid(orderId);
+    await expect(
+      admin.db.transaction(
+        async (tx) => await shipOrder(tx, { orderId, source: 'admin', requireConfirmed: true }),
+      ),
+    ).rejects.toBeInstanceOf(OrderNotShippableError);
+    await step(orderId, 'confirmed');
+    await step(orderId, 'processing');
+    const done = await admin.db.transaction(
+      async (tx) => await shipOrder(tx, { orderId, source: 'admin', requireConfirmed: true }),
+    );
+    expect(done).toMatchObject({ changed: true, from: 'processing' });
+  });
+
+  it('cancelling a paid order reports the money to give back and announces it once', async () => {
+    const orderId = await place();
+    await markPaid(orderId);
+    const done = await admin.db.transaction(
+      async (tx) => await cancelOrder(tx, { orderId, source: 'admin', reason: 'customer called' }),
+    );
+    expect(done).toMatchObject({ changed: true, from: 'pending', heldAuthorization: false });
+    expect(done.refundable).toBeGreaterThan(0);
+    const alerts = await admin.db.execute(
+      sql`SELECT 1 FROM outbox WHERE topic = 'alert.refund-due' AND dedup_key = ${`refund-due:${orderId}`}`,
+    );
+    expect(alerts.rows).toHaveLength(1);
+    const unpaid = await place();
+    const none = await admin.db.transaction(
+      async (tx) =>
+        await cancelOrder(tx, { orderId: unpaid, source: 'admin', reason: 'changed mind' }),
+    );
+    expect(none.refundable).toBe(0);
+  });
+
+  it('a card order without a live reservation cannot be confirmed', async () => {
+    const orderId = await place();
+    await markPaid(orderId);
+    await admin.db.execute(
+      sql`UPDATE stock_reservations SET released_at = now(), release_reason = 'expired' WHERE order_id = ${orderId}`,
+    );
+    await expect(step(orderId, 'confirmed')).rejects.toBeInstanceOf(OrderNotConfirmableError);
+  });
+
+  it('impossible calendar days and a NaN page are ignored, not a 500', async () => {
+    await bulkOrders(5);
+    for (const bad of ['2026-13-45', '9999-99-99', '2026-02-30', '2026-00-10', '2026-1-1']) {
+      expect((await listAdminOrders(admin.db, { from: bad, to: bad })).total, bad).toBe(5);
+    }
+    const page = await listAdminOrders(admin.db, { page: Number.NaN });
+    expect(page.page).toBe(1);
+  });
+
+  it('two transfer confirmations of one bank line at once: one payment, one changed result', async () => {
+    const orderId = await place('bank_transfer');
+    const total = (
+      await one<{ total: number }>(sql`SELECT total FROM orders WHERE id = ${orderId}`)
+    ).total;
+    const barrier = new Barrier(2);
+    const run = async () => {
+      const handle = world.connect();
+      return await handle.db.transaction(async (tx) => {
+        await barrier.wait();
+        return await confirmTransferReceived(tx, {
+          orderId,
+          actor: 'admin',
+          bankReference: 'BANK-RACE-1',
+          receivedAmount: money(total),
+          actorUserId: USER,
+          auditByCaller: true,
+        });
+      });
+    };
+    const results = await Promise.all([run(), run()]);
+    expect(results.filter((r) => r.changed)).toHaveLength(1);
+    const winner = results.find((r) => r.changed);
+    expect(winner).toMatchObject({
+      paymentFrom: 'pending',
+      statusChange: { from: 'pending', to: 'confirmed' },
+    });
+    const attempts = await one<{ n: number; captured: number }>(
+      sql`SELECT count(*)::int AS n, (SELECT captured_total FROM orders WHERE id = ${orderId}) AS captured FROM payment_attempts WHERE order_id = ${orderId}`,
+    );
+    expect(attempts).toEqual({ n: 1, captured: total });
+  });
+
+  it('a transfer and a cancel at once: the money is a recorded fact either way and stock never drifts', async () => {
+    const orderId = await place('bank_transfer');
+    const total = (
+      await one<{ total: number }>(sql`SELECT total FROM orders WHERE id = ${orderId}`)
+    ).total;
+    const barrier = new Barrier(2);
+    const attempt = async (op: 'transfer' | 'cancel') => {
+      const handle = world.connect();
+      return await handle.db.transaction(async (tx) => {
+        await barrier.wait();
+        return op === 'transfer'
+          ? await confirmTransferReceived(tx, {
+              orderId,
+              actor: 'admin',
+              bankReference: 'BANK-RACE-2',
+              receivedAmount: money(total),
+            })
+          : await cancelOrder(tx, { orderId, source: 'admin', reason: 'race three' });
+      });
+    };
+    await Promise.all([attempt('transfer'), attempt('cancel')]);
+    const row = await one<{ paid: string; captured: number }>(
+      sql`SELECT payment_status AS paid, captured_total AS captured FROM orders WHERE id = ${orderId}`,
+    );
+    expect(row).toEqual({ paid: 'paid', captured: total });
+    expect((await stock()).reserved).toBe(0);
   });
 });

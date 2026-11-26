@@ -83,7 +83,6 @@ export const adminPaymentEventDto = z.object({
   mappedStatus: z.enum(paymentStatusValues).nullable(),
   amount: moneyDto.nullable(),
   applied: z.boolean(),
-  error: z.string().nullable(),
   at: z.iso.datetime({ offset: true }),
 });
 

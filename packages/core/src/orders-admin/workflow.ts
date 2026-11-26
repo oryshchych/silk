@@ -7,9 +7,9 @@
  * and is idempotent: a repeat sees the new status and changes nothing, so a double click or a
  * second tab cannot write a second history row.
  */
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 
-import { orderStatusHistory, orders } from '@store/db/schema';
+import { orderStatusHistory, orders, stockReservations } from '@store/db/schema';
 import type { Tx } from '@store/db/types';
 
 import { AdminNotFoundError } from '../catalog-admin/errors.ts';
@@ -67,6 +67,13 @@ export async function advanceOrder(
     if (order.paymentStatus !== 'paid') {
       throw new OrderNotConfirmableError('the payment is not confirmed yet');
     }
+    // Defence in depth (COD checks it in `confirmCodOrder`): goods that were released cannot be sold.
+    const [live] = await tx
+      .select({ id: stockReservations.id })
+      .from(stockReservations)
+      .where(and(eq(stockReservations.orderId, order.id), isNull(stockReservations.releasedAt)))
+      .limit(1);
+    if (live === undefined) throw new OrderNotConfirmableError('the reservation is gone');
     await tx.update(orders).set({ status: 'confirmed' }).where(eq(orders.id, order.id));
     await tx.insert(orderStatusHistory).values({
       orderId: order.id,
