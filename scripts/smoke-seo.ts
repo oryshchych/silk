@@ -115,6 +115,114 @@ export async function runSeoSmoke({
     'every hreflang in the pages sitemap points at a URL the sitemap lists',
     pairs.length > 0 && pairs.every((m) => urls.includes(m[2] ?? '')),
   );
+
+  await runFeedSmoke({ base, site, check, storedFiles }, urls);
+}
+
+/** One CSV line (RFC 4180, quotes doubled) into cells. */
+function csvCells(line: string): string[] {
+  const cells: string[] = [];
+  let cell = '';
+  let quoted = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line.charAt(i);
+    if (quoted) {
+      if (ch === '"' && line.charAt(i + 1) === '"') {
+        cell += '"';
+        i++;
+      } else if (ch === '"') quoted = false;
+      else cell += ch;
+    } else if (ch === '"') quoted = true;
+    else if (ch === ',') {
+      cells.push(cell);
+      cell = '';
+    } else cell += ch;
+  }
+  cells.push(cell);
+  return cells;
+}
+
+/** The product feeds as a merchant platform fetches them: real HTTP, parsed, cross-checked with the sitemap. */
+async function runFeedSmoke(
+  { base, site, check, storedFiles }: SeoSmokeContext,
+  sitemapUrls: readonly string[],
+): Promise<void> {
+  const before = storedFiles();
+  // HEAD (a monitor, a link checker) must not hold a feed slot: ten of them, then a real GET.
+  const heads: number[] = [];
+  for (let i = 0; i < 10; i++) {
+    for (const path of ['/feed/google.xml', '/feed/facebook.csv']) {
+      heads.push((await fetch(`${base}${path}`, { method: 'HEAD' })).status);
+    }
+  }
+  check(
+    'feed: twenty HEAD requests answer 200 and leave both feeds available',
+    heads.every((s) => s === 200),
+  );
+  const google = await fetch(`${base}/feed/google.xml`);
+  const xml = await google.text();
+  const items = xml.split('<item>').slice(1);
+  const required = ['id', 'title', 'description', 'link', 'image_link', 'availability', 'price'];
+  check(
+    'feed: google.xml is 200 XML, noindex, with items that carry every required attribute',
+    google.status === 200 &&
+      (google.headers.get('content-type') ?? '').startsWith('application/xml') &&
+      google.headers.get('x-robots-tag') === 'noindex' &&
+      xml.startsWith('<?xml') &&
+      xml.trimEnd().endsWith('</rss>') &&
+      items.length > 0 &&
+      items.every((item) =>
+        required.every((name) => new RegExp(`<(?:g:)?${name}>[^<]+</`).test(item)),
+      ),
+  );
+  check(
+    'feed: prices are plain hryvnias with two decimals, availability is a Merchant value, no private field',
+    items.every(
+      (item) =>
+        /<g:price>\d+\.\d{2} UAH<\/g:price>/.test(item) &&
+        /<g:availability>(in_stock|out_of_stock)<\/g:availability>/.test(item) &&
+        !/cost|stock_quantity|reserved/i.test(item),
+    ),
+  );
+  const links = items.flatMap((item) => /<link>([^<]+)<\/link>/.exec(item)?.[1] ?? []);
+  const listed = new Set(sitemapUrls.map((url) => url.replaceAll('&', '&amp;')));
+  check(
+    'feed: every item link is on the runtime SITE_URL and is a product URL the sitemap lists',
+    links.length === items.length &&
+      links.every((link) => link.startsWith(`${site}/product/`) && listed.has(link)),
+  );
+  check(
+    'feed: every image_link is an absolute https or runtime-origin URL',
+    items.every(
+      (item) =>
+        /<g:image_link>(https:\/\/|http:\/\/localhost)[^<]+<\/g:image_link>/.test(item) ||
+        item.includes(`<g:image_link>${site}`),
+    ),
+  );
+  const groups = new Map<string, number>();
+  for (const item of items) {
+    const group = /<g:item_group_id>([^<]+)</.exec(item)?.[1] ?? '';
+    groups.set(group, (groups.get(group) ?? 0) + 1);
+  }
+  check(
+    'feed: variants are grouped by product (a group id on every item, fewer groups than items)',
+    !groups.has('') && groups.size < items.length,
+  );
+
+  const facebook = await fetch(`${base}/feed/facebook.csv`);
+  const csv = await facebook.text();
+  const lines = csv.split('\r\n').filter((line) => line !== '');
+  const header = csvCells(lines[0] ?? '');
+  check(
+    'feed: facebook.csv is 200 CSV, noindex, no BOM, and every row has the header columns',
+    facebook.status === 200 &&
+      (facebook.headers.get('content-type') ?? '').startsWith('text/csv') &&
+      facebook.headers.get('x-robots-tag') === 'noindex' &&
+      header[0] === 'id' &&
+      lines.slice(1).every((line) => csvCells(line).length === header.length),
+  );
+  check('feed: both feeds list the same variants', lines.length - 1 === items.length);
+  check('feed: fetching both feeds stores nothing in .next', storedFiles() === before);
 }
 
 /**

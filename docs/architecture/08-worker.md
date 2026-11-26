@@ -12,7 +12,7 @@
 | `cart:abandoned-reminder` | щогодини | Один лист на кошик, не повторюється |
 | `stock:notify-subscribers` | при поповненні | Розсилка «товар з'явився» |
 | `reports:refresh-views` | щогодини | Матеріалізовані в'юшки для звітів |
-| `feeds:rebuild` | 04:00 щодня | Google/Facebook фіди |
+| `feeds:rebuild` | 04:00 щодня | Google/Facebook фіди. **Phase 6 deviation:** the feeds are streamed live from the database by `/feed/google.xml` and `/feed/facebook.csv` (keyset batches, at most 8 open streams and 2 database reads at once, a 120 s deadline, `s-maxage=3600`), so no rebuild job exists; a snapshot job is only worth adding if the live read becomes a load problem |
 | `views:cleanup` | 05:00 щодня | Видалення `product_views` старше 90 днів |
 | `outbox:publish` | безперервно | Доставка outbox-записів у pg-boss з ретраями (ADR-4) |
 | `payments:reconcile-open` | кожні 10 хв | `getPaymentStatus` для спроб у стані `unknown`/`in_flight` (реалізовано в фазі 3 як `payments.reconcile-open`; раз на 10 хв, бо `orders:expire-unpaid` пропускає замовлення зі спробою в стані `pending`, `in_flight` або `unknown`, і щогодини це тримало б склад годину) |
