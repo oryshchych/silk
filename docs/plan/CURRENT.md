@@ -35,7 +35,7 @@ Infra: staging `https://staging.damazla.com` (basic auth), Hetzner CAX11, Dokplo
 - [x] A review only from a buyer of THAT product: `reviews.int` (own order, product line, shipped/delivered/paid; another customer, a pending or cancelled order refused; mutation: no customer scope fails)
 - [x] The fit share comes from real `fit_feedback`: `reviews.int` (counters from approved rows, 100%, 50%, parallel moderators on different reviews)
 - [x] The back-in-stock alert fires on restock: `wishlist-alerts.int` (4 parallel workers claim 6 alerts once), worker `back-in-stock.int`, `customer-topics-delivered.int` (real relay and pg-boss)
-- [x] A return is created, processed in the admin and changes stock at the receipt: `returns.int` 18 tests, smoke-admin returns checks; the sender itself (Resend) was never called, a fake was used
+- [x] A return is created, processed in the admin and changes stock at the receipt: `returns.int` 27 tests, smoke-admin returns checks; the sender itself (Resend) was never called, a fake was used
 
 ## Not built or not verified
 
