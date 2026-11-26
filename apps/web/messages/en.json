@@ -63,7 +63,8 @@
     "switchTo": "Українська",
     "skip": "Skip to content",
     "cart": "Cart",
-    "cartCount": "Cart, {count, plural, one {# item} other {# items}}"
+    "cartCount": "Cart, {count, plural, one {# item} other {# items}}",
+    "account": "Account"
   },
   "footer": {
     "about": "Original lingerie and homewear delivered across Ukraine."
@@ -908,5 +909,41 @@
     "customize": "Choose",
     "save": "Save choice",
     "settings": "Cookie settings"
+  },
+  "account": {
+    "title": "Your account",
+    "signedInAs": "Signed in as {email}",
+    "signOut": "Sign out",
+    "email": "Email",
+    "password": "Password",
+    "newPassword": "New password",
+    "passwordHint": "At least 12 characters; the password must not contain the part of your address before the @.",
+    "loginTitle": "Sign in",
+    "loginIntro": "Sign in to see your orders.",
+    "loginSubmit": "Sign in",
+    "registerTitle": "Create an account",
+    "registerIntro": "Enter your email: we will send a link where you confirm the address and set a password.",
+    "registerSubmit": "Send the link",
+    "registerSent": "If the address can be registered, we sent an email with a link. Check your inbox.",
+    "forgotTitle": "Reset your password",
+    "forgotIntro": "Enter the email of your account: we will send a link to set a new password.",
+    "forgotSubmit": "Send the link",
+    "forgotSent": "If there is an account for this address, we sent an email with a link. Check your inbox.",
+    "setPasswordTitle": "Set a password",
+    "setPasswordIntro": "Choose a password to sign in with.",
+    "setPasswordSubmit": "Save the password",
+    "setPasswordSent": "Done.",
+    "passwordSet": "Password saved. You can sign in now.",
+    "registerLink": "Create an account",
+    "forgotLink": "Forgot your password?",
+    "loginLink": "Already have an account? Sign in",
+    "retry": "Try again",
+    "loading": "Loading…",
+    "error": {
+      "invalid": "That did not work. Check the details or ask for a new link.",
+      "weak": "That password is not accepted: at least 12 characters, without the part of your address before the @.",
+      "rateLimited": "Too many attempts. Wait a little and try again.",
+      "error": "Something went wrong. Please try again."
+    }
   }
 }

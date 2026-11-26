@@ -92,6 +92,9 @@ export async function SiteShell({
               {t('searchSubmit')}
             </button>
           </form>
+          <Link href={href(locale, paths.account)} className={navLink}>
+            {t('account')}
+          </Link>
           <CartLink href={href(locale, paths.cart)} />
           <Link
             href={href(other, path, search)}

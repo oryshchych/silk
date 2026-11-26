@@ -11,6 +11,7 @@ import { issueFiscalReceipt } from '@store/core/fiscal';
 import type { Reader } from '@store/db/types';
 
 import type { MessageSender, OutboundMessage } from './deliver.ts';
+import { handleAccountLink } from './email/account-emails.ts';
 import { handleOrderCreated } from './email/order-created.ts';
 import {
   handlePaymentFailed,
@@ -54,6 +55,8 @@ export function createMessageSender(deps: {
   reader: Reader;
   email: EmailSender;
   siteUrl: string;
+  /** `AUTH_SECRET`: the account links are rebuilt from a token id with a key derived from it. */
+  authSecret?: string | undefined;
   /** Null until the Checkbox account exists (Q3). */
   fiscal: FiscalDeps | null;
   log?: (line: string) => void;
@@ -84,6 +87,10 @@ export function createMessageSender(deps: {
       }
       if (message.topic === 'email.waybill-created') {
         await handleWaybillCreated(mail, envelope);
+        return;
+      }
+      if (message.topic === 'email.account-verify' || message.topic === 'email.password-reset') {
+        await handleAccountLink({ ...mail, authSecret: deps.authSecret }, envelope);
         return;
       }
       if (message.topic === 'fiscal.issue-receipt') {

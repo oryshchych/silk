@@ -111,6 +111,9 @@ export const promoTypeEnum = pgEnum('promo_type', ['percent', 'fixed', 'free_shi
 export const promoScopeEnum = pgEnum('promo_scope', ['all', 'category', 'product']);
 export const fitFeedbackEnum = pgEnum('fit_feedback', ['small', 'true_to_size', 'large']);
 export const adminRoleEnum = pgEnum('admin_role', ['owner', 'admin', 'manager', 'content']);
+/** Who a session belongs to. A customer session never counts in the admin, and the reverse (phase 7). */
+export const sessionAudienceEnum = pgEnum('session_audience', ['admin', 'customer']);
+export const authTokenPurposeEnum = pgEnum('auth_token_purpose', ['verify_email', 'reset_password']);
 export const relationKindEnum = pgEnum('relation_kind', ['similar', 'cross_sell', 'up_sell', 'accessory']);
 export const npWarehouseTypeEnum = pgEnum('np_warehouse_type', ['branch', 'postomat', 'cargo']);
 
@@ -456,6 +459,8 @@ export const customers = pgTable('customers', {
   uniqueIndex('customers_user_uq').on(t.userId).where(sql`${t.userId} IS NOT NULL`),
   index('customers_phone_idx').on(t.phone),
   check('customers_email_format', sql`${t.email} ~ '^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$'`),
+  // Q56: one spelling per mailbox, so the unique index above means what it says.
+  check('customers_email_lower', sql`${t.email} = lower(${t.email})`),
 ]);
 
 export const addresses = pgTable('addresses', {
@@ -640,6 +645,8 @@ export const orders = pgTable('orders', {
   index('orders_created_idx').on(t.createdAt),
   index('orders_status_idx').on(t.status),
   index('orders_customer_idx').on(t.customerId),
+  /** Phase 7: an account claims its guest orders by the verified mailbox (Q56). */
+  index('orders_email_lower_idx').on(sql`lower(${t.customerEmail})`),
   index('orders_phone_idx').on(t.customerPhone),
   index('orders_ttn_idx').on(t.ttn),
   index('orders_provider_payment_idx').on(t.providerPaymentId),
@@ -1528,12 +1535,34 @@ export const authSessions = pgTable('auth_sessions', {
   mfaSatisfiedAt: timestamp('mfa_satisfied_at', { withTimezone: true }),
   revokedAt: timestamp('revoked_at', { withTimezone: true }),
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  audience: sessionAudienceEnum('audience').notNull().default('admin'),
   ip: varchar('ip', { length: 45 }),
   userAgent: text('user_agent'),
   createdAt: createdAt(),
 }, (t) => [
   index('auth_sessions_user_idx').on(t.userId),
   index('auth_sessions_active_idx').on(t.expiresAt).where(sql`${t.revokedAt} IS NULL`),
+]);
+
+/**
+ * One row per e-mail link (address verification, password reset). The token itself is NOT stored
+ * and not queued: it is `<id>.<HMAC(id)>` under a key derived from `AUTH_SECRET`, so the worker can
+ * rebuild it from the id alone and the table holds nothing that works as a credential.
+ * Single use (`used_at`), short life (`expires_at`, database time).
+ */
+export const authEmailTokens = pgTable('auth_email_tokens', {
+  id: id(),
+  userId: uuid('user_id').notNull().references(() => authUsers.id, { onDelete: 'cascade' }),
+  purpose: authTokenPurposeEnum('purpose').notNull(),
+  /** The language of the e-mail (the worker has no request to read it from). */
+  locale: varchar('locale', { length: 5 }).notNull().default('uk'),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  usedAt: timestamp('used_at', { withTimezone: true }),
+  createdAt: createdAt(),
+}, (t) => [
+  index('auth_email_tokens_user_idx').on(t.userId, t.purpose, t.createdAt),
+  check('auth_email_tokens_expiry', sql`${t.expiresAt} > ${t.createdAt}`),
+  check('auth_email_tokens_used_after_created', sql`${t.usedAt} IS NULL OR ${t.usedAt} >= ${t.createdAt}`),
 ]);
 
 /* ═══════════════ ПОДАРУНКОВІ СЕРТИФІКАТИ (ADR-20) ═══════════════ */

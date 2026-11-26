@@ -155,6 +155,7 @@ export async function resolveSession(
     .where(
       and(
         eq(authSessions.sid, parsed.sid),
+        eq(authSessions.audience, 'admin'),
         isNull(authSessions.revokedAt),
         gt(authSessions.expiresAt, sql`now()`),
         eq(adminUsers.isActive, true),
@@ -198,7 +199,7 @@ export async function revokeAllSessions(tx: Tx, userId: string): Promise<void> {
  * previous holder committed, and it covers an account that has no row yet to lock. Accounts are
  * independent of every ADR-22 lock level, and one transaction only ever takes one of these.
  */
-async function lockAccount(tx: Tx, userId: string): Promise<void> {
+export async function lockAccount(tx: Tx, userId: string): Promise<void> {
   await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`auth:${userId}`}, 0))`);
 }
 
@@ -224,7 +225,7 @@ export async function revokeOtherSessions(
 // ─── failure counter and lockout ───────────────────────────────────────────────────────────────
 
 /** Counts one failure; the fifth locks the account. Returns true when this failure locked it. */
-async function recordFailure(tx: Tx, userId: string, client: ClientInfo): Promise<boolean> {
+export async function recordFailure(tx: Tx, userId: string, client: ClientInfo): Promise<boolean> {
   const [row] = await tx
     .update(authCredentials)
     .set({
@@ -246,7 +247,7 @@ async function recordFailure(tx: Tx, userId: string, client: ClientInfo): Promis
   return locked;
 }
 
-const clearFailures = async (tx: Tx, userId: string): Promise<void> => {
+export const clearFailures = async (tx: Tx, userId: string): Promise<void> => {
   await tx
     .update(authCredentials)
     .set({ failedAttempts: 0, lockedUntil: null })
@@ -375,6 +376,7 @@ async function lockPending(
     .where(
       and(
         eq(authSessions.sid, parsed.sid),
+        eq(authSessions.audience, 'admin'),
         isNull(authSessions.revokedAt),
         gt(authSessions.expiresAt, sql`now()`),
       ),

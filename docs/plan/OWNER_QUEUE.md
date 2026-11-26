@@ -15,6 +15,7 @@ Only what needs the owner's own hands (credentials, accounts, a setting in an ex
 
 | ID | Action for the owner |
 |---|---|
+| Q63 | Phase 7 hands: the worker is not described in `docker-compose.yml` yet, so no e-mail leaves the system today (order mails included). When it is added, give it `AUTH_SECRET` (the SAME value as the web service): the account links (address verification, password reset) are rebuilt by the worker from a token id with a key derived from it, and without it those jobs fail into the dead-letter queue (visible, nothing is sent). Then send one verification and one reset mail from staging to a test inbox |
 | Q62 | Phase 6 hands: (1) set `GA4_MEASUREMENT_ID`, `GTM_CONTAINER_ID`, `META_PIXEL_ID` in the PRODUCTION Dokploy env when the accounts exist (staging never loads trackers, by design); (2) add `https://<shop>/feed/google.xml` in Merchant Center and `/feed/facebook.csv` in Meta Commerce Manager and read their validators (they need the public URL); (3) with the public URL run the Rich Results Test on one product and add the sitemap in Search Console; (4) one real-browser pass on production-like settings: banner shows, nothing loads before Accept, scripts load after Accept, "Cookie settings" reopens and a refusal clears the cookies |
 | Q49 | Provide the Nova Poshta sandbox (or a production read-only test) API key (with Q2) and set `settings.np_sender` (`cityRef`, `senderRef`, `contactRef`, `addressRef`, `phone`: the shop's own refs at the carrier); then run the waybill adapter once against it. **The adapter (`packages/payments/src/shipping/nova-poshta.ts`) is verified only against the local fake**: confirm the required `InternetDocument/save` properties for a private-person recipient, the cash-on-delivery block (`BackwardDeliveryData`), the print URLs, and the `getDocumentList` lookup that would reconcile an unknown result |
 | Q40 | Generate `AUTH_SECRET` (`openssl rand -base64 48`), put it in Dokploy and the password manager, create the first owner on the server (`pnpm admin:create`), sign in on staging and save the 10 recovery codes |
@@ -27,6 +28,15 @@ Only what needs the owner's own hands (credentials, accounts, a setting in an ex
 | Q8 | Check the R2 backup bucket: `staging/` must hold a second file from the 2026-11-23 03:00 Kyiv run |
 | Q19 | Supply the brands' bra size charts when they exist (the standard table ships meanwhile) |
 | Q1 | Shop name, palette and fonts when decided (the placeholder and neutral tokens stay meanwhile) |
+
+## Deferred by phase 7 (default applied; the owner can overrule)
+
+| ID | Raised | Item | Default applied |
+|---|---|---|---|
+| Q64 | 2026-11-26 | Customer accounts are personal data and the texts around them are legal: the registration and sign-in pages carry no privacy-policy link, no consent wording and no terms of service; the account e-mails carry neutral wording only | Ship neutral copy; the owner supplies the privacy policy, the terms and the wording (phase 8 legal texts), and the pages link to them then |
+| Q65 | 2026-11-26 | One account per address, and an address that already belongs to an admin account cannot be registered as a customer (the registration answer is the same, nothing is sent). A buyer who is also staff needs another address | Keep: admin and customer identities stay separate (sessions carry an audience, tokens are signed under different keys) |
+| Q67 | 2026-11-26 | Accepted risk named in the #88 review: the global attempt cap (600 a minute over all clients) on the account credential forms can be filled by one attacker with many addresses, and five wrong passwords lock a known account for 15 minutes, so anyone can lock it | Keep both; a warning is logged at half the cap; the hardening phase (12) adds throttling keyed by the target account instead of a lockout and a CAPTCHA or proof-of-work step above half the cap |
+| Q66 | 2026-11-26 | An address typed at registration but never confirmed is removed after seven days (worker job `accounts.purge-pending`); a confirmed account is never removed by a job. No self-service account deletion or data export yet (a data-protection request is handled by hand) | Keep; build deletion and export when the privacy policy (Q64) fixes the rules |
 
 ## Deferred by phase 6 (default applied; the owner can overrule)
 

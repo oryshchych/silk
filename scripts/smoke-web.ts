@@ -21,6 +21,7 @@ import {
   FAKE_SECRET,
   startFakeWayForPay,
 } from '../packages/payments/test/fake-wayforpay.ts';
+import { runAccountSmoke } from './smoke-account.ts';
 import { runAdminSmoke } from './smoke-admin.ts';
 import { runCheckoutSmoke } from './smoke-checkout.ts';
 import { runPaymentSmoke } from './smoke-payments.ts';
@@ -424,6 +425,14 @@ try {
   await runPostFloodSmoke({ base, site: SITE, check, storedFiles });
   await runAnalyticsSmoke({ base, check });
   await runCheckoutSmoke({ base, buildRoot: copy, check, storedFiles });
+  await runAccountSmoke({
+    base,
+    databaseUrl,
+    authSecret: AUTH_SECRET_FOR_SMOKE,
+    buildRoot: copy,
+    siteOrigin: SITE,
+    check,
+  });
   await runAdminSmoke({
     base,
     databaseUrl,

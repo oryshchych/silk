@@ -1,0 +1,2 @@
+ALTER TABLE "auth_email_tokens" ADD CONSTRAINT "auth_email_tokens_expiry" CHECK ("auth_email_tokens"."expires_at" > "auth_email_tokens"."created_at");--> statement-breakpoint
+ALTER TABLE "auth_email_tokens" ADD CONSTRAINT "auth_email_tokens_used_after_created" CHECK ("auth_email_tokens"."used_at" IS NULL OR "auth_email_tokens"."used_at" >= "auth_email_tokens"."created_at");

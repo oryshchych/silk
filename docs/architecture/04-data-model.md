@@ -34,7 +34,10 @@ orders ──< payment_attempts ──< payment_events
       └──< fiscal_documents ──┐ (parent_document_id: чек повернення → чек продажу)
 carts ──< checkout_intents >── orders
 auth_users ──┬──< auth_credentials · auth_totp · auth_recovery_codes
-             └──< auth_sessions
+             ├──< auth_sessions        (audience: admin | customer; a customer session never counts in the admin)
+             └──< auth_email_tokens    (verify_email | reset_password; single use, no credential stored:
+                                        the token is <id>.<HMAC(id)> under a key derived from AUTH_SECRET)
+customers.user_id ── auth_users (account); customers_email_lower CHECK; orders_email_lower_idx claims guest orders
 outbox · webhook_quarantine · legal_documents
 products ──< product_views          (джерело для воронки і звіту
                                      «переглядали, але не купували»)
