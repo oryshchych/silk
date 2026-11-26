@@ -67,6 +67,14 @@ Postgres звідти означає запит до БД на кожен пер
 5. Префікс-фільтр — **скорочення області перевірки, не заміна кешу**.
 6. `hit_count` інкрементується **асинхронно** через outbox, не в проксі.
 
+   **Amendment (phase 6).** Implemented as in-process counters, not outbox rows: the proxy
+   counts a hit only for a path that is in the redirect table (so the counters are bounded by the
+   table, never by client input) and writes them in one batched `UPDATE` when 100 hits are pending
+   or after 60 s, whichever comes first. A failed write keeps the counts and retries on the timer
+   only. An outbox row per hit would cost one insert per redirect served; the counters lose at
+   most one minute of hits when the process dies, which is acceptable for a statistic.
+   A `410` row (`recordGone`) answers `410 Gone` from the same map.
+
 Кеш живе в межах інстансу. Dokploy може підняти кілька контейнерів — TTL
 забезпечує сходження за хвилину, що для редіректів прийнятно.
 
