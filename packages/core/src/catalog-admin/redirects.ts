@@ -4,7 +4,7 @@
  * new one, and a redirect FROM the new path (the slug is being reused) is removed, because that
  * path is live again.
  */
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 
 import { redirects } from '@store/db/schema';
 import type { Reader, Tx } from '@store/db/types';
@@ -28,7 +28,7 @@ export async function releaseSlugPaths(tx: Tx, kind: RedirectKind, slug: string)
       .where(
         and(
           eq(redirects.fromPath, pathOf(kind, slug, prefix)),
-          inArray(redirects.statusCode, [301, 302]),
+          inArray(redirects.statusCode, [301, 302, 410]),
         ),
       );
   }
@@ -59,10 +59,35 @@ export async function recordSlugRedirects(
   }
 }
 
+/**
+ * A page that is gone for good: both locale paths answer 410 (not 404), so a search engine drops
+ * them at once. `to_path` is required by the schema and unused for a 410. A reused slug is
+ * released by `releaseSlugPaths`, so a gone path never shadows a live page. Nothing calls this
+ * yet (no admin screen deletes a product or category); whoever adds that must also call
+ * `releaseSlugPaths` when a page with a recorded 410 is restored, or the 410 keeps shadowing it.
+ */
+export async function recordGone(
+  tx: Tx,
+  input: { kind: RedirectKind; slug: string },
+): Promise<void> {
+  for (const prefix of LOCALE_PREFIXES) {
+    const from = pathOf(input.kind, input.slug, prefix);
+    // Anything that pointed at the removed page would end in a 410 through a hop: point it at the
+    // gone path's own 410 instead by removing it (a redirect to a gone page helps nobody).
+    await tx
+      .delete(redirects)
+      .where(and(eq(redirects.toPath, from), inArray(redirects.statusCode, [301, 302])));
+    await tx
+      .insert(redirects)
+      .values({ fromPath: from, toPath: '/', statusCode: 410 })
+      .onConflictDoUpdate({ target: redirects.fromPath, set: { toPath: '/', statusCode: 410 } });
+  }
+}
+
 export interface RedirectRow {
   fromPath: string;
   toPath: string;
-  statusCode: 301 | 302;
+  statusCode: 301 | 302 | 410;
 }
 
 /** The proxy keeps at most this many redirects in memory; the loader logs when the table reaches it. */
@@ -77,13 +102,36 @@ export async function listRedirects(db: Reader): Promise<RedirectRow[]> {
       statusCode: redirects.statusCode,
     })
     .from(redirects)
-    .where(inArray(redirects.statusCode, [301, 302]))
+    .where(inArray(redirects.statusCode, [301, 302, 410]))
     // Newest first: past the cap the oldest drop out, never an arbitrary subset.
     .orderBy(desc(redirects.createdAt), desc(redirects.id))
     .limit(REDIRECT_LIMIT);
   return rows.flatMap((row) =>
-    row.statusCode === 301 || row.statusCode === 302
+    row.statusCode === 301 || row.statusCode === 302 || row.statusCode === 410
       ? [{ ...row, statusCode: row.statusCode }]
       : [],
+  );
+}
+
+/**
+ * Adds counted hits to `redirects.hit_count`, one statement for the whole batch. Paths that are no
+ * longer in the table are ignored. Called from a timer in the web process, never per request.
+ */
+export async function addRedirectHits(
+  db: Reader,
+  hits: ReadonlyMap<string, number>,
+): Promise<void> {
+  const entries = [...hits]
+    .filter(([, n]) => Number.isInteger(n) && n > 0)
+    .slice(0, REDIRECT_LIMIT);
+  if (entries.length === 0) return;
+  const values = sql.join(
+    entries.map(([path, n]) => sql`(${path}::text, ${n}::int)`),
+    sql`, `,
+  );
+  await db.execute(
+    sql`UPDATE redirects r SET hit_count = r.hit_count + h.n
+          FROM (VALUES ${values}) AS h(path, n)
+         WHERE r.from_path = h.path`,
   );
 }
