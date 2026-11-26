@@ -400,6 +400,19 @@ describe('withdraw and resolve a refund by hand', () => {
     expect(Number(await orderField(id, 'refunded_total'))).toBe(10_000);
   });
 
+  it('resolve as returned over the captured total is a typed code, not a 500', async () => {
+    const { id, opId } = await operation('unknown');
+    await handle.pool.query('UPDATE orders SET captured_total = 5000 WHERE id = $1', [id]);
+    expect(
+      await actions.resolveRefundAction({
+        operationId: opId,
+        outcome: 'succeeded',
+        note: 'portal says so',
+      }),
+    ).toEqual({ ok: false, code: 'REFUND_BUDGET_EXCEEDED' });
+    expect(await opState(opId)).toBe('unknown');
+  });
+
   it('resolve as NOT returned fails the operation and frees the budget; a pending one cannot be resolved', async () => {
     const { id, opId } = await operation('in_flight');
     expect(

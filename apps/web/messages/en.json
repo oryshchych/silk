@@ -791,7 +791,7 @@
       "exportTo": "To",
       "exportHint": "A file holds at most 10 000 orders. If it was cut, its last line says where the next part starts (use that order number as the start of the next download).",
       "withdrawRefund": "Withdraw (never sent)",
-      "resolveRefundHint": "The answer of the provider is not known. Check the provider's portal and record what you found. Do not repeat the refund.",
+      "resolveRefundHint": "The answer of the provider is not known. Check the provider's portal and record what you found. Do not repeat the refund. Write where you checked, never card numbers.",
       "resolveRefundNote": "Where you checked (portal, date)",
       "refundWasSent": "The money was returned",
       "refundWasNot": "The money was NOT returned"

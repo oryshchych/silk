@@ -3,6 +3,9 @@
  * sent (real MonoProvider over a socket against the local fake) and it raises one alert for an
  * unknown one without calling the provider.
  */
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
@@ -17,6 +20,7 @@ import { MonoProvider } from '@store/payments/mono';
 import { startFakeMono, type FakeMono } from '@store/payments/test/fake-mono';
 import { money } from '@store/shared/money';
 
+import { OUTBOX_TOPICS } from '../src/boss.ts';
 import { createJobHandlers, JOB_NAMES } from '../src/jobs.ts';
 
 let fake: FakeMono;
@@ -137,5 +141,50 @@ describe('refunds.sweep', () => {
         .rows,
     ).toHaveLength(1);
     expect(fake.requests).toHaveLength(0);
+  });
+});
+
+/** Every `.ts` source file under a directory, tests excluded. */
+function sources(dir: string): string[] {
+  return readdirSync(dir).flatMap((name) => {
+    const path = join(dir, name);
+    if (statSync(path).isDirectory()) return sources(path);
+    return path.endsWith('.ts') && !path.includes('.test.') ? [path] : [];
+  });
+}
+
+describe('the outbox topics', () => {
+  it('every topic the core writes has a queue: a topic without one ends stuck and nobody is told', () => {
+    const written = new Set<string>();
+    for (const file of sources(join(import.meta.dirname, '../../../packages/core/src'))) {
+      for (const match of readFileSync(file, 'utf8').matchAll(/topic:\s*'([a-z]+\.[a-z-]+)'/g)) {
+        if (match[1] !== undefined) written.add(match[1]);
+      }
+    }
+    expect(written.size).toBeGreaterThan(8);
+    const queues: readonly string[] = OUTBOX_TOPICS;
+    expect([...written].filter((topic) => !queues.includes(topic))).toEqual([]);
+  });
+
+  it('the sweep job logs counts only', async () => {
+    const op = await reserve(10_000);
+    await app.db.execute(
+      sql`UPDATE refund_operations SET state = 'unknown', created_at = now() - interval '3 hours' WHERE id = ${op}`,
+    );
+    const lines: string[] = [];
+    await createJobHandlers({
+      db: app.db,
+      directory: null,
+      providers: { mono },
+      log: (line) => lines.push(line),
+    })[JOB_NAMES.sweepRefunds]();
+    expect(lines).toHaveLength(1);
+    expect(Object.keys(JSON.parse(lines[0] ?? '{}') as object).sort()).toEqual([
+      'alerted',
+      'failed',
+      'level',
+      'scope',
+      'sent',
+    ]);
   });
 });

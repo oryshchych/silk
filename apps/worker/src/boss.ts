@@ -16,6 +16,11 @@ export const OUTBOX_TOPICS = [
   'fiscal.issue-receipt',
   'alert.fiscal-failed',
   'alert.attempt-unresolved',
+  // Phase 5: the refund sweep, the waybill (buyer email, and the alert for a parcel made for a
+  // cancelled order). A topic the domain writes without a queue ends `stuck` and nobody sees it.
+  'alert.refund-unresolved',
+  'email.waybill-created',
+  'alert.waybill-for-cancelled-order',
 ] as const;
 
 /** Jobs that exhausted their retries land here. Someone must watch this queue. */

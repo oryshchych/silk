@@ -14,7 +14,14 @@ import { money } from '@store/shared/money';
 import { setCartItem, startCheckout } from '../src/cart/cart.ts';
 import { createOrder } from '../src/orders/create-order.ts';
 import { sweepRefunds } from '../src/payments/refund-sweep.ts';
-import { requestRefund, type ProviderMap } from '../src/payments/refunds.ts';
+import { RefundBudgetError } from '../src/errors.ts';
+import {
+  cancelPendingRefund,
+  processRefund,
+  requestRefund,
+  settleRefund,
+  type ProviderMap,
+} from '../src/payments/refunds.ts';
 import { Barrier } from './barrier.ts';
 import { createWorld, type TestWorld } from './fixtures.ts';
 
@@ -203,5 +210,148 @@ describe('in flight or unknown: never guessed', () => {
     await admin.db.execute(sql`UPDATE refund_operations SET state = 'succeeded' WHERE id = ${op}`);
     await age(op, 500);
     expect(await sweepRefunds(deps())).toEqual({ sent: 0, failed: 0, alerted: 0 });
+  });
+});
+
+describe('review round 1 (#77): races and failures', () => {
+  it('withdraw racing the sweep claim on one operation: exactly one wins, at most one provider call', async () => {
+    for (let round = 0; round < 6; round += 1) {
+      fake.requests.length = 0;
+      const op = await reserve(1_000);
+      await age(op, 30);
+      const barrier = new Barrier(2);
+      const withdraw = async () => {
+        const h = world.connect();
+        return await h.db.transaction(async (tx) => {
+          await barrier.wait();
+          return await cancelPendingRefund(tx, op);
+        });
+      };
+      const sweep = async () => {
+        const h = world.connect();
+        await barrier.wait();
+        return await sweepRefunds(deps(h));
+      };
+      const [withdrawn, swept] = await Promise.all([withdraw(), sweep()]);
+      expect(cancelCalls(), `round ${String(round)}`).toBeLessThanOrEqual(1);
+      if (withdrawn) {
+        expect(await state(op)).toBe('failed');
+        expect(cancelCalls()).toBe(0);
+        expect(swept.sent).toBe(0);
+      } else {
+        expect(await state(op)).toBe('succeeded');
+        expect(cancelCalls()).toBe(1);
+      }
+      // Clear the way for the next round: a settled operation holds or frees budget as it should.
+      await admin.db.execute(sql`DELETE FROM refund_operations WHERE state = 'failed'`);
+      await admin.db.execute(sql`UPDATE refund_operations SET state = 'failed' WHERE id = ${op}`);
+      await admin.db.execute(
+        sql`UPDATE orders SET refunded_total = 0, payment_status = 'paid' WHERE id = ${orderId}`,
+      );
+    }
+  });
+
+  it('the admin form and the sweep sending the same refund at once: one provider call', async () => {
+    const op = await reserve(10_000);
+    await age(op, 30);
+    const barrier = new Barrier(2);
+    const form = async () => {
+      const h = world.connect();
+      await barrier.wait();
+      return await processRefund(deps(h), op);
+    };
+    const sweep = async () => {
+      const h = world.connect();
+      await barrier.wait();
+      return await sweepRefunds(deps(h));
+    };
+    await Promise.all([form(), sweep()]);
+    expect(cancelCalls()).toBe(1);
+    expect(await state(op)).toBe('succeeded');
+  });
+
+  it('two people resolving one unknown refund at once: one changes it, the other is a no-op', async () => {
+    const op = await reserve(10_000);
+    await admin.db.execute(sql`UPDATE refund_operations SET state = 'unknown' WHERE id = ${op}`);
+    const barrier = new Barrier(2);
+    const resolve = async () => {
+      const h = world.connect();
+      return await h.db.transaction(async (tx) => {
+        await barrier.wait();
+        return await settleRefund(tx, {
+          operationId: op,
+          outcome: { state: 'succeeded', providerReference: null },
+          confirmation: { by: null },
+        });
+      });
+    };
+    const results = await Promise.all([resolve(), resolve()]);
+    expect(results.filter((r) => r.changed)).toHaveLength(1);
+    expect(
+      (
+        await admin.db.execute<{ r: number }>(
+          sql`SELECT refunded_total AS r FROM orders WHERE id = ${orderId}`,
+        )
+      ).rows[0]?.r,
+    ).toBe(10_000);
+  });
+
+  it('two unsent refunds where the first cannot be sent: the second still goes, the first stays for the next run', async () => {
+    const first = await reserve(10_000);
+    // A second payment attempt through a provider that is not registered: sending it throws a routing error.
+    const foreign =
+      (
+        await admin.db.execute<{ id: string }>(
+          sql`INSERT INTO payment_attempts (order_id, attempt_number, provider, amount, state, status, captured_amount, external_id)
+            VALUES (${orderId}, 2, 'wayforpay', 5000, 'succeeded', 'paid', 5000, 'ord-foreign') RETURNING id`,
+        )
+      ).rows[0]?.id ?? '';
+    await admin.db.execute(
+      sql`UPDATE orders SET captured_total = captured_total + 5000 WHERE id = ${orderId}`,
+    );
+    const second =
+      (
+        await admin.db.execute<{ id: string }>(
+          sql`INSERT INTO refund_operations (order_id, payment_attempt_id, amount, state) VALUES (${orderId}, ${foreign}, 1000, 'pending') RETURNING id`,
+        )
+      ).rows[0]?.id ?? '';
+    await age(second, 60);
+    await age(first, 30);
+    const result = await sweepRefunds(deps());
+    expect(result).toMatchObject({ sent: 1, failed: 1 });
+    expect(await state(first)).toBe('succeeded');
+    expect(await state(second)).toBe('pending');
+  });
+
+  it('resolving as returned over the captured total is a TYPED refusal, not a raw constraint error', async () => {
+    const op = await reserve(10_000);
+    await admin.db.execute(sql`UPDATE refund_operations SET state = 'unknown' WHERE id = ${op}`);
+    await admin.db.execute(sql`UPDATE orders SET captured_total = 5000 WHERE id = ${orderId}`);
+    await expect(
+      admin.db.transaction(
+        async (tx) =>
+          await settleRefund(tx, {
+            operationId: op,
+            outcome: { state: 'succeeded', providerReference: null },
+            confirmation: { by: null },
+          }),
+      ),
+    ).rejects.toBeInstanceOf(RefundBudgetError);
+    expect(await state(op)).toBe('unknown');
+  });
+
+  it('the alert row carries ids only', async () => {
+    const op = await reserve(10_000);
+    await admin.db.execute(sql`UPDATE refund_operations SET state = 'unknown' WHERE id = ${op}`);
+    await age(op, 90);
+    await sweepRefunds(deps());
+    const payload =
+      (
+        await admin.db.execute<{ payload: Record<string, unknown> }>(
+          sql`SELECT payload FROM outbox WHERE topic = 'alert.refund-unresolved'`,
+        )
+      ).rows[0]?.payload ?? {};
+    expect(Object.keys(payload).sort()).toEqual(['operationId', 'orderId']);
+    expect(JSON.stringify(payload)).not.toMatch(/@|\+380|Петренко/);
   });
 });

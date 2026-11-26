@@ -2,12 +2,13 @@
 
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
-import { useRef } from 'react';
 
 import { resolveRefundAction, withdrawRefundAction } from '@/actions/admin-orders';
 
 import { StatusLine } from './fields';
-import { readForm, textOf, useAdminAction } from './use-admin-action';
+import { OUTCOME_FIELD, REFUND_OUTCOMES, resolvePayload } from '@/lib/admin/refund-resolution';
+
+import { textOf, useAdminAction } from './use-admin-action';
 
 const field = 'mt-1 block min-h-11 rounded-md border border-border bg-surface px-3';
 const button = 'min-h-11 min-w-11 rounded-md border border-border px-4 disabled:opacity-60';
@@ -26,7 +27,6 @@ export function RefundOperationActions({
   const t = useTranslations('admin.orders');
   const router = useRouter();
   const { message, pending, run, setMessage } = useAdminAction();
-  const outcomeRef = useRef<'succeeded' | 'failed'>('succeeded');
   const refresh = () => {
     router.refresh();
   };
@@ -53,20 +53,14 @@ export function RefundOperationActions({
       className="mt-2 flex flex-wrap items-end gap-3"
       onSubmit={(event) => {
         event.preventDefault();
+        // The clicked button's own name and value travel in the form data: nothing else decides the outcome.
         const submitter =
           event.nativeEvent instanceof SubmitEvent ? event.nativeEvent.submitter : null;
-        const outcome =
-          submitter instanceof HTMLButtonElement && submitter.value === 'failed'
-            ? 'failed'
-            : 'succeeded';
-        const data = readForm(event.currentTarget);
+        const data = new FormData(event.currentTarget, submitter);
+        const payload = resolvePayload(operationId, data.get(OUTCOME_FIELD), textOf(data, 'note'));
+        if (payload === null) return;
         setMessage(null);
-        run(
-          async () =>
-            await resolveRefundAction({ operationId, outcome, note: textOf(data, 'note') }),
-          t('done'),
-          refresh,
-        );
+        run(async () => await resolveRefundAction(payload), t('done'), refresh);
       }}
     >
       <p className="basis-full text-sm text-text-muted">{t('resolveRefundHint')}</p>
@@ -76,21 +70,19 @@ export function RefundOperationActions({
       </label>
       <button
         type="submit"
+        name={OUTCOME_FIELD}
+        value={REFUND_OUTCOMES.sent}
         disabled={pending}
         className={button}
-        onClick={() => {
-          outcomeRef.current = 'succeeded';
-        }}
       >
         {t('refundWasSent')}
       </button>
       <button
         type="submit"
+        name={OUTCOME_FIELD}
+        value={REFUND_OUTCOMES.notSent}
         disabled={pending}
         className={button}
-        onClick={() => {
-          outcomeRef.current = 'failed';
-        }}
       >
         {t('refundWasNot')}
       </button>

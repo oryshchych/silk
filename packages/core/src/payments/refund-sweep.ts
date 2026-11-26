@@ -10,7 +10,11 @@
  *    operation (outbox, dedup key per operation) and a person closes it from the order card with
  *    what the provider's portal says (`settleRefund` with a confirmation).
  *
- * Ages are judged by Postgres (`now()`), never by the worker's clock.
+ * Ages are judged by Postgres (`now()`), never by the worker's clock. The age of an unresolved
+ * operation counts from `created_at`: the table has no state-change column. A refund that sat
+ * `pending` for hours (the worker was down) can therefore be alerted as soon as it is claimed. That
+ * is alert-only noise, never a money risk (an alert moves nothing), and it is intentional: a person
+ * who sees the alert checks the portal, which is what an old refund needs anyway.
  */
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 
