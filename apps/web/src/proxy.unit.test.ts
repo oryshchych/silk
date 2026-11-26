@@ -93,6 +93,19 @@ describe('proxy: product URL gate', () => {
     expect(rewriteOf(english)).toBe('http://localhost:3000/en/__missing__/product');
   });
 
+  it('answers an unknown legal page word with the 404 page and lets the seven fixed words through', async () => {
+    const proxy = await loadProxy('local');
+    const ok = await proxy(new NextRequest('http://localhost:3000/legal/returns'));
+    expect(rewriteOf(ok)).toBeNull();
+    const english = await proxy(new NextRequest('http://localhost:3000/en/legal/delivery-payment'));
+    expect(rewriteOf(english)).toBeNull();
+    const unknown = await proxy(new NextRequest('http://localhost:3000/legal/nope'));
+    expect(rewriteOf(unknown)).toBe('http://localhost:3000/uk/__missing__/product');
+    expect(unknown.headers.get('cache-control')).toBe('no-store');
+    const enUnknown = await proxy(new NextRequest('http://localhost:3000/en/legal/Terms?x=1'));
+    expect(rewriteOf(enUnknown)).toBe('http://localhost:3000/en/__missing__/product');
+  });
+
   it('rejects a malformed slug without asking the database', async () => {
     const proxy = await loadProxy('local');
     has.mockReset();

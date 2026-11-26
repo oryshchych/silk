@@ -24,6 +24,7 @@ import {
 import { runAccountSmoke } from './smoke-account.ts';
 import { runAdminSmoke } from './smoke-admin.ts';
 import { runCheckoutSmoke } from './smoke-checkout.ts';
+import { runLegalSmoke } from './smoke-legal.ts';
 import { runPaymentSmoke } from './smoke-payments.ts';
 import { runAnalyticsSmoke, runPostFloodSmoke, runSeoSmoke } from './smoke-seo.ts';
 
@@ -427,6 +428,7 @@ try {
     );
   }
   await runSeoSmoke({ base, site: SITE, check, storedFiles });
+  await runLegalSmoke({ base, site: SITE, check, storedFiles });
   await runPostFloodSmoke({ base, site: SITE, check, storedFiles });
   await runAnalyticsSmoke({ base, check });
   await runCheckoutSmoke({ base, buildRoot: copy, check, storedFiles });

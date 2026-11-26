@@ -190,6 +190,31 @@ export function buildProduct(input: ProductInput): ProductLd {
   };
 }
 
+export interface FaqPageLd {
+  '@context': typeof SCHEMA_CONTEXT;
+  '@type': 'FAQPage';
+  mainEntity: {
+    '@type': 'Question';
+    name: string;
+    acceptedAnswer: { '@type': 'Answer'; text: string };
+  }[];
+}
+
+/** FAQPage markup for the questions a page SHOWS (the caller passes exactly the visible entries). */
+export function buildFaqPage(
+  entries: readonly { question: string; answerText: string }[],
+): FaqPageLd {
+  return {
+    '@context': SCHEMA_CONTEXT,
+    '@type': 'FAQPage',
+    mainEntity: entries.map((entry) => ({
+      '@type': 'Question',
+      name: entry.question,
+      acceptedAnswer: { '@type': 'Answer', text: entry.answerText },
+    })),
+  };
+}
+
 const LINE_SEPARATOR = String.fromCharCode(0x2028);
 const PARAGRAPH_SEPARATOR = String.fromCharCode(0x2029);
 

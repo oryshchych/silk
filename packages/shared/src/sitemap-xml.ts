@@ -64,6 +64,34 @@ export function urlEntries(siteUrl: string, entry: SitemapEntry): string {
     .join('');
 }
 
+/**
+ * A page that exists only in the locales listed (a legal page may be published in one language first). When BOTH
+ * locales are present each `<url>` lists the pair; when only one is, it lists no alternates at all, so an hreflang
+ * is never written without its counterpart.
+ */
+export function legalUrlEntries(
+  siteUrl: string,
+  path: string,
+  versions: readonly { locale: SiteLocale; lastmod: string }[],
+): string {
+  const both = versions.length === siteLocales.length;
+  return versions
+    .map(({ locale, lastmod }) => {
+      const alternates = buildAlternates({ siteUrl, locale, path });
+      const links = both
+        ? (['uk', 'en', 'x-default'] as const)
+            .map(
+              (lang) =>
+                `<xhtml:link rel="alternate" hreflang="${lang}" href="${escapeXml(bare(alternates.languages[lang]))}"/>`,
+            )
+            .join('')
+        : '';
+      const stamp = LASTMOD.test(lastmod) ? `<lastmod>${lastmod}</lastmod>` : '';
+      return `<url><loc>${escapeXml(bare(alternates.canonical))}</loc>${stamp}${links}</url>\n`;
+    })
+    .join('');
+}
+
 export function sitemapIndexXml(locs: readonly string[]): string {
   const items = locs.map((loc) => `<sitemap><loc>${escapeXml(loc)}</loc></sitemap>\n`).join('');
   return (

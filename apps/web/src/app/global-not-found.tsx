@@ -29,6 +29,16 @@ export default function GlobalNotFound() {
             {uk.errors.backHome} / {en.errors.backHome}
           </a>
         </main>
+        {/* Every page carries the trademark disclaimer, this standalone document included. */}
+        <p
+          id="trademark-disclaimer"
+          className="mx-auto max-w-2xl px-4 pb-6 text-center text-xs text-text-muted"
+        >
+          {uk.footer.trademark}
+          <span lang="en" className="block">
+            {en.footer.trademark}
+          </span>
+        </p>
       </body>
     </html>
   );

@@ -26,6 +26,7 @@ import {
 import type { Tx } from '../src/types.ts';
 import { seedCatalog } from './catalog.ts';
 import { seedCustomers } from './customers.ts';
+import { seedLegal } from './legal.ts';
 import { seedNpDirectory } from './np-directory.ts';
 import { seedOrders } from './orders.ts';
 import { seedPromoCodes } from './promo.ts';
@@ -88,6 +89,7 @@ export async function seed(tx: Tx): Promise<SeedSummary> {
   const rng = createRng(RNG_SEED);
   const catalog = await seedCatalog(tx, rng);
   await seedNpDirectory(tx);
+  await seedLegal(tx);
   const people = await seedCustomers(tx);
   const bras = catalog.categoryIds['bras'];
   if (bras === undefined) throw new Error('немає категорії bras');

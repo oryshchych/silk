@@ -14,7 +14,8 @@ export function pageMetadata(input: {
   description: string | null;
   locale: SiteLocale;
   siteName: string;
-  alternates: Alternates;
+  /** `languages` is left out for a page that exists in one language only: no hreflang without its counterpart. */
+  alternates: Pick<Alternates, 'canonical'> & { languages?: Alternates['languages'] };
   index: boolean;
   image?: string | null;
 }): Metadata {
@@ -24,7 +25,10 @@ export function pageMetadata(input: {
   return {
     title,
     ...(description === null ? {} : { description }),
-    alternates: { canonical: alternates.canonical, languages: alternates.languages },
+    alternates: {
+      canonical: alternates.canonical,
+      ...(alternates.languages === undefined ? {} : { languages: alternates.languages }),
+    },
     robots: index ? { index: true, follow: true } : { index: false, follow: true },
     openGraph: {
       type: 'website',

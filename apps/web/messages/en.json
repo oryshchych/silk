@@ -67,7 +67,9 @@
     "account": "Account"
   },
   "footer": {
-    "about": "Original lingerie and homewear delivered across Ukraine."
+    "about": "Original lingerie and homewear delivered across Ukraine.",
+    "legalNav": "Legal information",
+    "trademark": "All trademarks and brand names belong to their respective owners and are used on this site only to identify products."
   },
   "listing": {
     "title": "Catalog",
@@ -1049,7 +1051,8 @@
         "LEGAL_NOT_FOUND": "Document not found.",
         "BUSY": "Another upload is in progress.",
         "TIMEOUT": "The upload timed out."
-      }
+      },
+      "fromTemplate": "Start from the neutral draft template (title and text are filled in; still needs a lawyer)"
     }
   },
   "consent": {
@@ -1191,5 +1194,22 @@
       "wrong_size": "Wrong size",
       "other": "Other"
     }
+  },
+  "legal": {
+    "notSet": "Not set",
+    "companyHeading": "Company details",
+    "contactsHeading": "Contact the shop",
+    "legalName": "Legal name",
+    "taxId": "Tax ID (EDRPOU)",
+    "registeredAddress": "Registered address",
+    "phone": "Phone",
+    "email": "E-mail",
+    "telegram": "Telegram",
+    "viber": "Viber",
+    "address": "Address",
+    "effective": "Effective from {date}",
+    "pdf": "Download the PDF version",
+    "sectionTitle": "{title} | {site}",
+    "faqHeading": "Questions and answers"
   }
 }

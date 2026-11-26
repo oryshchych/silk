@@ -11,6 +11,7 @@ import {
   slugPath,
   SITEMAP_SLUG,
   sitemapIndexXml,
+  legalUrlEntries,
   urlEntries,
 } from './sitemap-xml';
 
@@ -108,5 +109,38 @@ describe('sitemap xml', () => {
     expect(sitemapIndexXml(['https://s.example/a&b.xml'])).toContain(
       '<loc>https://s.example/a&amp;b.xml</loc>',
     );
+  });
+});
+
+describe('legalUrlEntries: hreflang only where both locales exist', () => {
+  const stamp = '2026-11-20T10:00:00Z';
+
+  it('lists the whole pair on each url when both locales are published', () => {
+    const xml = legalUrlEntries('https://shop.example', '/legal/terms', [
+      { locale: 'uk', lastmod: stamp },
+      { locale: 'en', lastmod: stamp },
+    ]);
+    expect(xml.match(/<url>/g)).toHaveLength(2);
+    expect(xml).toContain('<loc>https://shop.example/legal/terms</loc>');
+    expect(xml).toContain('<loc>https://shop.example/en/legal/terms</loc>');
+    expect(xml.match(/hreflang="en"/g)).toHaveLength(2);
+    expect(xml).toContain('<lastmod>2026-11-20T10:00:00Z</lastmod>');
+  });
+
+  it('writes no alternate at all for a page that has only one locale', () => {
+    const xml = legalUrlEntries('https://shop.example', '/legal/faq', [
+      { locale: 'en', lastmod: stamp },
+    ]);
+    expect(xml).toContain('<loc>https://shop.example/en/legal/faq</loc>');
+    expect(xml).not.toContain('hreflang');
+    expect(xml).not.toContain('/legal/faq</loc>\n<url>');
+  });
+
+  it('drops a malformed lastmod instead of writing it', () => {
+    expect(
+      legalUrlEntries('https://shop.example', '/legal/terms', [
+        { locale: 'uk', lastmod: 'yesterday' },
+      ]),
+    ).not.toContain('lastmod');
   });
 });

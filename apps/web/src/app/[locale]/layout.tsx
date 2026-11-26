@@ -30,6 +30,7 @@ export default async function LocaleLayout({ children, params }: LayoutProps<'/[
   // (`/nope`) is rejected by the page with notFound(); app/global-not-found.tsx renders it.
   const { locale } = resolveLocale((await params).locale);
   const messages = await getMessages();
+  const footer = await getTranslations({ locale, namespace: 'footer' });
   // Identifiers only, and only in production (null elsewhere): no tracker can exist on staging.
   const analytics = await getAnalyticsConfig();
 
@@ -54,6 +55,13 @@ export default async function LocaleLayout({ children, params }: LayoutProps<'/[
           {/* Before the page content, so its effect (the tracker) runs before the page's events. */}
           {analytics === null ? null : <ConsentBanner config={analytics} />}
           {children}
+          {/* On EVERY page, the error and not-found pages included: this layout wraps them all. */}
+          <p
+            id="trademark-disclaimer"
+            className="mx-auto max-w-6xl px-4 pb-6 text-xs text-text-muted"
+          >
+            {footer('trademark')}
+          </p>
         </NextIntlClientProvider>
       </body>
     </html>

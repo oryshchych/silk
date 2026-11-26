@@ -25,6 +25,7 @@ import {
   updateLegalDraft,
   listLegalDocuments,
 } from '../src/legal/admin.ts';
+import { getCompanyProfile } from '../src/legal/company.ts';
 import {
   currentConsentRefs,
   currentPolicyRef,
@@ -395,5 +396,50 @@ describe('text the sanitiser refuses is an input error on write and an empty bod
     );
     await publish(d.id);
     expect((await getCurrentLegalDocument(handle.db, 'contacts', 'uk'))?.fileUrl).toBeNull();
+  });
+});
+
+describe('templates', () => {
+  it('starts from the neutral draft, which carries the visible "needs a lawyer" notice', async () => {
+    const d = await draft({
+      kind: 'faq',
+      locale: 'uk',
+      title: 'ignored',
+      source: '',
+      fromTemplate: true,
+    });
+    const row = await handle.pool.query<{ title: string; body_html: string }>(
+      `SELECT title, body_html FROM legal_documents WHERE id = $1`,
+      [d.id],
+    );
+    expect(row.rows[0]?.title).toBe('Часті запитання');
+    expect(row.rows[0]?.body_html).toContain('Чернетка: потребує юриста');
+    expect(row.rows[0]?.body_html).toContain('<h2>');
+  });
+});
+
+describe('company profile (placeholders are never values)', () => {
+  it('is all null until the owner fills it in, and ignores blank, malformed and over-long values', async () => {
+    const empty = await getCompanyProfile(handle.db);
+    expect(Object.values(empty).every((value) => value === null)).toBe(true);
+    await handle.pool.query(
+      `INSERT INTO settings (key, value) VALUES
+         ('company', $1::jsonb), ('contacts', $2::jsonb)`,
+      [
+        JSON.stringify({ legalName: '  Test LLC  ', taxId: '', registeredAddress: 42 }),
+        JSON.stringify({ phone: '+380000000000', email: 'x'.repeat(400), telegram: null }),
+      ],
+    );
+    const filled = await getCompanyProfile(handle.db);
+    expect(filled).toEqual({
+      legalName: 'Test LLC',
+      taxId: null,
+      registeredAddress: null,
+      phone: '+380000000000',
+      email: null,
+      telegram: null,
+      viber: null,
+      address: null,
+    });
   });
 });

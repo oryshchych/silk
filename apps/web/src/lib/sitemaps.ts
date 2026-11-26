@@ -11,10 +11,13 @@ import {
   SITEMAP_PRODUCTS_PER_FILE,
   sitemapIndexXml,
   slugPath,
+  legalUrlEntries,
   URLSET_CLOSE,
   URLSET_OPEN,
   urlEntries,
 } from '@store/shared/sitemap-xml';
+
+import { LEGAL_KINDS, legalPath } from '@store/shared/legal';
 
 import { createSemaphore } from './semaphore';
 import { paths } from './paths';
@@ -89,12 +92,28 @@ export async function openSitemap(
 
   if (parsed.kind === 'pages') {
     const categories = await core.listSitemapCategories(db);
+    const { listLegalForSitemap } = await import('@store/core/legal-read');
+    // The REAL date each current legal page took effect; a page appears only for the languages published.
+    const legal = await listLegalForSitemap(db);
+    const legalXml = LEGAL_KINDS.map((kind) =>
+      legalUrlEntries(
+        siteUrl,
+        legalPath(kind),
+        legal
+          .filter((row) => row.kind === kind)
+          .map((row) => ({
+            locale: row.locale,
+            lastmod: row.lastmod.toISOString().replace(/\.\d+Z$/, 'Z'),
+          })),
+      ),
+    ).join('');
     const body =
       URLSET_OPEN +
       urlEntries(siteUrl, { path: paths.home, lastmod: null }) +
       categories
         .map((c) => urlEntries(siteUrl, { path: slugPath('category', c.slug), lastmod: c.lastmod }))
         .join('') +
+      legalXml +
       URLSET_CLOSE;
     return new ReadableStream({
       start(controller) {

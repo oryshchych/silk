@@ -1,0 +1,114 @@
+/**
+ * Smoke checks of the legal pages on the BUILT server (phase 8), against a seeded database: every page in both
+ * languages renders its REAL TEXT (title, the "Draft: needs a lawyer" notice, no raw message keys), carries the
+ * footer links and the trademark disclaimer, a self canonical and a full hreflang pair, the placeholders show
+ * as "not set", the FAQ markup equals the visible questions, the sitemap lists the pages with a real lastmod,
+ * and unknown words are 404s that store nothing.
+ */
+import { LEGAL_KINDS, LEGAL_LOCALES, legalPath } from '../packages/shared/src/legal.ts';
+import { legalDraft } from '../packages/shared/src/legal-drafts.ts';
+
+interface Context {
+  base: string;
+  site: string;
+  check: (name: string, ok: boolean) => void;
+  storedFiles: () => number;
+}
+
+const DISCLAIMER = {
+  uk: 'Усі торгові марки та назви брендів належать їхнім законним власникам',
+  en: 'All trademarks and brand names belong to their respective owners',
+} as const;
+const NOTICE = { uk: 'Чернетка: потребує юриста', en: 'Draft: needs a lawyer' } as const;
+const NOT_SET = { uk: 'Не вказано', en: 'Not set' } as const;
+const RAW_KEY = /\b(?:legal|footer|nav)\.[a-zA-Z]+\b|MISSING_MESSAGE/;
+
+const prefix = (locale: 'uk' | 'en'): string => (locale === 'uk' ? '' : '/en');
+
+async function page(url: string): Promise<{ status: number; html: string }> {
+  const response = await fetch(url, { redirect: 'manual' });
+  return { status: response.status, html: await response.text() };
+}
+
+export async function runLegalSmoke({ base, site, check, storedFiles }: Context): Promise<void> {
+  for (const locale of LEGAL_LOCALES) {
+    for (const kind of LEGAL_KINDS) {
+      const path = `${prefix(locale)}${legalPath(kind)}`;
+      const { status, html } = await page(`${base}${path}`);
+      const draft = legalDraft(kind, locale);
+      const text = html.replace(/<[^>]*>/g, ' ');
+      check(
+        `legal ${locale}/${kind}: 200, lang, the title in the h1, the draft notice, no raw keys`,
+        status === 200 &&
+          html.includes(`<html lang="${locale}"`) &&
+          new RegExp(`<h1[^>]*>${draft.title}</h1>`).test(html) &&
+          text.includes(NOTICE[locale]) &&
+          !RAW_KEY.test(text),
+      );
+      check(
+        `legal ${locale}/${kind}: self canonical, indexable, both hreflang and x-default, the disclaimer`,
+        html.includes(`rel="canonical" href="${site}${path}"`) &&
+          !html.includes('name="robots" content="noindex') &&
+          html.includes(`hrefLang="en" href="${site}/en${legalPath(kind)}"`) &&
+          html.includes(`hrefLang="uk" href="${site}${legalPath(kind)}"`) &&
+          html.includes('hrefLang="x-default"') &&
+          text.includes(DISCLAIMER[locale]),
+      );
+    }
+    // The footer of any page lists every published page of THIS language.
+    const home = await page(`${base}${locale === 'uk' ? '/' : '/en'}`);
+    check(
+      `footer ${locale}: a link to every legal page and the disclaimer`,
+      LEGAL_KINDS.every((kind) =>
+        home.html.includes(`href="${prefix(locale)}${legalPath(kind)}"`),
+      ) && home.html.includes(DISCLAIMER[locale]),
+    );
+    const contacts = await page(`${base}${prefix(locale)}${legalPath('contacts')}`);
+    check(
+      `contacts ${locale}: unset company data shows the "not set" marker, never a value`,
+      contacts.html.includes('data-placeholder="true"') &&
+        contacts.html.replace(/<[^>]*>/g, ' ').includes(NOT_SET[locale]),
+    );
+    const faq = await page(`${base}${prefix(locale)}${legalPath('faq')}`);
+    const visible = [...faq.html.matchAll(/<h2>/g)].length;
+    const ld = /<script type="application\/ld\+json">([^<]*"FAQPage"[^<]*)<\/script>/.exec(
+      faq.html,
+    );
+    const questions =
+      ld?.[1] === undefined ? -1 : (ld[1].match(/"@type":"Question"/g) ?? []).length;
+    check(
+      `faq ${locale}: FAQPage markup has exactly the visible questions (${String(visible)})`,
+      visible > 0 && questions === visible,
+    );
+  }
+
+  const notFound = await page(`${base}/legal/nope`);
+  check(
+    'a 404 page carries the disclaimer too',
+    notFound.status === 404 && notFound.html.includes(DISCLAIMER.uk),
+  );
+
+  const before = storedFiles();
+  const odd = ['nope', 'Terms', 'terms.html', 'delivery_payment', 'x'.repeat(300), 'terms%00'];
+  const codes: number[] = [];
+  for (const word of odd) {
+    codes.push((await page(`${base}/legal/${word}`)).status);
+    codes.push((await page(`${base}/en/legal/${word}`)).status);
+  }
+  check(
+    'unknown legal words are 404s',
+    codes.every((code) => code === 404),
+  );
+  check('unknown legal words store nothing in .next', storedFiles() === before);
+
+  const sitemap = await page(`${base}/sitemaps/pages.xml`);
+  check(
+    'the pages sitemap lists every legal page in both locales with a real lastmod and hreflang',
+    LEGAL_KINDS.every(
+      (kind) =>
+        new RegExp(
+          `<loc>${site}${legalPath(kind)}</loc><lastmod>\\d{4}-\\d{2}-\\d{2}T[\\d:]+Z</lastmod>`,
+        ).test(sitemap.html) && sitemap.html.includes(`<loc>${site}/en${legalPath(kind)}</loc>`),
+    ) && sitemap.html.includes(`hreflang="en" href="${site}/en/legal/terms"`),
+  );
+}

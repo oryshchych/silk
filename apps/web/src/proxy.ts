@@ -12,6 +12,7 @@ import { customerCookieName } from './lib/account/cookies';
 import { SESSION_COOKIE } from './lib/admin/cookies';
 import { missingPath, parseProductPath } from './lib/product-path';
 import { redirectMap } from './lib/redirect-map';
+import { parseLegalPath } from './lib/legal-path';
 import { knownProductSlugs } from './lib/product-slugs';
 import { createRateLimiter } from './lib/rate-limit';
 import { isSearchPath } from './lib/search-path';
@@ -309,6 +310,18 @@ async function route(request: NextRequest): Promise<NextResponse> {
       response.headers.set('Cache-Control', 'no-store');
       return withNoindex(response);
     }
+  }
+
+  // A legal page word that is not one of the fixed seven is answered here with the 404 page, for the same
+  // reason as an unknown product slug: nothing a client chooses may become a page cache entry.
+  const legal = parseLegalPath(pathname);
+  if (legal !== null && legal.kind === null && request.method !== 'OPTIONS') {
+    const target = request.nextUrl.clone();
+    target.pathname = missingPath(legal.locale);
+    target.search = '';
+    const response = NextResponse.rewrite(target);
+    response.headers.set('Cache-Control', 'no-store');
+    return withNoindex(response);
   }
 
   // Мовна маршрутизація — лише для сторінок: не для API і не для файлів

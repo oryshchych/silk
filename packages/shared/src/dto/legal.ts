@@ -50,3 +50,16 @@ export type PublicLegalDto = z.output<typeof publicLegalDto>;
 export type LegalNavDto = z.output<typeof legalNavDto>;
 export type AdminLegalListDto = z.output<typeof adminLegalListDto>;
 export type AdminLegalDto = z.output<typeof adminLegalDto>;
+
+/** Company and contact data the owner fills in (`settings.company`, `settings.contacts`). A missing value is null, never a made-up one. */
+export const companyProfileDto = z.object({
+  legalName: z.string().nullable(),
+  taxId: z.string().nullable(),
+  registeredAddress: z.string().nullable(),
+  phone: z.string().nullable(),
+  email: z.string().nullable(),
+  telegram: z.string().nullable(),
+  viber: z.string().nullable(),
+  address: z.string().nullable(),
+});
+export type CompanyProfileDto = z.output<typeof companyProfileDto>;

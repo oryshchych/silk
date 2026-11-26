@@ -25,6 +25,8 @@
     "./dto/return": "./src/dto/return.ts",
     "./dto/legal": "./src/dto/legal.ts",
     "./legal": "./src/legal.ts",
+    "./faq": "./src/faq.ts",
+    "./legal-drafts": "./src/legal-drafts.ts",
     "./rich-text": "./src/rich-text.ts"
   },
   "scripts": {

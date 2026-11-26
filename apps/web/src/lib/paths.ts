@@ -1,3 +1,4 @@
+import { legalPath, type LegalKind } from '@store/shared/legal';
 import { localizedPath, type SiteLocale } from '@store/shared/seo';
 
 /** Locale-less storefront paths; `href` adds the locale prefix. */
@@ -17,6 +18,7 @@ export const paths = {
   accountReturns: '/account/returns',
   accountReviews: '/account/reviews',
   accountWishlist: '/account/wishlist',
+  legal: (kind: LegalKind): string => legalPath(kind),
   unsubscribe: '/unsubscribe',
   accountProfile: '/account/profile',
   accountAddresses: '/account/addresses',
