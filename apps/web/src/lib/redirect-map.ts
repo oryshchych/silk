@@ -15,7 +15,7 @@ declare global {
   var silkRedirectsVersion: number | undefined;
 }
 
-export interface RedirectHit {
+interface RedirectHit {
   to: string;
   /** 410: the page is gone for good (`to` is unused). */
   status: 301 | 302 | 410;
