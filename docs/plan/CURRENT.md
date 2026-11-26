@@ -5,49 +5,50 @@
 
 ## Current phase
 
-**Phase 7, "customer account, reviews, returns": built and merged (5 feature PRs); 4 of 4 acceptance criteria verified by
-execution, with named gaps** (2026-11-26, about 2 h 50 min from the go-ahead to the last merge). 6 PRs (#88 to #92 and the
-small #93), each of #88 to #92 went FAIL, one fix push, PASS (2 rounds), #93 one round; 4 of the 5 FAILs carried a blocker. Longest wait: the
-orchestrator's re-check of #90, about 30 min; the specialist reviews took 15 to 25 min each. Process failures (author): 5.
-Phase 8 starts in a NEW session on the standing go-ahead (`docs/AUTONOMOUS_MODE.md`). Standing rules (`AGENTS.md` section 0):
+**Phase 8, "legal and static pages": built and merged (2 feature PRs); 4 of 4 acceptance criteria verified by execution as a
+MECHANISM, every text is a draft that needs a lawyer** (2026-11-26, about 1 h 35 min from the go-ahead to the last merge).
+PRs: #96 (legal documents, admin, sanitiser, PDF upload) and #97 (public pages, footer, disclaimer, sitemap, one returns policy,
+consent versions). Rounds: #96 two (FAIL, one fix push, PASS), #97 two (the same). Longest wait: about 30 min for the specialists'
+findings on #97. Process failures (author): 5 (a flaky same-millisecond fixture that failed CI; a Ukrainian technical note caught by
+the language gate; a smoke case that still used a now-refused return reason; two harness slips in the #97 fix round) plus two
+author PASS comments posted before the specialists had reported, which the consolidated FAIL comments then superseded.
+Phase 9 starts in a NEW session on the standing go-ahead (`docs/AUTONOMOUS_MODE.md`). Standing rules (`AGENTS.md` section 0):
 English technical text; one phase per session.
 
-Infra: staging `https://staging.damazla.com` (basic auth), Hetzner CAX11, Dokploy. Next 16.4.6. The worker is still not described in
-`docker-compose.yml` (Q31), so no e-mail leaves the system yet (order, account and back-in-stock mails included).
+Infra: staging `https://staging.damazla.com` (basic auth), Hetzner CAX11, Dokploy. Next 16.4.6. The worker is still not in
+`docker-compose.yml` (Q31), so no e-mail leaves the system yet. Staging has NO published legal documents until the owner (or the
+seed on an empty database) publishes versions: the footer then lists nothing and `/legal/*` answers 404.
 
-## Done (phase 7, merged PRs)
+## Done (phase 8, merged PRs)
 
-- #88 customer accounts: register by mailed link (the person sets the password), sign-in, reset, sessions with an `audience`, migrations 0015 and 0016
-- #89 orders with tracking and reorder, profile, ten addresses, newsletter consent, saved sizes ("your size" via a client-only cookie)
-- #90 wishlist and back-in-stock alerts (worker job, signed unsubscribe link); queues for the three customer mail topics (also repaired #88)
-- #91 reviews by verified buyers, moderation (`reviews.moderate`), counters from approved rows, `AggregateRating`; migrations 0017 and 0018
-- #92 return requests, receipt-only restock, refund of what was RECEIVED through the phase 5 flow (`returns.manage`); migrations 0019 and 0020
-- #93 fix: the account client components had no messages namespace (raw keys on every account page since #88), smoke now checks it
+- #96 `legal_documents` versioned (migrations 0021, 0022): a published version is immutable and undeletable (trigger on every column), the current one is chosen by the DATABASE clock, a later start cannot be overridden; admin screens, `legal.edit` (content may draft) and `legal.publish` (owner, admin); Markdown subset plus allowlist sanitiser (write, read, render); PDF upload route (`%PDF-` by bytes, 8 MB, attachment, `private, no-store`)
+- #97 `/legal/<slug>` in uk and en (ISR, tags, proxy 404 gate, hreflang only when both languages are published, FAQPage from visible questions, sitemap with the real lastmod), footer links, trademark disclaimer on every page, About and Contacts from settings with "not set" markers, neutral draft templates marked "Draft: needs a lawyer"
+- #97 one returns policy (`packages/shared/src/return-policy.ts`): page summary, return form, server check and `hasMerchantReturnPolicy` come from the same constants; per product class (underwear and hosiery "not permitted", homewear no claim); the edition of the text is recorded (`return_requests.policy_version`, order, registration and newsletter audit rows)
 
 ## Next step
 
-1. Owner hands: Q63 (the worker needs `AUTH_SECRET` and a deployment before any mail goes out), then the older ones (Q62, Q40, Q45, Q13).
-2. Owner legal texts (phase 8): Q64 accounts, Q71 returns policy and window, Q73 review terms.
-3. Phase 8 in a NEW session on the standing go-ahead.
+1. Owner hands: Q76 (media host headers: a RELEASE GATE before any legal PDF is published), Q63, Q62, Q40, Q45, Q13.
+2. Owner and lawyer: Q77 (replace the draft texts and fill `settings.company` and `settings.contacts`), Q79 (homewear returns, needs a lawyer), Q75 (returns window versus Resolution 172), Q80 (remove the draft banner before launch), Q64, Q71, Q73.
+3. Phase 9 in a NEW session.
 
 ## Acceptance criteria
 
-- [x] A review only from a buyer of THAT product: `reviews.int` (own order, product line, shipped/delivered/paid; another customer, a pending or cancelled order refused; mutation: no customer scope fails)
-- [x] The fit share comes from real `fit_feedback`: `reviews.int` (counters from approved rows, 100%, 50%, parallel moderators on different reviews)
-- [x] The back-in-stock alert fires on restock: `wishlist-alerts.int` (4 parallel workers claim 6 alerts once), worker `back-in-stock.int`, `customer-topics-delivered.int` (real relay and pg-boss)
-- [x] A return is created, processed in the admin and changes stock at the receipt: `returns.int` 27 tests, smoke-admin returns checks; the sender itself (Resend) was never called, a fake was used
+- [x] All pages exist in uk and en: 7 kinds in both languages from the templates (`legal.int` "templates"); the smoke publishes 13 of 14 on purpose (`about` in uk only, to exercise the one-language path) and asserts the rendered text of each
+- [x] The returns page does not contradict Resolution 172: summary built from the constants, cites the Resolution, lists accepted and refused reasons (`return-policy-consistency.unit` 15 tests, smoke "returns uk/en"); NOT reviewed by a lawyer
+- [x] `hasMerchantReturnPolicy` equals the page: consistency unit and smoke (a bra page says not permitted with a link, a pyjama page carries no claim, identical for every visitor); the server refuses the other reasons (`returns.int`)
+- [x] The trademark disclaimer is on every page: smoke loop over 12 page kinds in both languages, the 404 pages included (`global-error` not exercised)
 
 ## Not built or not verified
 
-- A customer can edit or delete neither a review nor an address (no edit, no set-default control), no Nova Poshta address form, no account deletion or data export (Q66)
-- No marketing mailer or marketing unsubscribe, no `List-Unsubscribe` headers (Q69, Q70), no photo reviews, no exchange flow, the order status is not moved to `returned` (Q72)
-- Review and return submission were not exercised over HTTP in smoke (int tests only); no real mail, no real browser pass
-- Legal texts are neutral placeholders (Q64, Q71, Q73)
+- EVERY legal text is a neutral draft that needs a lawyer; no company facts exist (legal name, tax id, address, phone) and no admin screen edits `settings.company` (Q77)
+- No real PDF served through R2 (Q76), no HTTP probe of the PDF route against a built server (route tested with a real handler, Postgres and a signature-checking fake S3)
+- Checkout, registration and returns consent refs were not probed over HTTP (int tests and code only); a real publish around a cache refresh was read from code, not observed
+- No real browser pass, focus order or contrast check; no e-mail sent
 
 ## Caveats
 
-- The account credential forms share a global attempt cap that one attacker can fill (accepted risk, Q67)
-- Full local `test:int` can time out under machine load; CI is authoritative
+- Full local `test:int` can time out under machine load (account-data, stock, catalog-admin each flaked once, all pass alone); CI is authoritative
+- The proxy gate for legal pages reloads once a minute and at once on a publish in the same process
 ## Deviations from the plan
-- Registration starts with an address and the person sets the password on the mailed link (pre-hijack); customers are separate from admins (audience column, separate keys)
-- Owner queue entries added: Q63 to Q74
+- Slices B and C shipped as one PR (the returns summary sits on the public page); the phase ran as 2 PRs, not 3
+- The owner queue gained Q75 to Q80; the old placeholder constant `v0-placeholder` is now only the "nothing published yet" value
