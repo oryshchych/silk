@@ -6,7 +6,7 @@
 ## Current phase
 
 **Phase 5, "admin: orders and customers": all 5 acceptance criteria verified by execution** (2026-11-26,
-about 3 hours, 7 PRs, 1 review round each). Two caveats: the Nova Poshta adapter is verified only against
+about 3 hours 15 minutes, 7 PRs, 2 review iterations each (FAIL, then PASS on the scoped re-check; 1 fix push each, 2 on #80)). Two caveats: the Nova Poshta adapter is verified only against
 a local fake (Q49), and a "report" is the accountant's CSV (the reports screen is phase 10). Phase 6
 (SEO) starts in a NEW session. Standing rules (`AGENTS.md` section 0): English technical text; one phase per session.
 
