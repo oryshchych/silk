@@ -230,7 +230,10 @@ describe('the message router', () => {
       expect(
         failing.has(topic)
           ? outcome !== 'handled'
-          : outcome === 'handled' || outcome === 'OrderEmailError',
+          : // A payload that is not the topic's own shape is a VISIBLE failure (a named error), never a silent drop.
+            ['handled', 'OrderEmailError', 'AccountEmailError', 'BackInStockEmailError'].includes(
+              outcome,
+            ),
         topic,
       ).toBe(true);
     }
@@ -380,6 +383,7 @@ describe('scheduled jobs', () => {
         JOB_NAMES.reconcileFiscal,
         JOB_NAMES.sweepRefunds,
         JOB_NAMES.purgePendingAccounts,
+        JOB_NAMES.notifyRestocked,
       ].sort(),
     );
     expect(schedules.every((s) => s.timezone === 'Europe/Kyiv')).toBe(true);

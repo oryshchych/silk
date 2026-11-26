@@ -5,7 +5,10 @@ import { refresh } from 'next/cache';
 import { z } from 'zod';
 
 import { addAddress, addressInputSchema, deleteAddress } from '@store/core/account-addresses';
+import { cancelStockAlert, subscribeStockAlert } from '@store/core/account-alerts';
 import { reorderMyOrder } from '@store/core/account-orders';
+import { addToWishlist, removeFromWishlist } from '@store/core/account-wishlist';
+import type { CustomerSession } from '@store/core/customer-session';
 import {
   mySizeLabels,
   setMySizes,
@@ -126,4 +129,64 @@ export async function deleteAddressAction(input: unknown): Promise<CustomerActio
       data.id,
     );
   });
+}
+
+const productSchema = z.object({ productId: z.uuid() });
+
+export async function addToWishlistAction(input: unknown): Promise<CustomerActionResult<boolean>> {
+  return await customerAction(
+    input,
+    productSchema,
+    async (tx, who, data) =>
+      await addToWishlist(
+        tx,
+        { customerId: who.customer.customerId, userId: who.customer.userId, ip: who.ip },
+        data.productId,
+      ),
+    { notFoundCodes: ['WISHLIST_NOT_FOUND'] },
+  );
+}
+
+export async function removeFromWishlistAction(
+  input: unknown,
+): Promise<CustomerActionResult<boolean>> {
+  return await customerAction(
+    input,
+    productSchema,
+    async (tx, who, data) =>
+      await removeFromWishlist(
+        tx,
+        { customerId: who.customer.customerId, userId: who.customer.userId, ip: who.ip },
+        data.productId,
+      ),
+  );
+}
+
+const alertWho = (who: { customer: CustomerSession; ip: string | null }) => ({
+  customerId: who.customer.customerId,
+  userId: who.customer.userId,
+  email: who.customer.email,
+  locale: who.customer.locale,
+  ip: who.ip,
+});
+
+export async function subscribeStockAlertAction(
+  input: unknown,
+): Promise<CustomerActionResult<string>> {
+  return await customerAction(
+    input,
+    z.object({ variantId: z.uuid() }),
+    async (tx, who, data) => await subscribeStockAlert(tx, alertWho(who), data.variantId),
+    { notFoundCodes: ['ALERT_NOT_FOUND'] },
+  );
+}
+
+export async function cancelStockAlertAction(
+  input: unknown,
+): Promise<CustomerActionResult<boolean>> {
+  return await customerAction(
+    input,
+    z.object({ id: z.uuid() }),
+    async (tx, who, data) => await cancelStockAlert(tx, alertWho(who), data.id),
+  );
 }

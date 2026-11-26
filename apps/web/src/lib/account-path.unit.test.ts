@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { isAccountAuthPath, isAccountPath } from './account-path';
+import { isAccountAuthPath, isAccountPath, isUnsubscribePath } from './account-path';
 
 describe('isAccountPath', () => {
   it.each([
@@ -12,6 +12,8 @@ describe('isAccountPath', () => {
     '//account//login/',
     '/en/%41CCOUNT/set-password',
     '/%zzaccount',
+    '/unsubscribe',
+    '/en/UNSUBSCRIBE/',
   ])('%s is the account', (path) => {
     expect(isAccountPath(path)).toBe(true);
   });
@@ -35,5 +37,15 @@ describe('isAccountPath', () => {
     for (const path of ['/account', '/account/orders', '/category/bras']) {
       expect(isAccountAuthPath(path), path).toBe(false);
     }
+  });
+});
+
+describe('isUnsubscribePath', () => {
+  it('is the mail link in either language, and NOT a credential page (it must not share their bucket)', () => {
+    for (const path of ['/unsubscribe', '/en/unsubscribe', '/%75nsubscribe/', '/UNSUBSCRIBE/x']) {
+      expect(isUnsubscribePath(path), path).toBe(true);
+      expect(isAccountAuthPath(path), path).toBe(false);
+    }
+    expect(isUnsubscribePath('/account/login')).toBe(false);
   });
 });

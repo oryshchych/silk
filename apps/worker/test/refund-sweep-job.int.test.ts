@@ -3,7 +3,7 @@
  * sent (real MonoProvider over a socket against the local fake) and it raises one alert for an
  * unknown one without calling the provider.
  */
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { sql } from 'drizzle-orm';
@@ -154,14 +154,26 @@ function sources(dir: string): string[] {
 }
 
 describe('the outbox topics', () => {
-  it('every topic the core writes has a queue: a topic without one ends stuck and nobody is told', () => {
+  it('every outbox topic written anywhere in packages and apps has a queue: a topic without one ends stuck and nobody is told', () => {
     const written = new Set<string>();
-    for (const file of sources(join(import.meta.dirname, '../../../packages/core/src'))) {
-      for (const match of readFileSync(file, 'utf8').matchAll(/topic:\s*'([a-z]+\.[a-z-]+)'/g)) {
-        if (match[1] !== undefined) written.add(match[1]);
+    const root = join(import.meta.dirname, '../../..');
+    // EVERY way a topic is spelled: an object literal, a constant, a template string, a helper argument.
+    // Anything shaped like `email.x`, `alert.x` or `fiscal.x` in quotes of a non-test source file.
+    const shape = /['"`]((?:email|alert|fiscal)\.[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)*)['"`]/g;
+    for (const dir of ['packages', 'apps']) {
+      for (const pkg of readdirSync(join(root, dir))) {
+        const src = join(root, dir, pkg, 'src');
+        if (!existsSync(src)) continue;
+        for (const file of sources(src)) {
+          for (const match of readFileSync(file, 'utf8').matchAll(shape)) {
+            if (match[1] !== undefined) written.add(match[1]);
+          }
+        }
       }
     }
-    expect(written.size).toBeGreaterThan(8);
+    // Scheduled job names look alike (`fiscal.reconcile`) but are cron queues, not outbox topics.
+    for (const job of Object.values(JOB_NAMES)) written.delete(job);
+    expect(written.size).toBeGreaterThan(15);
     const queues: readonly string[] = OUTBOX_TOPICS;
     expect([...written].filter((topic) => !queues.includes(topic))).toEqual([]);
   });

@@ -11,6 +11,7 @@ import type { PgBoss } from 'pg-boss';
 
 import { DomainError } from '@store/core/errors';
 
+import { notifyRestocked } from '@store/core/account-alerts';
 import { purgeEmailTokens, purgePendingAccounts } from '@store/core/customer-auth';
 import { findReservedDrift, releaseExpiredOrders } from '@store/core/expiry';
 import { findReceiptGaps } from '@store/core/fiscal-gaps';
@@ -37,6 +38,8 @@ export const JOB_NAMES = {
   sweepRefunds: 'refunds.sweep',
   /** Phase 7: registrations nobody confirmed within a week are removed. */
   purgePendingAccounts: 'accounts.purge-pending',
+  /** Phase 7: queue one mail for every waiting back-in-stock alert whose size can be bought again. */
+  notifyRestocked: 'stock.notify-back-in-stock',
 } as const;
 
 /** Cron expressions and their timezone (ADR-17): the timezone moves the schedule, nothing else. */
@@ -52,8 +55,12 @@ const SCHEDULES = {
   [JOB_NAMES.reconcileFiscal]: '0 6 * * *',
   [JOB_NAMES.sweepRefunds]: '*/10 * * * *',
   [JOB_NAMES.purgePendingAccounts]: '20 5 * * *',
+  // Every ten minutes: a restock reaches the customer within one cycle (and with the reservation expiry too).
+  [JOB_NAMES.notifyRestocked]: '*/10 * * * *',
 } as const;
 const CRON_TZ = 'Europe/Kyiv';
+const RESTOCK_BATCH = 200;
+const RESTOCK_MAX_BATCHES = 25;
 
 export interface JobDeps {
   db: Reader & { transaction: <T>(fn: (tx: Tx) => Promise<T>) => Promise<T> };
@@ -123,6 +130,19 @@ export function createJobHandlers(deps: JobDeps): JobHandlers {
     [JOB_NAMES.cleanQuarantine]: async () => {
       const removed = await deps.db.transaction(async (tx) => await purgeQuarantine(tx));
       line({ level: 'info', scope: JOB_NAMES.cleanQuarantine, removed });
+    },
+    [JOB_NAMES.notifyRestocked]: async () => {
+      // Bounded batches, each its own transaction, until nothing is left or the budget is spent: a
+      // popular size must not wait hours for a drain of 200 per run (25 batches = 5000 alerts a run).
+      let queued = 0;
+      for (let batch = 0; batch < RESTOCK_MAX_BATCHES; batch += 1) {
+        const claimed = await deps.db.transaction(
+          async (tx) => await notifyRestocked(tx, RESTOCK_BATCH),
+        );
+        queued += claimed;
+        if (claimed < RESTOCK_BATCH) break;
+      }
+      line({ level: 'info', scope: JOB_NAMES.notifyRestocked, queued });
     },
     [JOB_NAMES.purgePendingAccounts]: async () => {
       const removed = await deps.db.transaction(async (tx) => await purgePendingAccounts(tx));

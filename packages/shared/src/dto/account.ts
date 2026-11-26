@@ -48,3 +48,25 @@ export const profileDto = z.object({
 export type AccountOrderRowDto = z.output<typeof accountOrderRowDto>;
 export type AddressDto = z.output<typeof addressDto>;
 export type ProfileDto = z.output<typeof profileDto>;
+
+export const wishlistItemDto = z.object({
+  productId: z.uuid(),
+  slug: z.string(),
+  name: z.string(),
+  price: moneyDto,
+  /** True when at least one size can be bought now. */
+  available: z.boolean(),
+});
+
+export const stockAlertDto = z.object({
+  id: z.uuid(),
+  productSlug: z.string(),
+  productName: z.string(),
+  sizeLabel: z.string(),
+  colorName: z.string(),
+  /** False once the alert was sent (it stays listed until the customer removes it). */
+  waiting: z.boolean(),
+});
+
+export type WishlistItemDto = z.output<typeof wishlistItemDto>;
+export type StockAlertDto = z.output<typeof stockAlertDto>;

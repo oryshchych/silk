@@ -23,7 +23,8 @@ const MIN_SECRET_LENGTH = 32;
 const ARGON = { memory: 19_456, passes: 2, parallelism: 1, tagLength: 32 } as const;
 const ARGON_PREFIX = 'argon2id$v1';
 
-export type KeyPurpose = 'session' | 'totp' | 'recovery' | 'customer-session' | 'email-token';
+export type KeyPurpose =
+  'session' | 'totp' | 'recovery' | 'customer-session' | 'email-token' | 'unsubscribe';
 
 /** A 32-byte key for one purpose. Throws (fails closed) when the server secret is missing or weak. */
 export function deriveKey(secret: string | undefined, purpose: KeyPurpose): Buffer {

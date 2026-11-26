@@ -8,6 +8,7 @@ import type { AnalyticsItem } from '@store/shared/analytics';
 import type { ColorDto, ProductImageDto } from '@store/shared/dto/catalog';
 
 import { AddToCartButton } from '@/components/add-to-cart-button';
+import { ProductAccountActions } from '@/components/product-account-actions';
 import { MySizeNotice } from '@/components/my-size-notice';
 import { ResponsiveImage } from '@/components/responsive-image';
 import { GALLERY_SIZES } from '@/lib/image-sizes';
@@ -36,6 +37,9 @@ interface Props {
   prices: { base: string; compareAt: string | null; byVariant: Record<string, string> };
   /** Locale-prefixed cart path, for the "view cart" link. */
   cartHref: string;
+  /** Account actions on the page (wishlist, back-in-stock alerts). */
+  productId: string;
+  loginHref: string;
   /** What "add to cart" reports to analytics, per variant id (built on the server). */
   trackItems: Record<string, AnalyticsItem>;
 }
@@ -201,6 +205,8 @@ export function ProductBuyBox({
   variants,
   prices,
   cartHref,
+  productId,
+  loginHref,
   trackItems,
 }: Props) {
   const t = useTranslations('product');
@@ -302,6 +308,13 @@ export function ProductBuyBox({
           variantId={selected?.available === true ? selected.id : null}
           cartHref={cartHref}
           trackItem={selected === undefined ? null : (trackItems[selected.id] ?? null)}
+        />
+
+        <ProductAccountActions
+          productId={productId}
+          variants={variants}
+          colorSlug={selection.colorSlug}
+          loginHref={loginHref}
         />
 
         {hasBras ? (
