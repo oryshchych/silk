@@ -562,8 +562,8 @@ export async function runAdminSmoke({
     const contentPrint = await get(printPath, cookie(contentToken));
     const noWaybillPrint = await get(printPath, cookie(managerToken));
     check(
-      'orders: the print route is 401 without a session, 403 for a content role and 404 for an order with no waybill (and never carries a key)',
-      anonymousPrint.status === 401 &&
+      'orders: the print route refuses without a session (the proxy redirects; the route itself answers 401), 403 for a content role and 404 for an order with no waybill (and never carries a key)',
+      (anonymousPrint.status === 401 || anonymousPrint.status === 307) &&
         contentPrint.status === 403 &&
         noWaybillPrint.status === 404 &&
         !noWaybillPrint.html.includes('apiKey'),
