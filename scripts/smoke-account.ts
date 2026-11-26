@@ -402,6 +402,7 @@ export async function runAccountSmoke(ctx: Context): Promise<void> {
       '/account/addresses',
       '/account/wishlist',
       '/account/reviews',
+      '/account/returns',
     ];
     for (const prefix of ['', '/en']) {
       for (const path of [
