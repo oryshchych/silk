@@ -6,7 +6,8 @@ import { useId, useState, useTransition } from 'react';
 import { requestReturnAction } from '@/actions/account-data';
 import type { CustomerActionResult } from '@/lib/account/action';
 import { fieldText } from '@/lib/form-text';
-import { returnReasonValues, type EligibleOrderDto } from '@store/shared/dto/return';
+import type { EligibleOrderDto } from '@store/shared/dto/return';
+import { acceptedReturnReasons } from '@store/shared/return-policy';
 
 const FIELD = 'min-h-10 rounded-sm border border-border bg-surface px-3';
 
@@ -62,7 +63,7 @@ export function ReturnForm({ order }: { order: EligibleOrderDto }) {
       <label htmlFor={ids.reason} className="flex flex-col gap-1 text-sm">
         {t('returnReason')}
         <select id={ids.reason} name="reason" className={FIELD}>
-          {returnReasonValues.map((reason) => (
+          {acceptedReturnReasons().map((reason) => (
             <option key={reason} value={reason}>
               {t(`reason.${reason}`)}
             </option>

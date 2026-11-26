@@ -12,10 +12,16 @@ import { Breadcrumbs } from '@/components/breadcrumbs';
 import { CompanyBlock } from '@/components/company-block';
 import { JsonLd } from '@/components/json-ld';
 import { LegalBody } from '@/components/legal-body';
+import { ReturnPolicySummary } from '@/components/return-policy-summary';
 import { SiteShell } from '@/components/site-shell';
 import { resolveLocale } from '@/i18n/locale';
 import { htmlToSnippet } from '@/lib/html-text';
-import { getCachedCompanyProfile, getCachedLegalDocument, getCachedLegalNav } from '@/lib/legal';
+import {
+  getCachedCompanyProfile,
+  getCachedLegalDocument,
+  getCachedLegalNav,
+  getCachedReturnWindow,
+} from '@/lib/legal';
 import { pageMetadata } from '@/lib/metadata';
 import { href, paths } from '@/lib/paths';
 import { getSiteUrl } from '@/lib/site-url';
@@ -67,6 +73,7 @@ export default async function LegalPage({ params }: Props) {
   const tn = await getTranslations('nav');
   const siteUrl = await getSiteUrl();
   const profile = kind === 'about' || kind === 'contacts' ? await getCachedCompanyProfile() : null;
+  const returnWindow = kind === 'returns' ? await getCachedReturnWindow() : null;
   // Only the questions the page SHOWS go into the structured data.
   const faq = kind === 'faq' && doc.bodyHtml !== null ? parseFaqEntries(doc.bodyHtml) : [];
   const pdf =
@@ -96,6 +103,7 @@ export default async function LegalPage({ params }: Props) {
       <article className="mt-3 flex max-w-3xl flex-col gap-4">
         <h1 className="font-display text-3xl">{doc.title}</h1>
         <p className="text-sm text-text-muted">{t('effective', { date })}</p>
+        {returnWindow === null ? null : <ReturnPolicySummary windowDays={returnWindow} />}
         {doc.bodyHtml === null ? null : <LegalBody html={doc.bodyHtml} />}
         {pdf === null ? null : (
           <p>

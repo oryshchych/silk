@@ -4,7 +4,12 @@ import { preload } from 'react-dom';
 import { notFound } from 'next/navigation';
 
 import { formatMoney } from '@store/shared/money';
-import { buildBreadcrumbList, buildProduct } from '@store/shared/schema-org';
+import { RETURN_POLICY } from '@store/shared/return-policy';
+import {
+  buildBreadcrumbList,
+  buildMerchantReturnPolicy,
+  buildProduct,
+} from '@store/shared/schema-org';
 import { buildAlternates } from '@store/shared/seo';
 
 import { Breadcrumbs } from '@/components/breadcrumbs';
@@ -138,6 +143,8 @@ export default async function ProductPage({ params }: Props) {
             images: imageUrls,
             url,
             offers: uniqueOffers(product.variants, url),
+            // The same policy as the returns page and the return form; nothing here depends on the visitor.
+            returnPolicy: buildMerchantReturnPolicy(RETURN_POLICY),
             // aggregateRating only from APPROVED reviews that the page also shows (same cached read):
             // markup must match what the visitor sees, and no review means no markup.
             rating:

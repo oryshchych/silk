@@ -18,6 +18,7 @@ const INVALID_CODES: readonly string[] = [
   'REVIEW_RATE',
   'RETURN_ITEMS',
   'RETURN_LIMIT',
+  'RETURN_REASON',
 ];
 
 /** Mutations of a signed-in customer: a person edits a few things a minute, a script hundreds. */

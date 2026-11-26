@@ -7,6 +7,7 @@
  */
 import { unstable_cache } from 'next/cache';
 
+import { returnWindowDays } from '@store/core/returns';
 import { getCompanyProfile } from '@store/core/legal-company';
 import { getCurrentLegalDocument, listCurrentLegalNav } from '@store/core/legal-read';
 import { LEGAL_NAV_TAG, legalTag } from '@store/shared/cache-tags';
@@ -33,5 +34,12 @@ export const getCachedLegalNav = () =>
 export const getCachedCompanyProfile = () =>
   unstable_cache(async () => await getCompanyProfile(await getDb()), ['legal-company'], {
     tags: [legalTag('contacts')],
+    revalidate: TTL,
+  })();
+
+/** The window in days for the returns page summary: the setting, else the policy default (tag `legal:returns`). */
+export const getCachedReturnWindow = () =>
+  unstable_cache(async () => await returnWindowDays(await getDb()), ['legal-return-window'], {
+    tags: [legalTag('returns')],
     revalidate: TTL,
   })();

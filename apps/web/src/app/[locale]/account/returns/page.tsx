@@ -1,12 +1,15 @@
-import { listEligibleOrders, listMyReturns } from '@store/core/returns';
+import { listEligibleOrders, listMyReturns, returnWindowDays } from '@store/core/returns';
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { getTranslations } from 'next-intl/server';
+
+import { RETURN_POLICY } from '@store/shared/return-policy';
 
 import { AccountFrame } from '@/components/account/account-frame';
 import { ReturnForm } from '@/components/account/return-form';
 import { resolveLocale } from '@/i18n/locale';
 import { getDb } from '@/lib/db';
-import { paths } from '@/lib/paths';
+import { href, paths } from '@/lib/paths';
 
 type Props = PageProps<'/[locale]/account/returns'>;
 
@@ -17,7 +20,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return { title: t('section.returns'), robots: { index: false, follow: false } };
 }
 
-/** My requests, and the delivered orders still inside the window. The policy text is a placeholder (Q71). */
+/** My requests, and the delivered orders still inside the window. The policy sentence is built from the shared policy (Q75). */
 export default async function AccountReturnsPage({ params }: Props) {
   return (
     <AccountFrame
@@ -25,7 +28,7 @@ export default async function AccountReturnsPage({ params }: Props) {
       path={paths.accountReturns}
       title={(t) => t('section.returns')}
     >
-      {async ({ customer }) => {
+      {async ({ customer, locale }) => {
         const db = await getDb();
         const [mine, eligible] = await Promise.all([
           listMyReturns(db, customer.customerId),
@@ -35,7 +38,22 @@ export default async function AccountReturnsPage({ params }: Props) {
         const to = await getTranslations('order');
         return (
           <div className="flex max-w-xl flex-col gap-8">
-            <p className="text-sm text-text-muted">{t('returnsPolicy')}</p>
+            <div className="text-sm text-text-muted">
+              <p>
+                {t(
+                  RETURN_POLICY.voluntaryReturns ? 'returnsPolicyVoluntary' : 'returnsPolicyStrict',
+                  {
+                    days: await returnWindowDays(db),
+                  },
+                )}
+              </p>
+              <Link
+                href={href(locale, paths.legal('returns'))}
+                className="inline-flex min-h-6 items-center underline"
+              >
+                {t('returnsPolicyLink')}
+              </Link>
+            </div>
             <section aria-labelledby="mine-h" className="flex flex-col gap-3">
               <h2 id="mine-h" className="font-display text-xl">
                 {t('myReturns')}

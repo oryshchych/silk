@@ -10,6 +10,7 @@ import {
   setPasswordAction,
   type AccountFormState,
 } from '@/actions/account-auth';
+import { href, paths } from '@/lib/paths';
 import { fieldText } from '@/lib/form-text';
 
 const FIELD = 'min-h-10 rounded-sm border border-border bg-surface px-3';
@@ -104,6 +105,32 @@ export function AccountForm({
       {kind === 'setPassword' ? (
         <p id={hintId} className="text-sm text-text-muted">
           {t('passwordHint')}
+        </p>
+      ) : null}
+      {kind === 'register' ? (
+        <p className="text-sm text-text-muted">
+          {t.rich('registerConsent', {
+            terms: (chunks) => (
+              <a
+                href={href(locale, paths.legal('terms'))}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline"
+              >
+                {chunks}
+              </a>
+            ),
+            privacy: (chunks) => (
+              <a
+                href={href(locale, paths.legal('privacy'))}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline"
+              >
+                {chunks}
+              </a>
+            ),
+          })}
         </p>
       ) : null}
       <button type="submit" disabled={pending} className={BUTTON}>

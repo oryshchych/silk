@@ -36,6 +36,7 @@ import {
   ReturnItemsInvalidError,
   ReturnLimitError,
   ReturnNotEligibleError,
+  ReturnReasonNotAcceptedError,
   createReturnRequest,
   listEligibleOrders,
   listMyReturns,
@@ -130,8 +131,8 @@ const input = (
 ) =>
   returnInputSchema.parse({
     orderNumber: number,
-    reason: 'wrong_size',
-    comment: 'too small',
+    reason: 'defect',
+    comment: 'torn seam',
     items: [{ orderItemId: itemId, quantity }],
     ...over,
   });
@@ -326,6 +327,51 @@ describe('who may ask, and for how much', () => {
     }
     const o = await deliveredOrder(c, 1);
     await expect(request(c, o.number, o.itemId, 1)).rejects.toBeInstanceOf(ReturnLimitError);
+  });
+});
+
+describe('the returns policy (Q75): accepted reasons and the recorded edition', () => {
+  it('refuses a change of mind, a wrong size and "other" (underwear of proper quality), accepts the three statutory reasons', async () => {
+    const c = await customer('policy-reasons@example.test');
+    const o = await deliveredOrder(c);
+    for (const reason of ['changed_mind', 'wrong_size', 'other']) {
+      await expect(
+        handle.db.transaction(
+          async (tx) => await createReturnRequest(tx, c, input(o.number, o.itemId, 1, { reason })),
+        ),
+      ).rejects.toBeInstanceOf(ReturnReasonNotAcceptedError);
+    }
+    const none = await handle.db.execute(
+      sql`SELECT 1 FROM return_requests WHERE order_id = ${o.orderId}`,
+    );
+    expect(none.rows).toHaveLength(0);
+    for (const reason of ['defect', 'wrong_item', 'not_as_described']) {
+      await handle.db.transaction(
+        async (tx) => await createReturnRequest(tx, c, input(o.number, o.itemId, 1, { reason })),
+      );
+    }
+  });
+
+  it('records the returns text in force: the placeholder before one is published, then kind/locale/version of the current one', async () => {
+    const c = await customer('policy-ref@example.test');
+    const o = await deliveredOrder(c);
+    const first = await request(c, o.number, o.itemId, 1);
+    const before = await handle.db.execute<{ policy_version: string }>(
+      sql`SELECT policy_version FROM return_requests WHERE id = ${first}`,
+    );
+    expect(before.rows[0]?.policy_version).toBe('v0-placeholder');
+    await handle.db.execute(
+      sql`INSERT INTO legal_documents (kind, locale, version, title, status, body_html, effective_from, published_at)
+          VALUES ('returns', 'uk', '3', 'Returns', 'published', '<p>x</p>', now() - interval '1 hour', now() - interval '1 hour'),
+                 ('returns', 'uk', '4', 'Returns', 'published', '<p>y</p>', now() + interval '1 day', now())`,
+    );
+    const second = await request(c, o.number, o.itemId, 1);
+    const after = await handle.db.execute<{ policy_version: string }>(
+      sql`SELECT policy_version FROM return_requests WHERE id = ${second}`,
+    );
+    // v4 is scheduled for tomorrow: the database clock says v3 is in force now.
+    expect(after.rows[0]?.policy_version).toBe('returns/uk/3');
+    expect(first).not.toBe(second);
   });
 });
 

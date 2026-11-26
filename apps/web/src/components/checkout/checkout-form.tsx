@@ -1,5 +1,6 @@
 'use client';
 
+import { href, paths } from '@/lib/paths';
 import { useTranslations } from 'next-intl';
 import { useCallback, useId, useRef, useState, useTransition } from 'react';
 
@@ -238,7 +239,30 @@ export function CheckoutForm({
             required
             className="mt-0.5 size-6 shrink-0 focus-visible:outline-2"
           />
-          <span>{t('terms')}</span>
+          <span>
+            {t.rich('terms', {
+              terms: (chunks) => (
+                <a
+                  href={href(locale, paths.legal('terms'))}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline"
+                >
+                  {chunks}
+                </a>
+              ),
+              privacy: (chunks) => (
+                <a
+                  href={href(locale, paths.legal('privacy'))}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline"
+                >
+                  {chunks}
+                </a>
+              ),
+            })}
+          </span>
         </label>
         <div aria-live="assertive" role="status" className="text-sm text-danger">
           <Failure failure={failure} />

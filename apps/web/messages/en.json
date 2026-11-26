@@ -251,7 +251,7 @@
     "placing": "Placing order…",
     "priceChanged": "The total is now {total}. Review it and press the button again to confirm.",
     "stockLine": "{name}, {size}: not enough in stock",
-    "terms": "I accept the terms of the offer and the privacy policy"
+    "terms": "I accept the <terms>terms of the offer</terms> and the <privacy>privacy policy</privacy>"
   },
   "order": {
     "successTitle": "Thank you, your order is placed",
@@ -1165,7 +1165,6 @@
     "reviewSent": "Thank you! The review will appear on the product page after it is checked.",
     "reviewInvalid": "That did not work: you may have reviewed this product already or sent too many today.",
     "reviewNotAllowed": "Only buyers of this product can review it.",
-    "returnsPolicy": "The return terms are being finalised: the policy text will appear here. A manager reviews each request.",
     "myReturns": "My requests",
     "noReturns": "No requests.",
     "newReturn": "New request",
@@ -1193,7 +1192,11 @@
       "changed_mind": "Changed my mind",
       "wrong_size": "Wrong size",
       "other": "Other"
-    }
+    },
+    "registerConsent": "By registering you accept the <terms>terms of the offer</terms> and the <privacy>privacy policy</privacy>.",
+    "returnsPolicyStrict": "Within {days} days of delivery we accept requests for a defect, a wrong item or an item that does not match its description. Underwear and hosiery of proper quality cannot be exchanged or returned (Resolution No. 172 of the Cabinet of Ministers of Ukraine of 19 March 1994). A manager reviews each request.",
+    "returnsPolicyVoluntary": "Within {days} days of delivery we accept return requests. A manager reviews each request.",
+    "returnsPolicyLink": "Read the returns and exchange terms"
   },
   "legal": {
     "notSet": "Not set",
@@ -1210,6 +1213,9 @@
     "effective": "Effective from {date}",
     "pdf": "Download the PDF version",
     "sectionTitle": "{title} | {site}",
-    "faqHeading": "Questions and answers"
+    "faqHeading": "Questions and answers",
+    "returnSummaryHeading": "In short",
+    "returnSummaryAccepted": "Requests we accept:",
+    "returnSummaryNotAccepted": "Requests we do not accept for products of proper quality:"
   }
 }

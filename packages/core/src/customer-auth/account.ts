@@ -29,6 +29,7 @@ import {
 import type { Tx } from '@store/db/types';
 
 import { writeAudit } from '../audit/write-audit.ts';
+import { currentConsentRefs } from '../legal/read.ts';
 import { hashPassword, verifyPassword } from '../auth/crypto.ts';
 import {
   assertPasswordAllowed,
@@ -148,6 +149,8 @@ export async function requestRegistration(
       action: 'customer.registration_requested',
       entity: 'auth_user',
       entityId: userId,
+      // Registering is an acceptance of the terms and the privacy policy shown on the form: the editions in force now.
+      diff: await currentConsentRefs(tx, input.locale),
       ip: input.client.ip,
     });
   }

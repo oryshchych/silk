@@ -4,6 +4,7 @@
  * `serializeJsonLd`.
  */
 import type { Money } from './money';
+import type { ReturnPolicy } from './return-policy';
 
 export const SCHEMA_CONTEXT = 'https://schema.org';
 export const SHOP_CURRENCY = 'UAH';
@@ -65,6 +66,44 @@ export function buildItemList(items: readonly ListItemInput[], startPosition = 1
 
 export type Availability = 'InStock' | 'OutOfStock';
 
+export interface MerchantReturnPolicyLd {
+  '@type': 'MerchantReturnPolicy';
+  applicableCountry: string;
+  returnPolicyCategory:
+    | 'https://schema.org/MerchantReturnNotPermitted'
+    | 'https://schema.org/MerchantReturnFiniteReturnWindow';
+  merchantReturnDays?: number;
+  returnMethod?: `https://schema.org/${ReturnPolicy['returnMethod']}`;
+  returnFees?: `https://schema.org/${ReturnPolicy['returnFees']}`;
+}
+
+/**
+ * `hasMerchantReturnPolicy` from the shared policy (`./return-policy`). Without voluntary returns the shop says
+ * returns are NOT permitted (the defect regime is explained on the returns page, it is a legal duty and not a
+ * return policy); with them, a finite window with the method and the fees. Pure, no request value: the markup on
+ * a shared (ISR) product page is identical for everybody.
+ */
+export function buildMerchantReturnPolicy(
+  policy: ReturnPolicy,
+  windowDays: number = policy.defaultWindowDays,
+): MerchantReturnPolicyLd {
+  if (!policy.voluntaryReturns) {
+    return {
+      '@type': 'MerchantReturnPolicy',
+      applicableCountry: policy.applicableCountry,
+      returnPolicyCategory: 'https://schema.org/MerchantReturnNotPermitted',
+    };
+  }
+  return {
+    '@type': 'MerchantReturnPolicy',
+    applicableCountry: policy.applicableCountry,
+    returnPolicyCategory: 'https://schema.org/MerchantReturnFiniteReturnWindow',
+    merchantReturnDays: windowDays,
+    returnMethod: `https://schema.org/${policy.returnMethod}`,
+    returnFees: `https://schema.org/${policy.returnFees}`,
+  };
+}
+
 export interface OfferInput {
   price: Money;
   availability: Availability;
@@ -83,6 +122,8 @@ export interface ProductInput {
   url: string;
   offers: readonly OfferInput[];
   rating?: { value: number; count: number } | null;
+  /** Added to every offer as `hasMerchantReturnPolicy`. */
+  returnPolicy?: MerchantReturnPolicyLd;
 }
 
 interface OfferLd {
@@ -92,6 +133,7 @@ interface OfferLd {
   priceCurrency: typeof SHOP_CURRENCY;
   availability: `https://schema.org/${Availability}`;
   sku?: string;
+  hasMerchantReturnPolicy?: MerchantReturnPolicyLd;
 }
 
 export interface ProductLd {
@@ -112,6 +154,7 @@ export interface ProductLd {
         priceCurrency: typeof SHOP_CURRENCY;
         offerCount: number;
         availability: `https://schema.org/${Availability}`;
+        hasMerchantReturnPolicy?: MerchantReturnPolicyLd;
         offers: OfferLd[];
       };
   aggregateRating?: {
@@ -129,7 +172,7 @@ export function priceToDecimal(price: Money): string {
   return `${price < 0 ? '-' : ''}${String(whole)}.${fraction}`;
 }
 
-function buildOffer(offer: OfferInput): OfferLd {
+function buildOffer(offer: OfferInput, returnPolicy?: MerchantReturnPolicyLd): OfferLd {
   return {
     '@type': 'Offer',
     url: offer.url,
@@ -137,6 +180,7 @@ function buildOffer(offer: OfferInput): OfferLd {
     priceCurrency: SHOP_CURRENCY,
     availability: `https://schema.org/${offer.availability}`,
     ...(offer.sku === undefined ? {} : { sku: offer.sku }),
+    ...(returnPolicy === undefined ? {} : { hasMerchantReturnPolicy: returnPolicy }),
   };
 }
 
@@ -149,13 +193,13 @@ export function buildProduct(input: ProductInput): ProductLd {
   const [first, ...rest] = input.offers;
   if (first === undefined) throw new RangeError('buildProduct needs at least one offer');
 
-  const offers = [first, ...rest].map(buildOffer);
+  const offers = [first, ...rest].map((offer) => buildOffer(offer, input.returnPolicy));
   const prices = [first, ...rest].map((offer) => offer.price);
   const inStock = [first, ...rest].some((offer) => offer.availability === 'InStock');
 
   const offersLd: ProductLd['offers'] =
     rest.length === 0
-      ? buildOffer(first)
+      ? buildOffer(first, input.returnPolicy)
       : {
           '@type': 'AggregateOffer',
           lowPrice: priceToDecimal(prices.reduce((a, b) => (a < b ? a : b))),
@@ -163,6 +207,9 @@ export function buildProduct(input: ProductInput): ProductLd {
           priceCurrency: SHOP_CURRENCY,
           offerCount: offers.length,
           availability: `https://schema.org/${inStock ? 'InStock' : 'OutOfStock'}`,
+          ...(input.returnPolicy === undefined
+            ? {}
+            : { hasMerchantReturnPolicy: input.returnPolicy }),
           offers,
         };
 

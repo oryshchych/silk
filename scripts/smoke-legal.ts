@@ -6,6 +6,8 @@
  * and unknown words are 404s that store nothing.
  */
 import { createDb } from '../packages/db/src/client.ts';
+import en from '../apps/web/messages/en.json' with { type: 'json' };
+import uk from '../apps/web/messages/uk.json' with { type: 'json' };
 import { LEGAL_KINDS, LEGAL_LOCALES, legalPath } from '../packages/shared/src/legal.ts';
 import { legalDraft } from '../packages/shared/src/legal-drafts.ts';
 
@@ -149,5 +151,62 @@ export async function runLegalSmoke({
           `<loc>${site}${legalPath(kind)}</loc><lastmod>\\d{4}-\\d{2}-\\d{2}T[\\d:]+Z</lastmod>`,
         ).test(sitemap.html) && sitemap.html.includes(`<loc>${site}/en${legalPath(kind)}</loc>`),
     ) && sitemap.html.includes(`hreflang="en" href="${site}/en/legal/terms"`),
+  );
+
+  await runReturnPolicySmoke({ base, check });
+}
+
+const MESSAGES = { uk, en } as const;
+
+/** The returns policy as a visitor and a crawler see it: the page summary, the product markup, the consent links. */
+async function runReturnPolicySmoke({
+  base,
+  check,
+}: Pick<Context, 'base' | 'check'>): Promise<void> {
+  for (const locale of LEGAL_LOCALES) {
+    const m = MESSAGES[locale].account;
+    const returns = await page(`${base}${prefix(locale)}${legalPath('returns')}`);
+    const text = returns.html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ');
+    const accepted = ['defect', 'wrong_item', 'not_as_described'] as const;
+    const refused = ['changed_mind', 'wrong_size', 'other'] as const;
+    check(
+      `returns ${locale}: the summary shows the window, Resolution 172, the accepted and the refused reasons`,
+      returns.status === 200 &&
+        text.includes(m.returnsPolicyStrict.replace('{days}', '14').replace(/\s+/g, ' ')) &&
+        text.includes('172') &&
+        accepted.every((r) => returns.html.includes(`data-reason="${r}">${m.reason[r]}`)) &&
+        refused.every((r) => returns.html.includes(`data-reason="${r}">${m.reason[r]}`)) &&
+        !/"@type":"FAQPage"/.test(returns.html),
+    );
+    const register = await page(`${base}${prefix(locale)}/account/register`);
+    check(
+      `register ${locale}: the consent line links the terms and the privacy policy`,
+      register.status === 200 &&
+        register.html.includes(`href="${prefix(locale)}${legalPath('terms')}"`) &&
+        register.html.includes(`href="${prefix(locale)}${legalPath('privacy')}"`) &&
+        !RAW_KEY.test(register.html.replace(/<[^>]*>/g, ' ')),
+    );
+  }
+
+  const index = await page(`${base}/sitemaps/products-0.xml`);
+  const slug = /<loc>[^<]*\/product\/([^<]+)<\/loc>/.exec(index.html)?.[1];
+  if (slug === undefined) {
+    check('a product exists for the return policy markup check', false);
+    return;
+  }
+  const ldOf = (html: string): string =>
+    [...html.matchAll(/<script type="application\/ld\+json">([^<]*)<\/script>/g)]
+      .map((m) => m[1] ?? '')
+      .find((json) => json.includes('"@type":"Product"')) ?? '';
+  const first = await page(`${base}/product/${slug}`);
+  const second = await fetch(`${base}/product/${slug}`, {
+    headers: { cookie: 'silk_cart=abc; silk_sizes=x', 'accept-language': 'en' },
+  });
+  const policy =
+    '"hasMerchantReturnPolicy":{"@type":"MerchantReturnPolicy","applicableCountry":"UA","returnPolicyCategory":"https://schema.org/MerchantReturnNotPermitted"}';
+  const ld = ldOf(first.html);
+  check(
+    'the product JSON-LD carries hasMerchantReturnPolicy (not permitted, UA) on its offers, the same for every visitor',
+    ld.includes(policy) && ld === ldOf(await second.text()),
   );
 }

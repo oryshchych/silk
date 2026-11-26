@@ -1,5 +1,6 @@
 'use server';
 
+import { currentConsentRefs } from '@store/core/legal-read';
 import { redirect } from 'next/navigation';
 
 import { startCheckout } from '@store/core/cart';
@@ -144,6 +145,8 @@ export async function placeOrderAction(input: unknown): Promise<PlaceOrderResult
   if (token === null) return { ok: false, kind: 'error', code: 'CHECKOUT_EMPTY_CART' };
 
   const db = await getDb();
+  // The editions of the terms and the privacy policy in force NOW (database clock), stored with the acceptance.
+  const consentRefs = await currentConsentRefs(db, data.locale);
   let created: { orderId: string; orderNumber: string; accessToken: string | null };
   try {
     const intent = await db.transaction(
@@ -165,6 +168,7 @@ export async function placeOrderAction(input: unknown): Promise<PlaceOrderResult
           promoCode: data.promoCode === undefined || data.promoCode === '' ? null : data.promoCode,
           locale: data.locale,
           termsAccepted: data.terms,
+          consentRefs,
         }),
     );
   } catch (error) {

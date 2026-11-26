@@ -19,21 +19,27 @@ import {
   type EligibleOrderDto,
 } from '@store/shared/dto/return';
 import { serialize } from '@store/shared/dto/serialize';
+import { isReasonAccepted, RETURN_POLICY } from '@store/shared/return-policy';
 
 import { writeAudit } from '../audit/write-audit.ts';
 import { DomainError } from '../errors.ts';
 import { acquireLocks } from '../locks/acquire-locks.ts';
+import { currentPolicyRef } from '../legal/read.ts';
 import { normalizeOrderNumber } from '../orders/lookup.ts';
 
-/** The wording of the policy is the owner's and a lawyer's (Q71); this tag says which edition a request was made under. */
-export const POLICY_VERSION = 'v0-placeholder';
-export const DEFAULT_WINDOW_DAYS = 14;
+/** From the shared policy (`@store/shared/return-policy`), the same constants the page, the form and the JSON-LD use. */
+export const DEFAULT_WINDOW_DAYS = RETURN_POLICY.defaultWindowDays;
 export const MAX_OPEN_REQUESTS = 5;
 const OPEN = "('requested', 'approved', 'in_transit', 'received')";
 
 export class ReturnNotEligibleError extends DomainError {
   constructor() {
     super('RETURN_NOT_ELIGIBLE', 'This order cannot be returned');
+  }
+}
+export class ReturnReasonNotAcceptedError extends DomainError {
+  constructor() {
+    super('RETURN_REASON', 'This reason is not accepted for a return');
   }
 }
 export class ReturnItemsInvalidError extends DomainError {
@@ -140,6 +146,9 @@ export async function listEligibleOrders(
 }
 
 export async function createReturnRequest(tx: Tx, who: Who, input: ReturnInput): Promise<string> {
+  // The policy (Q75): a request because of a change of mind, a wrong size or "other" is not accepted for
+  // underwear and hosiery of proper quality; the form offers only the accepted reasons and this is the server's say.
+  if (!isReasonAccepted(input.reason)) throw new ReturnReasonNotAcceptedError();
   const number = normalizeOrderNumber(input.orderNumber);
   if (number === null) throw new ReturnNotEligibleError();
   // My order only: another customer's number is "not eligible", like one that does not exist.
@@ -175,13 +184,15 @@ export async function createReturnRequest(tx: Tx, who: Who, input: ReturnInput):
     const remaining = left.rows[0]?.remaining;
     if (remaining === undefined || item.quantity > remaining) throw new ReturnItemsInvalidError();
   }
+  // The edition of the returns text in force NOW (database clock), recorded with the request.
+  const policyRef = await currentPolicyRef(tx, 'returns', 'uk');
   const numbered = await tx.execute<{ n: string }>(sql`SELECT next_return_number() AS n`);
   const requestNumber = numbered.rows[0]?.n;
   if (requestNumber === undefined) throw new Error('no return number');
   const created = await tx.execute<{ id: string }>(
     sql`INSERT INTO return_requests (request_number, order_id, customer_id, reason, policy_version, customer_comment)
         VALUES (${requestNumber}, ${orderId}::uuid, ${who.customerId}::uuid, ${input.reason}::return_reason,
-                ${POLICY_VERSION}, ${input.comment}) RETURNING id`,
+                ${policyRef}, ${input.comment}) RETURNING id`,
   );
   const id = created.rows[0]?.id;
   if (id === undefined) throw new Error('return insert returned no row');
