@@ -5,50 +5,50 @@
 
 ## Current phase
 
-**Phase 8, "legal and static pages": built and merged (2 feature PRs); 4 of 4 acceptance criteria verified by execution as a
-MECHANISM, every text is a draft that needs a lawyer** (2026-11-26, about 1 h 35 min from the go-ahead to the last merge).
-PRs: #96 (legal documents, admin, sanitiser, PDF upload) and #97 (public pages, footer, disclaimer, sitemap, one returns policy,
-consent versions). Rounds: #96 two (FAIL, one fix push, PASS), #97 two (the same). Longest wait: about 30 min for the specialists'
-findings on #97. Process failures (author): 5 (a flaky same-millisecond fixture that failed CI; a Ukrainian technical note caught by
-the language gate; a smoke case that still used a now-refused return reason; two harness slips in the #97 fix round) plus two
-author PASS comments posted before the specialists had reported, which the consolidated FAIL comments then superseded.
-Phase 9 starts in a NEW session on the standing go-ahead (`docs/AUTONOMOUS_MODE.md`). Standing rules (`AGENTS.md` section 0):
-English technical text; one phase per session.
+**Phase 9, "content and catalogue filling": the TOOLING is built and merged (3 PRs); the three acceptance criteria are the OWNER's
+content work and are NOT done by the agent** (2026-11-26, about 2 h 35 min from the go-ahead to the last merge). The agent wrote
+no product text, photo, price, stock or SEO text and seeded nothing into staging or production.
+PRs: #99 (`content:check`, readiness report), #100 (admin screen, category text editor), #101 (CSV import route, content columns,
+template, preview notes, the guide). Rounds: each PR two (FAIL, one fix push, PASS). Longest waits: about 13 min for the specialists
+on #101, about 10 min for CI on #101 (one timing flake re-run). Process failures (author): 6 (a storefront edit lost by a glob
+pathspec checkout, caught by the smoke; three commit headers refused by commitlint; docs files swept into #101 by `git add -A`,
+folded in on purpose; a smoke case with a 4-byte "slow" body).
+Phase 10 starts in a NEW session on the standing go-ahead (`docs/AUTONOMOUS_MODE.md`). English technical text; one phase per session.
 
-Infra: staging `https://staging.damazla.com` (basic auth), Hetzner CAX11, Dokploy. Next 16.4.6. The worker is still not in
-`docker-compose.yml` (Q31), so no e-mail leaves the system yet. Staging has NO published legal documents until the owner (or the
-seed on an empty database) publishes versions: the footer then lists nothing and `/legal/*` answers 404.
+Infra: staging `https://staging.damazla.com` (basic auth). Next 16.4.6. The worker is still not in `docker-compose.yml` (Q31).
 
-## Done (phase 8, merged PRs)
+## Done (phase 9, merged PRs)
 
-- #96 `legal_documents` versioned (migrations 0021, 0022): a published version is immutable and undeletable (trigger on every column), the current one is chosen by the DATABASE clock, a later start cannot be overridden; admin screens, `legal.edit` (content may draft) and `legal.publish` (owner, admin); Markdown subset plus allowlist sanitiser (write, read, render); PDF upload route (`%PDF-` by bytes, 8 MB, attachment, `private, no-store`)
-- #97 `/legal/<slug>` in uk and en (ISR, tags, proxy 404 gate, hreflang only when both languages are published, FAQPage from visible questions, sitemap with the real lastmod), footer links, trademark disclaimer on every page, About and Contacts from settings with "not set" markers, neutral draft templates marked "Draft: needs a lawyer"
-- #97 one returns policy (`packages/shared/src/return-policy.ts`): page summary, return form, server check and `hasMerchantReturnPolicy` come from the same constants; per product class (underwear and hosiery "not permitted", homewear no claim); the edition of the text is recorded (`return_requests.policy_version`, order, registration and newsletter audit rows)
+- #99 `pnpm content:check [--gate|--json|--expected-active=N|--allow-remote]`: read-only transaction, URL only from `DATABASE_URL`, allowlisted target (remote needs `--allow-remote`, production words refused), exit 0/1/2; the report (`packages/core/src/content-readiness`, DTO with no cost field) judges every product, category and photo in 4 set-based queries; the storefront now renders the category SEO text
+- #100 `/admin/content-readiness` (`admin.view`, shared 60 s count, pages of 100, filter before the page is cut); `/admin/categories/<id>` editor for the category texts (`categories.edit`: before this nobody could write them through the admin)
+- #101 `POST /admin/upload/products-csv` (own route, 2 MB / 1000 rows, same safeguards as the photo upload), content columns, template download with a refused example row, preview notes, export with the same columns; `docs/CONTENT_GUIDE.md` (a test fails when it drifts from the tools); owner queue Q81 to Q84; `cleanText` on every admin text input
 
 ## Next step
 
-1. Owner hands: Q76 (media host headers: a RELEASE GATE before any legal PDF is published), Q63, Q62, Q40, Q45, Q13.
-2. Owner and lawyer: Q77 (replace the draft texts and fill `settings.company` and `settings.contacts`), Q79 (homewear returns, needs a lawyer), Q75 (returns window versus Resolution 172), Q80 (remove the draft banner before launch), Q64, Q71, Q73.
-3. Phase 9 in a NEW session.
+1. Owner hands: Q81 (the content itself, then `pnpm content:check --gate --allow-remote` against staging), Q45 (media bucket: photos cannot be uploaded before it), Q76, Q40, Q63, Q62.
+2. Owner and lawyer: Q77, Q79, Q75, Q80 (legal texts), then the launch checklist in the guide, section 8.
+3. Phase 10 in a NEW session.
 
 ## Acceptance criteria
 
-- [x] All pages exist in uk and en: 7 kinds in both languages from the templates (`legal.int` "templates"); the smoke publishes 13 of 14 on purpose (`about` in uk only, to exercise the one-language path) and asserts the rendered text of each
-- [x] The returns page does not contradict Resolution 172: summary built from the constants, cites the Resolution, lists accepted and refused reasons (`return-policy-consistency.unit` 15 tests, smoke "returns uk/en"); NOT reviewed by a lawyer
-- [x] `hasMerchantReturnPolicy` equals the page: consistency unit and smoke (a bra page says not permitted with a link, a pyjama page carries no claim, identical for every visitor); the server refuses the other reasons (`returns.int`)
-- [x] The trademark disclaimer is on every page: smoke loop over 12 page kinds in both languages, the 404 pages included (`global-error` not exercised)
+- [ ] 40 products active, with variants, stock and photos: the owner's work; measured by `content:check` (check `active_products`, `variants_stock_photos`); the tool itself: `content-readiness.int` 28 tests, `content-check-script.int` 10 tests, smoke "content:" on the built server
+- [ ] No product without alt text, meta description or photo: the owner's work; measured by check `alt_meta_photo`; tested with one-language alt, empty and zero-width text, over-long meta, a missing rendition
+- [ ] Every category has an SEO text: the owner's work; measured by `category_seo_text`; the editor exists (#100) and the storefront shows the text (smoke, uk and en)
 
 ## Not built or not verified
 
-- EVERY legal text is a neutral draft that needs a lawyer; no company facts exist (legal name, tax id, address, phone) and no admin screen edits `settings.company` (Q77)
-- No real PDF served through R2 (Q76), no HTTP probe of the PDF route against a built server (route tested with a real handler, Postgres and a signature-checking fake S3)
-- Checkout, registration and returns consent refs were not probed over HTTP (int tests and code only); a real publish around a cache refresh was read from code, not observed
-- No real browser pass, focus order or contrast check; no e-mail sent
+- No real content exists; nobody has run the gate against staging (Q81); no real browser pass, no Excel or LibreOffice opening of the template
+- Photos: no upload against real R2 (Q45); duplicates are not detected (no hash stored, Q82); the bucket is not listed (Q47)
+- The CSV cannot carry variants, stock, photos, alt text or attributes (entered in the product card); XLSX stays queued (Q46)
+- `?refresh` and POST to the screen are bounded by the shared count, not by a 405
 
 ## Caveats
 
-- Full local `test:int` can time out under machine load (account-data, stock, catalog-admin each flaked once, all pass alone); CI is authoritative
-- The proxy gate for legal pages reloads once a minute and at once on a publish in the same process
+- Full local `test:int` can flake under load (one webhook, one auth timing test failed once each, pass alone); CI is authoritative
+- The meta title bound (46) assumes the placeholder shop name (Q1, Q84): a test fails when the name outgrows the reserve
+- The smoke "search finds products despite a typo" fails on a hand-built local database; CI on the project image is green
+
 ## Deviations from the plan
-- Slices B and C shipped as one PR (the returns summary sits on the public page); the phase ran as 2 PRs, not 3
-- The owner queue gained Q75 to Q80; the old placeholder constant `v0-placeholder` is now only the "nothing published yet" value
+
+- Phase 9 is not an agent phase: the agent built tooling only, and found and closed two gaps the criteria depend on (category text never rendered, no admin form for it)
+- Slices B and C absorbed the category editor and the guide; the phase ran as 3 PRs plus this report
