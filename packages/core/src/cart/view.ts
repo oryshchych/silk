@@ -15,6 +15,8 @@ import type { SiteLocale } from '../catalog/sql.ts';
 
 export interface CartLineView {
   variantId: string;
+  /** The variant SKU (the product feed `id`, and the id analytics events use). */
+  sku: string;
   productSlug: string;
   name: string;
   sizeLabel: string;
@@ -57,6 +59,7 @@ export async function getCartView(
   const rows = await reader
     .select({
       variantId: productVariants.id,
+      sku: productVariants.sku,
       productId: products.id,
       slug: products.slug,
       nameUk: products.nameUk,
@@ -91,6 +94,7 @@ export async function getCartView(
     const available = Math.max(row.stock - row.reserved, 0);
     return {
       variantId: row.variantId,
+      sku: row.sku,
       productSlug: row.slug,
       name: locale === 'en' ? row.nameEn : row.nameUk,
       sizeLabel: row.sizeLabel,

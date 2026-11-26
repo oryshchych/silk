@@ -9,9 +9,11 @@ import { buildAlternates } from '@store/shared/seo';
 import { Breadcrumbs } from '@/components/breadcrumbs';
 import { JsonLd } from '@/components/json-ld';
 import { ProductBuyBox } from '@/components/product-buy-box';
+import { TrackEvent } from '@/components/track-event';
 import { SiteShell } from '@/components/site-shell';
 import { SizeGuide } from '@/components/size-guide';
 import { resolveLocale } from '@/i18n/locale';
+import { productItem, variantItems } from '@/lib/analytics/items';
 import { loadProduct } from '@/lib/catalog';
 import { htmlToParagraphs, htmlToSnippet } from '@/lib/html-text';
 import { pageMetadata } from '@/lib/metadata';
@@ -97,6 +99,7 @@ export default async function ProductPage({ params }: Props) {
 
   return (
     <SiteShell locale={locale} path={paths.product(slug)}>
+      <TrackEvent event={{ name: 'view_item', items: [productItem(product)] }} />
       <JsonLd
         data={buildBreadcrumbList([
           { name: tn('home'), url: absolute(paths.home) },
@@ -142,6 +145,7 @@ export default async function ProductPage({ params }: Props) {
       <div className="mt-6">
         <ProductBuyBox
           cartHref={href(locale, paths.cart)}
+          trackItems={variantItems(product)}
           name={product.name}
           images={product.images}
           colors={product.colors}

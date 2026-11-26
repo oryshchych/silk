@@ -6,7 +6,7 @@
 import type { ProductImageDto, VariantDto } from '@store/shared/dto/catalog';
 
 /** A variant as the browser needs it: the price stays on the server (it is formatted there). */
-export type SelectableVariant = Omit<VariantDto, 'price'>;
+export type SelectableVariant = Omit<VariantDto, 'price' | 'sku'>;
 
 export interface Selection {
   colorSlug: string;

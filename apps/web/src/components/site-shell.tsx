@@ -5,6 +5,8 @@ import type { ReactNode } from 'react';
 import type { SiteLocale } from '@store/shared/seo';
 
 import { CartLink } from '@/components/cart-link';
+import { CookieSettingsButton } from '@/components/cookie-settings-button';
+import { getAnalyticsConfig } from '@/lib/analytics-config';
 import { loadCategoryTree } from '@/lib/navigation';
 import { href, paths } from '@/lib/paths';
 
@@ -37,6 +39,7 @@ export async function SiteShell({
   const tf = await getTranslations('footer');
   const tree = await loadCategoryTree(locale, { degrade });
   const other = OTHER[locale];
+  const hasAnalytics = (await getAnalyticsConfig()) !== null;
   const navLink = 'inline-flex min-h-6 items-center rounded-sm hover:underline';
 
   return (
@@ -104,7 +107,10 @@ export async function SiteShell({
         {children}
       </main>
       <footer className="mt-12 border-t border-border">
-        <p className="mx-auto max-w-6xl px-4 py-6 text-sm text-text-muted">{tf('about')}</p>
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-6 text-sm text-text-muted">
+          <p>{tf('about')}</p>
+          {hasAnalytics ? <CookieSettingsButton /> : null}
+        </div>
       </footer>
     </>
   );

@@ -896,5 +896,17 @@
       "saved": "Saved.",
       "passwordReset": "Password reset; the person was signed out everywhere."
     }
+  },
+  "consent": {
+    "title": "Cookies and analytics",
+    "text": "We use necessary cookies to run the shop. With your consent we also use analytics and advertising cookies to understand how the site is used and to show relevant offers. You can change your choice at any time.",
+    "necessary": "Necessary (always on)",
+    "analytics": "Analytics: how the site is used",
+    "marketing": "Advertising: relevant offers",
+    "acceptAll": "Accept all",
+    "rejectAll": "Only necessary",
+    "customize": "Choose",
+    "save": "Save choice",
+    "settings": "Cookie settings"
   }
 }

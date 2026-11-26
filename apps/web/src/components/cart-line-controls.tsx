@@ -4,7 +4,10 @@ import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 
+import type { AnalyticsItem } from '@store/shared/analytics';
+
 import { setCartLineAction } from '@/actions/cart';
+import { trackEvent } from '@/lib/analytics/browser';
 import { CART_CHANGED_EVENT } from '@/lib/cart-events';
 import { messageCode } from '@/lib/error-codes';
 
@@ -16,10 +19,13 @@ export function CartLineControls({
   variantId,
   name,
   quantity,
+  item,
 }: {
   variantId: string;
   name: string;
   quantity: number;
+  /** The line as analytics knows it (its quantity is the current one). */
+  item: AnalyticsItem;
 }) {
   const t = useTranslations('cart');
   const te = useTranslations('errors.codes');
@@ -32,6 +38,11 @@ export function CartLineControls({
       const result = await setCartLineAction({ variantId, quantity: next });
       if (result.ok) {
         setError(null);
+        if (next < quantity) {
+          trackEvent({ name: 'remove_from_cart', items: [{ ...item, quantity: quantity - next }] });
+        } else if (next > quantity) {
+          trackEvent({ name: 'add_to_cart', items: [{ ...item, quantity: next - quantity }] });
+        }
         window.dispatchEvent(new Event(CART_CHANGED_EVENT));
         router.refresh();
       } else {

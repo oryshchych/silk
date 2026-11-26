@@ -190,3 +190,35 @@ describe('parseEnv', () => {
     }
   });
 });
+
+describe('analytics identifiers', () => {
+  const base = {
+    APP_ENV: 'local',
+    DATABASE_URL: 'postgres://u:p@localhost:5432/d',
+    EMAIL_TO_OVERRIDE: 'dev@example.com',
+  };
+
+  it('accepts well-formed identifiers and ignores empty strings (compose passes them empty)', () => {
+    const env = parseEnv({
+      ...base,
+      GA4_MEASUREMENT_ID: 'G-ABCD1234',
+      GTM_CONTAINER_ID: 'GTM-ABC123',
+      META_PIXEL_ID: '123456789012',
+    });
+    expect(env.GA4_MEASUREMENT_ID).toBe('G-ABCD1234');
+    expect(
+      parseEnv({ ...base, GA4_MEASUREMENT_ID: '', GTM_CONTAINER_ID: '', META_PIXEL_ID: '' })
+        .GA4_MEASUREMENT_ID,
+    ).toBeUndefined();
+  });
+
+  it('refuses a value that could not be an identifier, so it never reaches a script URL', () => {
+    for (const bad of [
+      { GA4_MEASUREMENT_ID: 'UA-1' },
+      { GTM_CONTAINER_ID: 'GTM-"><x' },
+      { META_PIXEL_ID: '12ab' },
+    ]) {
+      expect(() => parseEnv({ ...base, ...bad })).toThrow();
+    }
+  });
+});

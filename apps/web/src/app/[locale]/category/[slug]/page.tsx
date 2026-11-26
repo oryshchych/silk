@@ -13,7 +13,9 @@ import { JsonLd } from '@/components/json-ld';
 import { Pagination } from '@/components/pagination';
 import { ProductCard } from '@/components/product-card';
 import { SiteShell } from '@/components/site-shell';
+import { TrackEvent } from '@/components/track-event';
 import { resolveLocale } from '@/i18n/locale';
+import { cardItems } from '@/lib/analytics/items';
 import { getCachedFilterOptions, loadCategoryPage, loadListing } from '@/lib/catalog';
 import { listingSeo } from '@/lib/listing-seo';
 import { pageMetadata } from '@/lib/metadata';
@@ -98,6 +100,13 @@ export default async function CategoryPage({ params, searchParams }: Props) {
 
   return (
     <SiteShell locale={locale} path={pagePath} search={search}>
+      <TrackEvent
+        event={{
+          name: 'view_item_list',
+          items: cardItems(listing.items),
+          reference: category.page.name,
+        }}
+      />
       <JsonLd
         data={buildBreadcrumbList([
           { name: tn('home'), url: absolute(paths.home) },

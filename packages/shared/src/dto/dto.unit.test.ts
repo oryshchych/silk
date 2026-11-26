@@ -133,6 +133,7 @@ describe('productDetailDto', () => {
     variants: [
       {
         id: uuid(2),
+        sku: 'AUR-75B-BLK',
         sizeLabel: '75B',
         sizeSystem: 'bra',
         band: 75,
@@ -192,6 +193,7 @@ describe('productDetailDto', () => {
       'price',
       'sizeLabel',
       'sizeSystem',
+      'sku',
     ]);
     expect(Object.keys(dto.images[0] ?? {}).sort()).toEqual([
       'alt',

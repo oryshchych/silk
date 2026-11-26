@@ -7,6 +7,8 @@
  */
 import { z } from 'zod';
 
+import { GA4_ID, GTM_ID, PIXEL_ID } from './analytics';
+
 export const appEnvValues = ['local', 'staging', 'production'] as const;
 
 /**
@@ -124,6 +126,18 @@ export const envSchema = z
       .optional(),
 
     SENTRY_DSN: z.url({ protocol: /^https$/ }).optional(),
+
+    // Analytics identifiers (public by nature, not secrets). Read at runtime and used ONLY when
+    // APP_ENV is production; trackers load after the visitor's consent (phase 6).
+    GA4_MEASUREMENT_ID: z
+      .string()
+      .regex(GA4_ID, 'GA4_MEASUREMENT_ID looks like G-XXXXXXXXXX')
+      .optional(),
+    GTM_CONTAINER_ID: z
+      .string()
+      .regex(GTM_ID, 'GTM_CONTAINER_ID looks like GTM-XXXXXXX')
+      .optional(),
+    META_PIXEL_ID: z.string().regex(PIXEL_ID, 'META_PIXEL_ID is 8 to 20 digits').optional(),
 
     // Build-time (REVIEW_TRIAGE): значення вшивається в бандл, тому воно
     // не може відрізнятися між staging і production на одному образі.

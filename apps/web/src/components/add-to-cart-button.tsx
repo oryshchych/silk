@@ -4,7 +4,10 @@ import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useState, useTransition } from 'react';
 
+import type { AnalyticsItem } from '@store/shared/analytics';
+
 import { addToCartAction } from '@/actions/cart';
+import { trackEvent } from '@/lib/analytics/browser';
 import { CART_CHANGED_EVENT } from '@/lib/cart-events';
 import { messageCode } from '@/lib/error-codes';
 
@@ -14,9 +17,12 @@ type Status = { kind: 'idle' } | { kind: 'added' } | { kind: 'error'; code: stri
 export function AddToCartButton({
   variantId,
   cartHref,
+  trackItem,
 }: {
   variantId: string | null;
   cartHref: string;
+  /** What analytics hears when the add succeeds (null: nothing). */
+  trackItem: AnalyticsItem | null;
 }) {
   const t = useTranslations('product');
   const te = useTranslations('errors.codes');
@@ -29,6 +35,7 @@ export function AddToCartButton({
       const result = await addToCartAction({ variantId, quantity: 1 });
       if (result.ok) {
         setStatus({ kind: 'added' });
+        if (trackItem !== null) trackEvent({ name: 'add_to_cart', items: [trackItem] });
         window.dispatchEvent(new Event(CART_CHANGED_EVENT));
       } else {
         setStatus({ kind: 'error', code: result.code });
