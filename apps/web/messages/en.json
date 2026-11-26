@@ -784,7 +784,12 @@
       "resolveAttach": "A waybill exists: enter its number",
       "resolveNone": "No waybill was made",
       "resolveSubmit": "Save",
-      "lastError": "Last carrier answer"
+      "lastError": "Last carrier answer",
+      "withdrawRefund": "Withdraw (never sent)",
+      "resolveRefundHint": "The answer of the provider is not known. Check the provider's portal and record what you found. Do not repeat the refund.",
+      "resolveRefundNote": "Where you checked (portal, date)",
+      "refundWasSent": "The money was returned",
+      "refundWasNot": "The money was NOT returned"
     }
   }
 }

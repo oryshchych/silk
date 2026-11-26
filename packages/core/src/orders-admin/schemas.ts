@@ -60,3 +60,16 @@ export const resolveWaybillSchema = z.object({
     z.object({ kind: z.literal('none') }),
   ]),
 });
+
+/** Withdraw a refund that was never sent. */
+export const refundOperationSchema = z.object({ operationId: z.uuid() });
+
+/**
+ * Close a refund whose answer is unknown with what the provider's portal says. The person confirms
+ * the outcome; the note is the evidence (where it was checked), short and free of card data.
+ */
+export const resolveRefundSchema = z.object({
+  operationId: z.uuid(),
+  outcome: z.enum(['succeeded', 'failed']),
+  note: text(3, 200),
+});
