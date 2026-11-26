@@ -11,7 +11,7 @@ import type { PgBoss } from 'pg-boss';
 
 import { DomainError } from '@store/core/errors';
 
-import { purgePendingAccounts } from '@store/core/customer-auth';
+import { purgeEmailTokens, purgePendingAccounts } from '@store/core/customer-auth';
 import { findReservedDrift, releaseExpiredOrders } from '@store/core/expiry';
 import { findReceiptGaps } from '@store/core/fiscal-gaps';
 import { purgeQuarantine } from '@store/core/quarantine';
@@ -126,7 +126,8 @@ export function createJobHandlers(deps: JobDeps): JobHandlers {
     },
     [JOB_NAMES.purgePendingAccounts]: async () => {
       const removed = await deps.db.transaction(async (tx) => await purgePendingAccounts(tx));
-      line({ level: 'info', scope: JOB_NAMES.purgePendingAccounts, removed });
+      const tokens = await deps.db.transaction(async (tx) => await purgeEmailTokens(tx));
+      line({ level: 'info', scope: JOB_NAMES.purgePendingAccounts, removed, tokens });
     },
     [JOB_NAMES.reconcileFiscal]: async () => {
       const gaps = await findReceiptGaps(deps.db);

@@ -86,7 +86,7 @@ describe('account link mail', () => {
     await senderFor(email).send(message);
     expect(email.sent).toHaveLength(0);
     await app.db.execute(
-      sql`UPDATE auth_email_tokens SET used_at = NULL, expires_at = now() - interval '1 second'`,
+      sql`UPDATE auth_email_tokens SET used_at = NULL, created_at = now() - interval '2 seconds', expires_at = now() - interval '1 second'`,
     );
     await senderFor(email).send(message);
     expect(email.sent).toHaveLength(0);

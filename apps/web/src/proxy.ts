@@ -8,7 +8,7 @@ import { stripDefaultLocalePrefix } from './lib/locale-redirect';
 import { clientAddress, UNKNOWN_CLIENT } from './lib/client-address';
 import { isAccountAuthPath, isAccountPath } from './lib/account-path';
 import { isAdminAuthPath, isAdminPath } from './lib/admin-path';
-import { CUSTOMER_COOKIE } from './lib/account/cookies';
+import { customerCookieName } from './lib/account/cookies';
 import { SESSION_COOKIE } from './lib/admin/cookies';
 import { missingPath, parseProductPath } from './lib/product-path';
 import { redirectMap } from './lib/redirect-map';
@@ -122,6 +122,27 @@ function handleAdmin(request: NextRequest): NextResponse {
   return adminHeaders(NextResponse.next());
 }
 
+// A visible warning when the cap over all clients passes half (an attacker can fill it and lock every
+// customer out of the credential forms: docs/SECURITY.md, Q67). Once per window.
+let globalWindowStart = Number.NEGATIVE_INFINITY;
+let globalCount = 0;
+let globalWarned = false;
+function noteGlobalAttempt(): void {
+  const now = performance.now();
+  if (now - globalWindowStart >= 60_000) {
+    globalWindowStart = now;
+    globalCount = 0;
+    globalWarned = false;
+  }
+  globalCount += 1;
+  if (!globalWarned && globalCount >= 300) {
+    globalWarned = true;
+    process.stderr.write(
+      `${JSON.stringify({ level: 'warn', scope: 'rate-limit', reason: 'account credential attempts over all clients passed half of the cap', count: globalCount })}\n`,
+    );
+  }
+}
+
 /**
  * The account answers a person, so no shared cache may keep it; it is never indexed, and the
  * page behind a mailed link sends no referrer (its query holds a one-time credential).
@@ -146,6 +167,7 @@ function handleAccount(request: NextRequest): NextResponse | null {
     authPath && tries && clientVerdict.allowed
       ? accountAuthGlobalLimiter.check(GLOBAL_KEY)
       : clientVerdict;
+  if (authPath && tries && clientVerdict.allowed) noteGlobalAttempt();
   if (verdict.allowed) return null;
   return accountHeaders(
     new NextResponse('Too many requests', {
@@ -184,7 +206,7 @@ async function route(request: NextRequest): Promise<NextResponse> {
   if (
     accountRoot !== null &&
     (request.method === 'GET' || request.method === 'HEAD') &&
-    !request.cookies.has(CUSTOMER_COOKIE)
+    !request.cookies.has(customerCookieName(env.APP_ENV !== 'local'))
   ) {
     const prefix = accountRoot[1] === undefined ? '' : `/${accountRoot[1].toLowerCase()}`;
     return withNoindex(NextResponse.redirect(new URL(`${prefix}/account/login`, request.url), 307));

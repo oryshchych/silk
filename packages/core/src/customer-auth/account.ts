@@ -12,6 +12,8 @@
  * Every function takes the transaction first and RETURNS a refusal instead of throwing, so the
  * caller commits the failure counter and the audit row of a refused attempt.
  */
+import { randomUUID } from 'node:crypto';
+
 import { and, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
@@ -50,6 +52,39 @@ export const TOPIC = {
 
 const normalise = (email: string): string => email.trim().toLowerCase();
 
+/**
+ * The branches that send nothing (unknown address, an admin, a throttled one) do the same database
+ * work as the one that sends: take the lock, count, insert a queue row. The insert is rolled back
+ * with a savepoint, so no decoy is ever queued. Without it the request time says which branch ran.
+ */
+async function decoy(tx: Tx): Promise<void> {
+  const id = randomUUID();
+  await tx
+    .transaction(async (inner) => {
+      await lockAccount(inner, id);
+      await inner
+        .select({ count: sql<number>`count(*)::int` })
+        .from(authEmailTokens)
+        .where(
+          and(
+            eq(authEmailTokens.userId, id),
+            sql`${authEmailTokens.createdAt} > now() - interval '1 hour'`,
+          ),
+        );
+      await inner
+        .update(authEmailTokens)
+        .set({ usedAt: sql`now()` })
+        .where(and(eq(authEmailTokens.userId, id), sql`${authEmailTokens.usedAt} IS NULL`));
+      await inner.insert(outbox).values({ topic: 'decoy', payload: { tokenId: id } });
+      throw new DecoyRollback();
+    })
+    .catch((error: unknown) => {
+      if (!(error instanceof DecoyRollback)) throw error;
+    });
+}
+
+class DecoyRollback extends Error {}
+
 async function lockRegistration(tx: Tx, email: string): Promise<void> {
   await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`register:${email}`}, 0))`);
 }
@@ -61,7 +96,10 @@ async function sendLink(
 ): Promise<void> {
   await lockAccount(tx, input.userId);
   const tokenId = await issueEmailToken(tx, input);
-  if (tokenId === null) return;
+  if (tokenId === null) {
+    await decoy(tx);
+    return;
+  }
   await tx.insert(outbox).values({
     topic: TOPIC[input.purpose],
     payload: { tokenId },
@@ -92,7 +130,10 @@ export async function requestRegistration(
     .from(authUsers)
     .leftJoin(adminUsers, eq(adminUsers.userId, authUsers.id))
     .where(sql`lower(${authUsers.email}) = ${email}`);
-  if (existing?.isAdmin === true) return;
+  if (existing?.isAdmin === true) {
+    await decoy(tx);
+    return;
+  }
   if (existing?.verified === true) {
     await sendLink(tx, { userId: existing.id, purpose: 'reset_password', locale: input.locale });
     return;
@@ -132,7 +173,10 @@ export async function requestPasswordReset(
         sql`${adminUsers.userId} IS NULL`,
       ),
     );
-  if (account === undefined) return;
+  if (account === undefined) {
+    await decoy(tx);
+    return;
+  }
   await sendLink(tx, { userId: account.id, purpose: 'reset_password', locale: input.locale });
   await writeAudit(tx, {
     userId: account.id,
@@ -342,5 +386,13 @@ export async function purgePendingAccounts(tx: Tx, days = 7): Promise<number> {
        AND NOT EXISTS (SELECT 1 FROM auth_credentials c WHERE c.user_id = u.id)
        AND NOT EXISTS (SELECT 1 FROM admin_users a WHERE a.user_id = u.id)
        AND NOT EXISTS (SELECT 1 FROM customers k WHERE k.user_id = u.id)`);
+  return removed.rowCount ?? 0;
+}
+
+/** Link rows that were used, or expired more than a week ago (they carry no credential: housekeeping only). */
+export async function purgeEmailTokens(tx: Tx): Promise<number> {
+  const removed = await tx.execute(sql`
+    DELETE FROM auth_email_tokens
+     WHERE used_at IS NOT NULL OR expires_at < now() - interval '7 days'`);
   return removed.rowCount ?? 0;
 }

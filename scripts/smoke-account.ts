@@ -268,9 +268,9 @@ export async function runAccountSmoke(ctx: Context): Promise<void> {
       newClient(),
     );
     check(
-      'sign-in redirects to the account and sets an HttpOnly, SameSite=Lax, Secure cookie',
+      'sign-in redirects to the account and sets an HttpOnly, SameSite=Lax, Secure __Host- cookie',
       (signedIn.redirect ?? '').startsWith('/account') &&
-        /customer_session=[^;]+;.*HttpOnly/i.test(signedIn.setCookie) &&
+        /__Host-customer_session=[^;]+;.*HttpOnly/i.test(signedIn.setCookie) &&
         /SameSite=lax/i.test(signedIn.setCookie) &&
         /Secure/i.test(signedIn.setCookie),
       brief(signedIn),
@@ -280,6 +280,12 @@ export async function runAccountSmoke(ctx: Context): Promise<void> {
       'the storefront answers a signed-in visitor with the same page: no address, no account state',
       shop.status === 200 && !shop.html.includes(email),
       brief(shop),
+    );
+    const linkWhileSignedIn = await page('/account/set-password?t=garbage', session);
+    check(
+      'a mailed link page still opens (the form, no redirect) for a signed-in visitor',
+      linkWhileSignedIn.status === 200 && linkWhileSignedIn.html.includes('type="password"'),
+      brief(linkWhileSignedIn),
     );
     const mine = await page('/account', session);
     check(
@@ -291,12 +297,14 @@ export async function runAccountSmoke(ctx: Context): Promise<void> {
     );
     const forgedPage = await page(
       '/account',
-      new Map([['customer_session', 'v1.00000000-0000-4000-8000-000000000000.9999999999.AAAA']]),
+      new Map([
+        ['__Host-customer_session', 'v1.00000000-0000-4000-8000-000000000000.9999999999.AAAA'],
+      ]),
     );
     check('a forged cookie is no session', forgedPage.status !== 200, brief(forgedPage));
     const crossed = await page(
       '/admin',
-      new Map([['admin_session', session.get('customer_session') ?? '']]),
+      new Map([['admin_session', session.get('__Host-customer_session') ?? '']]),
     );
     check(
       'WALL: the customer cookie as an admin cookie opens nothing of the admin',
@@ -316,7 +324,7 @@ export async function runAccountSmoke(ctx: Context): Promise<void> {
     // 6. Limits: mails and sign-in attempts from one client run out.
     const hammer = newClient();
     let mailLimited = false;
-    for (let i = 0; i < 8; i += 1) {
+    for (let i = 0; i < 12; i += 1) {
       const result = await act(
         'forgotPasswordAction',
         { email: `limit-${stamp}-${String(i)}@example.test`, locale: 'uk' },

@@ -1,8 +1,8 @@
 /**
- * The upgrade path of 0015 (owner queue Q42): it drops the superseded `payment_attempts_open_idx`
- * and adds `CHECK fiscal_docs_return_has_refund` (a return receipt names its refund). A database at
- * 0014 that ALREADY holds a return receipt without a refund operation fails the migration with the
- * guard's message (naming the offending rows), stays at 0014, and applies once they are resolved.
+ * The upgrade path of 0015 (customer accounts): it adds `auth_sessions.audience`, `auth_email_tokens`
+ * and `CHECK customers_email_lower`. A database at 0014 that ALREADY holds a customer address in mixed
+ * case fails the migration with the guard's message (naming the offending rows) and stays at 0014; once
+ * the address is normalised it applies, and sessions that existed before the column stay admin ones.
  */
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';

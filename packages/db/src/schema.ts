@@ -1559,7 +1559,11 @@ export const authEmailTokens = pgTable('auth_email_tokens', {
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
   usedAt: timestamp('used_at', { withTimezone: true }),
   createdAt: createdAt(),
-}, (t) => [index('auth_email_tokens_user_idx').on(t.userId, t.purpose, t.createdAt)]);
+}, (t) => [
+  index('auth_email_tokens_user_idx').on(t.userId, t.purpose, t.createdAt),
+  check('auth_email_tokens_expiry', sql`${t.expiresAt} > ${t.createdAt}`),
+  check('auth_email_tokens_used_after_created', sql`${t.usedAt} IS NULL OR ${t.usedAt} >= ${t.createdAt}`),
+]);
 
 /* ═══════════════ ПОДАРУНКОВІ СЕРТИФІКАТИ (ADR-20) ═══════════════ */
 
