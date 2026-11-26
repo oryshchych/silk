@@ -1,3 +1,4 @@
+import { can } from '@store/core/auth-permissions';
 import { listAdminOrders } from '@store/core/orders-admin-read';
 import { deliveryMethodValues, paymentProviderValues } from '@store/shared/dto/admin-order';
 import { orderStatusValues, paymentStatusValues } from '@store/shared/dto/order';
@@ -41,7 +42,7 @@ export default async function AdminOrdersPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  await requirePermission('orders.view');
+  const session = await requirePermission('orders.view');
   const raw = await searchParams;
   const parsed = searchSchema.parse(
     Object.fromEntries(
@@ -140,6 +141,25 @@ export default async function AdminOrdersPage({
           {t('submit')}
         </button>
       </form>
+      {can(session.role, 'orders.export') ? (
+        <form
+          method="get"
+          action="/admin/export/orders"
+          className="mt-4 flex flex-wrap items-end gap-3"
+        >
+          <label className="block">
+            {t('exportFrom')}
+            <input type="date" name="from" required className={field} />
+          </label>
+          <label className="block">
+            {t('exportTo')}
+            <input type="date" name="to" required className={field} />
+          </label>
+          <button type="submit" className="min-h-11 min-w-11 rounded-md border border-border px-4">
+            {t('export')}
+          </button>
+        </form>
+      ) : null}
       <p role="status" aria-live="polite" className="mt-4 text-text-muted">
         {t('total', { count: result.total })}
       </p>

@@ -44,6 +44,10 @@ confirmed TOTP before a session counts; so must anyone who enrolled one.
 | `orders.edit` | owner, admin, manager | Change a quantity or take a line off an order that has not shipped (totals recomputed, reservation adjusted, history row with the reason) |
 | `orders.refund` | owner, admin | Start a refund through the payment provider (full or part); money leaves only through the provider call |
 | `orders.waybill` | owner, admin, manager | Create a Nova Poshta waybill, close an unknown one by hand, print the waybill and its sticker |
+| `orders.export` | owner, admin | Download the orders CSV for the accountant (no email, phone or cost; every download audited) |
+| `customers.view` | owner, admin, manager | Open the customer list and a customer card (name, email, phone, orders, sizes; no cost) |
+| `customers.manage` | owner, admin, manager | Set a customer's tags and internal note |
+| `customers.export` | owner, admin | Download the customers CSV (email and phone: personal data; every download audited) |
 | `orders.confirm_payment` | owner, admin, manager | Record a received bank transfer (the confirmed source of a transfer payment, ADR-4) |
 | `media.upload` | owner, admin, content | Upload and edit product images |
 | `catalog.import` | owner, admin | CSV / XLSX import |

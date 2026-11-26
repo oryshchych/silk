@@ -338,7 +338,8 @@
       "dictionaries": "Довідники",
       "importExport": "Імпорт та експорт",
       "stock": "Склад",
-      "orders": "Замовлення"
+      "orders": "Замовлення",
+      "customers": "Клієнти"
     },
     "dashboard": {
       "title": "Огляд",
@@ -784,7 +785,63 @@
       "resolveAttach": "Накладна існує: введіть номер",
       "resolveNone": "Накладну не створено",
       "resolveSubmit": "Зберегти",
-      "lastError": "Остання відповідь перевізника"
+      "lastError": "Остання відповідь перевізника",
+      "export": "Завантажити CSV для бухгалтерії",
+      "exportFrom": "Від",
+      "exportTo": "До"
+    },
+    "customers": {
+      "title": "Клієнти",
+      "search": "Пошук (email, ім'я, телефон)",
+      "segmentLabel": "Сегмент",
+      "tag": "Тег",
+      "submit": "Показати",
+      "any": "Будь-який",
+      "export": "Завантажити CSV",
+      "total": "Клієнтів: {count}",
+      "empty": "Клієнтів не знайдено.",
+      "pages": "Сторінки",
+      "previous": "Назад",
+      "next": "Далі",
+      "pageOf": "Сторінка {page} з {total}",
+      "col": {
+        "customer": "Клієнт",
+        "orders": "Замовлень",
+        "ltv": "Сума покупок",
+        "last": "Останнє замовлення",
+        "segment": "Сегмент",
+        "tags": "Теги"
+      },
+      "segment": {
+        "new": "Новий",
+        "repeat": "Постійний",
+        "vip": "VIP",
+        "lapsed": "Втрачений"
+      },
+      "back": "До клієнтів",
+      "average": "Середній чек",
+      "first": "Перше замовлення",
+      "sizes": "Розміри з покупок",
+      "noSizes": "Покупок ще немає.",
+      "favourite": "Найчастіше купує",
+      "tagsLabel": "Теги",
+      "tagsHint": "Через пробіл, до 10, літери, цифри, - та _.",
+      "noteLabel": "Внутрішня примітка",
+      "save": "Зберегти",
+      "saved": "Збережено.",
+      "orders": "Замовлення",
+      "orderNumber": "Номер",
+      "orderStatus": "Статус",
+      "orderTotal": "Сума",
+      "status": {
+        "pending": "Нове",
+        "confirmed": "Підтверджено",
+        "processing": "В роботі",
+        "shipped": "Відправлено",
+        "delivered": "Доставлено",
+        "cancelled": "Скасовано",
+        "returned": "Повернуто"
+      }
     }
   }
 }
