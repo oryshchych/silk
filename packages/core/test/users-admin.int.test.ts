@@ -263,6 +263,57 @@ describe('role, status and password', () => {
     expect(owners).toBe(1);
   });
 
+  it('two owners deactivating each other at once: at least one stays active (the lock decides)', async () => {
+    const a = await user('owner');
+    const b = await user('owner');
+    const barrier = new Barrier(2);
+    const deactivate = async (target: string, actor: string) => {
+      const h = world.connect();
+      try {
+        return await h.db.transaction(async (tx) => {
+          await barrier.wait();
+          return await setUserActive(tx, { userId: target, active: false, actorId: actor });
+        });
+      } catch (error) {
+        return error;
+      }
+    };
+    const results = await Promise.all([
+      deactivate(b.userId, a.userId),
+      deactivate(a.userId, b.userId),
+    ]);
+    expect(results.filter((r) => r instanceof LastOwnerError)).toHaveLength(1);
+    const active = (
+      await db.db.execute<{ n: number }>(
+        sql`SELECT count(*)::int AS n FROM admin_users WHERE role = 'owner' AND is_active`,
+      )
+    ).rows[0]?.n;
+    expect(active).toBe(1);
+  });
+
+  it('an inactive account can still have its password reset (the owner prepares it before reactivating)', async () => {
+    const owner = await user('owner');
+    const manager = await user('manager');
+    await db.db.transaction(
+      async (tx) =>
+        await setUserActive(tx, { userId: manager.userId, active: false, actorId: owner.userId }),
+    );
+    await db.db.transaction(
+      async (tx) =>
+        await resetUserPassword(tx, {
+          userId: manager.userId,
+          password: NEW_PASSWORD,
+          actorId: owner.userId,
+        }),
+    );
+    await db.db.transaction(
+      async (tx) =>
+        await setUserActive(tx, { userId: manager.userId, active: true, actorId: owner.userId }),
+    );
+    expect((await login(manager.email, NEW_PASSWORD)).ok).toBe(true);
+    expect((await login(manager.email, PASSWORD)).ok).toBe(false);
+  });
+
   it('deactivating ends sessions and blocks sign-in; activating restores it', async () => {
     const owner = await user('owner');
     const manager = await user('manager');

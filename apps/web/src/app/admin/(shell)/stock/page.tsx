@@ -122,7 +122,18 @@ export default async function AdminStockPage({
                     </td>
                     <td className={cell}>{`${row.sku} · ${row.colorName} / ${row.sizeLabel}`}</td>
                     <td className={cell}>{row.stock}</td>
-                    <td className={cell}>{row.reserved}</td>
+                    <td className={cell}>
+                      {row.reserved > 0 ? (
+                        <a
+                          className="inline-flex min-h-11 items-center underline"
+                          href={`/admin/stock/${row.variantId}`}
+                        >
+                          {row.reserved}
+                        </a>
+                      ) : (
+                        row.reserved
+                      )}
+                    </td>
                     <td className={cell}>{row.available}</td>
                     {canAdjust ? (
                       <td className={cell}>

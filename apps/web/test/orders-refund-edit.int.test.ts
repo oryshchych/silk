@@ -321,6 +321,129 @@ describe('review round 1 (#73)', () => {
   });
 });
 
+describe('withdraw and resolve a refund by hand', () => {
+  /** A refund operation in the given state on a paid order, made through the real action first. */
+  async function operation(state: 'pending' | 'in_flight' | 'unknown') {
+    const id = await place('mono');
+    await pay(id);
+    fake.onCancel(() => ({ status: 200, hang: true }));
+    await actions.refundOrderAction({ orderId: id, amount: '100.00', reason: 'setup refund' });
+    fake.reset();
+    const opId = String(
+      await one('SELECT id AS v FROM refund_operations WHERE order_id = $1', [id], 'v'),
+    );
+    await handle.pool.query(
+      'UPDATE refund_operations SET state = $2::operation_state WHERE id = $1',
+      [opId, state],
+    );
+    return { id, opId };
+  }
+  const opState = async (opId: string) =>
+    await one('SELECT state AS v FROM refund_operations WHERE id = $1', [opId], 'v');
+
+  it('only owner and admin: a manager and content are FORBIDDEN on both and nothing changes', async () => {
+    const { opId } = await operation('unknown');
+    for (const role of ['manager', 'content'] as const) {
+      state.role = role;
+      expect(await actions.withdrawRefundAction({ operationId: opId })).toEqual({
+        ok: false,
+        code: 'FORBIDDEN',
+      });
+      expect(
+        await actions.resolveRefundAction({
+          operationId: opId,
+          outcome: 'succeeded',
+          note: 'portal says so',
+        }),
+      ).toEqual({ ok: false, code: 'FORBIDDEN' });
+    }
+    expect(await opState(opId)).toBe('unknown');
+  });
+
+  it('withdraw frees a pending refund; one that was sent cannot be withdrawn', async () => {
+    const pending = await operation('pending');
+    expect(await actions.withdrawRefundAction({ operationId: pending.opId })).toEqual({
+      ok: true,
+      data: { changed: true },
+    });
+    expect(await opState(pending.opId)).toBe('failed');
+    expect(await actions.withdrawRefundAction({ operationId: pending.opId })).toEqual({
+      ok: true,
+      data: { changed: false },
+    });
+    const sent = await operation('in_flight');
+    expect(await actions.withdrawRefundAction({ operationId: sent.opId })).toEqual({
+      ok: true,
+      data: { changed: false },
+    });
+    expect(await opState(sent.opId)).toBe('in_flight');
+    expect(
+      await actions.withdrawRefundAction({ operationId: '00000000-0000-4000-8000-00000000dead' }),
+    ).toEqual({ ok: false, code: 'REFUND_NOT_ALLOWED' });
+  });
+
+  it('resolve as returned settles the order once; a repeat is a no-op with no second audit row', async () => {
+    const { id, opId } = await operation('unknown');
+    const input = { operationId: opId, outcome: 'succeeded', note: 'portal, 26 Nov' };
+    expect(await actions.resolveRefundAction(input)).toMatchObject({
+      ok: true,
+      data: { changed: true, state: 'succeeded' },
+    });
+    expect(Number(await orderField(id, 'refunded_total'))).toBe(10_000);
+    expect(await orderField(id, 'payment_status')).toBe('partially_refunded');
+    const audits = await refundAudits(id);
+    expect(await actions.resolveRefundAction(input)).toMatchObject({
+      ok: true,
+      data: { changed: false },
+    });
+    expect(await refundAudits(id)).toBe(audits);
+    expect(Number(await orderField(id, 'refunded_total'))).toBe(10_000);
+  });
+
+  it('resolve as returned over the captured total is a typed code, not a 500', async () => {
+    const { id, opId } = await operation('unknown');
+    await handle.pool.query('UPDATE orders SET captured_total = 5000 WHERE id = $1', [id]);
+    expect(
+      await actions.resolveRefundAction({
+        operationId: opId,
+        outcome: 'succeeded',
+        note: 'portal says so',
+      }),
+    ).toEqual({ ok: false, code: 'REFUND_BUDGET_EXCEEDED' });
+    expect(await opState(opId)).toBe('unknown');
+  });
+
+  it('resolve as NOT returned fails the operation and frees the budget; a pending one cannot be resolved', async () => {
+    const { id, opId } = await operation('in_flight');
+    expect(
+      await actions.resolveRefundAction({
+        operationId: opId,
+        outcome: 'failed',
+        note: 'portal, no such refund',
+      }),
+    ).toMatchObject({ ok: true, data: { state: 'failed' } });
+    expect(Number(await orderField(id, 'refunded_total'))).toBe(0);
+    expect((await actions.refundOrderAction({ orderId: id, reason: 'again after check' })).ok).toBe(
+      true,
+    );
+    const pending = await operation('pending');
+    expect(
+      await actions.resolveRefundAction({
+        operationId: pending.opId,
+        outcome: 'succeeded',
+        note: 'not sent yet',
+      }),
+    ).toEqual({ ok: false, code: 'REFUND_NOT_ALLOWED' });
+    for (const bad of [
+      { operationId: opId },
+      { operationId: opId, outcome: 'maybe', note: 'portal' },
+      { operationId: opId, outcome: 'failed', note: 'a' },
+    ]) {
+      expect(await actions.resolveRefundAction(bad)).toEqual({ ok: false, code: 'INVALID_INPUT' });
+    }
+  });
+});
+
 describe('edit items through the chain', () => {
   const itemOf = async (id: string) =>
     String(await one('SELECT id AS v FROM order_items WHERE order_id = $1', [id], 'v'));

@@ -89,7 +89,8 @@ export async function resetUserPasswordAction(input: unknown) {
         action: 'update',
         entity: 'admin_user',
         entityId: parsed.userId,
-        diff: { passwordReset: true, sessionsEnded: true },
+        // Not named `password...`: the audit redaction hides every such key, so the row would not say it happened.
+        diff: { credentialsReplaced: true, sessionsEnded: true },
       });
       return { changed: true };
     },

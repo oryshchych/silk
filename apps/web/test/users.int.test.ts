@@ -9,18 +9,15 @@ import { createAdminUser } from '@store/core/auth';
 import { createDb, type Db, type DbHandle } from '@store/db/client';
 import { createTestDatabase, type TestDatabase } from '@store/db/test/db';
 
-const state: { role: AdminSession['role']; userId: string; handle: Db | null } = vi.hoisted(() => ({
-  role: 'owner',
-  userId: '',
-  handle: null,
-}));
+const state: { role: AdminSession['role']; userId: string; handle: Db | null; originOk: boolean } =
+  vi.hoisted(() => ({ role: 'owner', userId: '', handle: null, originOk: true }));
 
 async function wired() {
   const { createAdminAction: create } = await import('../src/lib/admin/action');
   const { createRateLimiter: limiter } = await import('../src/lib/rate-limit');
   return {
     adminAction: create({
-      originOk: () => Promise.resolve(true),
+      originOk: () => Promise.resolve(state.originOk),
       session: () =>
         Promise.resolve({
           kind: 'full',
@@ -90,6 +87,7 @@ afterAll(async () => {
 beforeEach(() => {
   state.role = 'owner';
   state.userId = ownerId;
+  state.originOk = true;
 });
 
 describe('role matrix', () => {
@@ -111,6 +109,39 @@ describe('role matrix', () => {
     expect(await one('SELECT role::text FROM admin_users WHERE user_id = $1', [otherId])).toBe(
       'manager',
     );
+  });
+});
+
+describe('origin (CSRF)', () => {
+  it('a foreign or missing Origin is BAD_ORIGIN on all four actions, before anything is read or written', async () => {
+    state.originOk = false;
+    const before = JSON.stringify(
+      (
+        await handle.pool.query(
+          'SELECT user_id, role::text, is_active FROM admin_users ORDER BY user_id',
+        )
+      ).rows,
+    );
+    for (const result of await Promise.all([
+      actions.createUserAction({ email: 'csrf@example.test', role: 'owner', password: SECRET_NEW }),
+      actions.changeUserRoleAction({ userId: otherId, role: 'owner' }),
+      actions.setUserActiveAction({ userId: otherId, active: false }),
+      actions.resetUserPasswordAction({ userId: otherId, password: SECRET_NEW }),
+    ])) {
+      expect(result).toEqual({ ok: false, code: 'BAD_ORIGIN' });
+    }
+    expect(
+      JSON.stringify(
+        (
+          await handle.pool.query(
+            'SELECT user_id, role::text, is_active FROM admin_users ORDER BY user_id',
+          )
+        ).rows,
+      ),
+    ).toBe(before);
+    expect(
+      Number(await one("SELECT count(*)::int FROM auth_users WHERE email = 'csrf@example.test'")),
+    ).toBe(0);
   });
 });
 
@@ -210,5 +241,16 @@ describe('the owner', () => {
     const everything = JSON.stringify((await handle.pool.query('SELECT * FROM audit_log')).rows);
     expect(everything).not.toContain(SECRET_NEW);
     expect(everything).not.toContain(PASSWORD);
+    // The reset row says that it happened, under a key the redaction does not hide.
+    expect(
+      JSON.stringify(
+        (
+          await handle.pool.query(
+            "SELECT diff FROM audit_log WHERE entity_id = $1 AND diff::text LIKE '%credentialsReplaced%'",
+            [otherId],
+          )
+        ).rows,
+      ),
+    ).toContain('"credentialsReplaced":true');
   });
 });

@@ -213,6 +213,8 @@ describe('the message router', () => {
       'alert.double-payment',
       'alert.payment-mismatch',
       'alert.refund-due',
+      'alert.refund-unresolved',
+      'alert.waybill-for-cancelled-order',
     ]);
     for (const topic of OUTBOX_TOPICS) {
       const outcome = await sender
@@ -376,6 +378,7 @@ describe('scheduled jobs', () => {
         JOB_NAMES.reconcileOpen,
         JOB_NAMES.cleanQuarantine,
         JOB_NAMES.reconcileFiscal,
+        JOB_NAMES.sweepRefunds,
       ].sort(),
     );
     expect(schedules.every((s) => s.timezone === 'Europe/Kyiv')).toBe(true);

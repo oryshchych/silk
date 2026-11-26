@@ -1,19 +1,28 @@
 'use server';
 
 import { writeAudit } from '@store/core/audit';
+import { RefundNotAllowedError } from '@store/core/errors';
 import type { WaybillCarrier } from '@store/payments/shipping';
 import { cancelOrder, shipOrder } from '@store/core/fulfilment';
 import { advanceOrder, addOrderNote, ADMIN_SOURCE } from '@store/core/orders-admin';
 import { editOrderItems } from '@store/core/orders-admin-edit';
 import { reserveAdminRefund } from '@store/core/orders-admin-refund';
-import { processRefund, type ProviderMap } from '@store/core/refunds';
+import { refundOperationOrder } from '@store/core/refund-sweep';
+import {
+  cancelPendingRefund,
+  processRefund,
+  settleRefund,
+  type ProviderMap,
+} from '@store/core/refunds';
 import { WaybillNotConfiguredError } from '@store/core/errors';
 import { beginWaybill, completeWaybill, resolveWaybill } from '@store/core/waybill';
 import {
   cancelOrderSchema,
   confirmTransferSchema,
   editItemsSchema,
+  refundOperationSchema,
   refundSchema,
+  resolveRefundSchema,
   resolveWaybillSchema,
   orderIdSchema,
   orderNoteSchema,
@@ -339,6 +348,67 @@ export async function resolveWaybillAction(input: unknown) {
         diff: { resolution: parsed.resolution.kind, ttn: done.ttn },
       });
       return { changed: true, ttn: done.ttn };
+    },
+  });
+}
+
+/** Withdraw a refund that was reserved but never sent: it frees the budget. Only a `pending` one can be. */
+export async function withdrawRefundAction(input: unknown) {
+  return await adminAction({
+    permission: 'orders.refund',
+    schema: refundOperationSchema,
+    input,
+    run: async ({ tx, input: parsed, audit, skipAudit }) => {
+      const orderId = await refundOperationOrder(tx, parsed.operationId);
+      if (orderId === null) throw new RefundNotAllowedError('no such refund operation');
+      const withdrawn = await cancelPendingRefund(tx, parsed.operationId);
+      if (!withdrawn) {
+        skipAudit();
+        return { changed: false };
+      }
+      await audit({
+        action: 'refund',
+        entity: 'order',
+        entityId: orderId,
+        diff: { operationId: parsed.operationId, withdrawn: true },
+      });
+      return { changed: true };
+    },
+  });
+}
+
+/**
+ * Close a refund whose answer is unknown (`in_flight` or `unknown`) with what the provider's portal
+ * says. This is a person's confirmation, recorded with the author (`settleRefund`); nothing is
+ * guessed, and a refund the provider already settled does not move again.
+ */
+export async function resolveRefundAction(input: unknown) {
+  return await adminAction({
+    permission: 'orders.refund',
+    schema: resolveRefundSchema,
+    input,
+    run: async ({ tx, input: parsed, session, audit, skipAudit }) => {
+      const orderId = await refundOperationOrder(tx, parsed.operationId);
+      if (orderId === null) throw new RefundNotAllowedError('no such refund operation');
+      const done = await settleRefund(tx, {
+        operationId: parsed.operationId,
+        outcome:
+          parsed.outcome === 'succeeded'
+            ? { state: 'succeeded', providerReference: null }
+            : { state: 'failed', error: `confirmed by a person: ${parsed.note}` },
+        confirmation: { by: session.userId },
+      });
+      if (!done.changed) {
+        skipAudit();
+        return { changed: false, state: done.state };
+      }
+      await audit({
+        action: 'refund',
+        entity: 'order',
+        entityId: orderId,
+        diff: { operationId: parsed.operationId, confirmed: parsed.outcome, note: parsed.note },
+      });
+      return { changed: true, state: done.state };
     },
   });
 }

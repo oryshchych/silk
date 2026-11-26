@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { OrderActions } from '@/components/admin/order-actions';
 import { OrderItemsEditor } from '@/components/admin/order-items-editor';
 import { OrderWaybill } from '@/components/admin/order-waybill';
+import { RefundOperationActions } from '@/components/admin/refund-operation-actions';
 import { OrderRefundForm } from '@/components/admin/order-refund-form';
 import { LOCALE_COOKIE, parseAdminLocale } from '@/lib/admin/preferences';
 import { formatWhen } from '@/lib/admin/format';
@@ -202,6 +203,12 @@ export default async function AdminOrderPage({ params }: { params: Promise<{ id:
               <li key={refund.id}>
                 {when(refund.at)} · {price(refund.amount)} · {t(`opState.${refund.state}`)}
                 {refund.reason === null ? '' : ` · ${refund.reason}`}
+                {can(session.role, 'orders.refund') &&
+                (refund.state === 'pending' ||
+                  refund.state === 'in_flight' ||
+                  refund.state === 'unknown') ? (
+                  <RefundOperationActions operationId={refund.id} state={refund.state} />
+                ) : null}
               </li>
             ))}
           </ul>

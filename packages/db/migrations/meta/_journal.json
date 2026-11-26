@@ -99,6 +99,13 @@
       "when": 1795677720546,
       "tag": "0013_shipment_one_live",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1795683234927,
+      "tag": "0014_q42_fiscal_check_drop_open_idx",
+      "breakpoints": true
     }
   ]
 }

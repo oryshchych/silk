@@ -1,4 +1,5 @@
-import { listStockHistory } from '@store/core/admin-stock-read';
+import { listStockHistory, reservationView } from '@store/core/admin-stock-read';
+import { can } from '@store/core/auth-permissions';
 import { getTranslations } from 'next-intl/server';
 import { cookies } from 'next/headers';
 import { notFound } from 'next/navigation';
@@ -13,12 +14,17 @@ export default async function StockHistoryPage({
 }: {
   params: Promise<{ variantId: string }>;
 }) {
-  await requireFullSession();
+  const session = await requireFullSession();
   const id = z.uuid().safeParse((await params).variantId);
   if (!id.success) notFound();
   const locale = parseAdminLocale((await cookies()).get(LOCALE_COOKIE)?.value);
   const t = await getTranslations({ locale, namespace: 'admin.stock' });
-  const rows = await listStockHistory(await getDb(), id.data, 50);
+  const db = await getDb();
+  const rows = await listStockHistory(db, id.data, 50);
+  // Order numbers, statuses and times are order data: only a role with `orders.view` receives them.
+  const canOpenOrders = can(session.role, 'orders.view');
+  const reservation = await reservationView(db, id.data, canOpenOrders);
+  const reserving = reservation.orders ?? [];
   const header = 'px-3 py-2 text-left font-medium';
   const cell = 'px-3 py-2 align-top';
   return (
@@ -27,6 +33,35 @@ export default async function StockHistoryPage({
         {t('back')}
       </a>
       <h1 className="text-2xl font-semibold">{t('historyTitle')}</h1>
+      <section aria-labelledby="reserved-by" className="mt-4">
+        <h2 id="reserved-by" className="text-lg font-semibold">
+          {t('reservedBy')}
+        </h2>
+        <p className="text-text-muted">{t('reservedHint')}</p>
+        {reservation.orders === null ? (
+          <p className="mt-2">{t('reservedCount', { count: reservation.reserved })}</p>
+        ) : reserving.length === 0 ? (
+          <p className="mt-2">{t('noReservations')}</p>
+        ) : (
+          <ul className="mt-2 space-y-1">
+            {reserving.map((order) => (
+              <li key={order.orderId}>
+                {canOpenOrders ? (
+                  <a
+                    className="inline-flex min-h-11 items-center underline"
+                    href={`/admin/orders/${order.orderId}`}
+                  >
+                    {order.orderNumber}
+                  </a>
+                ) : (
+                  order.orderNumber
+                )}{' '}
+                · {t('reservedQty', { count: order.quantity })} · {order.status} · {order.at}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
       {rows.length === 0 ? (
         <p className="mt-4">{t('noHistory')}</p>
       ) : (

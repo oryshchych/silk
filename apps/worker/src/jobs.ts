@@ -15,6 +15,7 @@ import { findReservedDrift, releaseExpiredOrders } from '@store/core/expiry';
 import { findReceiptGaps } from '@store/core/fiscal-gaps';
 import { purgeQuarantine } from '@store/core/quarantine';
 import { reconcileOpenAttempts } from '@store/core/reconcile';
+import { sweepRefunds } from '@store/core/refund-sweep';
 import type { ProviderMap } from '@store/core/refunds';
 import type { Reader, Tx } from '@store/db/types';
 
@@ -31,6 +32,8 @@ export const JOB_NAMES = {
   reconcileOpen: 'payments.reconcile-open',
   cleanQuarantine: 'quarantine.cleanup',
   reconcileFiscal: 'fiscal.reconcile',
+  /** Q17: send refunds nobody sent, alert on those whose answer is unknown. */
+  sweepRefunds: 'refunds.sweep',
 } as const;
 
 /** Cron expressions and their timezone (ADR-17): the timezone moves the schedule, nothing else. */
@@ -44,6 +47,7 @@ const SCHEDULES = {
   [JOB_NAMES.reconcileOpen]: '*/10 * * * *',
   [JOB_NAMES.cleanQuarantine]: '0 5 * * *',
   [JOB_NAMES.reconcileFiscal]: '0 6 * * *',
+  [JOB_NAMES.sweepRefunds]: '*/10 * * * *',
 } as const;
 const CRON_TZ = 'Europe/Kyiv';
 
@@ -98,6 +102,17 @@ export function createJobHandlers(deps: JobDeps): JobHandlers {
         level:
           result.providerErrors > 0 || result.alerts > 0 || result.unaskable > 0 ? 'warn' : 'info',
         scope: JOB_NAMES.reconcileOpen,
+        ...result,
+      });
+    },
+    [JOB_NAMES.sweepRefunds]: async () => {
+      const result = await sweepRefunds({
+        providers: deps.providers,
+        runInTransaction: async (fn) => await deps.db.transaction(fn),
+      });
+      line({
+        level: result.failed > 0 || result.alerted > 0 ? 'warn' : 'info',
+        scope: JOB_NAMES.sweepRefunds,
         ...result,
       });
     },

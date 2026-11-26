@@ -13,6 +13,7 @@
     "./payment-attempts": "./src/payments/attempts.ts",
     "./fulfilment": "./src/orders/fulfilment.ts",
     "./refunds": "./src/payments/refunds.ts",
+    "./refund-sweep": "./src/payments/refund-sweep.ts",
     "./catalog": "./src/catalog/index.ts",
     "./product-slug": "./src/catalog/slug.ts",
     "./bra-size": "./src/catalog/bra-size.ts",

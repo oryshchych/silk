@@ -133,3 +133,76 @@ export async function listStockHistory(
     .limit(Math.min(limit, 100));
   return rows;
 }
+
+export interface ReservingOrderRow {
+  orderId: string;
+  orderNumber: string;
+  status: string;
+  quantity: number;
+  /** When the reservation was made. */
+  at: string;
+  /** False for a reservation that never expires (a paid order, a confirmed COD). */
+  expires: boolean;
+}
+
+/**
+ * The orders that hold a variant's reserved quantity (owner queue Q44): a stocktake below the
+ * reserved quantity is refused, and this is the list a person needs to resolve it (cancel or ship
+ * those orders). Order numbers and quantities only: no customer data.
+ */
+export async function listReservingOrders(
+  db: Reader,
+  variantId: string,
+  limit = 50,
+): Promise<ReservingOrderRow[]> {
+  const result = await db.execute<{
+    order_id: string;
+    order_number: string;
+    status: string;
+    quantity: number;
+    at: string;
+    expires: boolean;
+  }>(
+    sql`SELECT o.id::text AS order_id, o.order_number, o.status::text AS status, r.quantity,
+               to_char(r.created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS at,
+               r.expires_at IS NOT NULL AS expires
+          FROM stock_reservations r JOIN orders o ON o.id = r.order_id
+         WHERE r.variant_id = ${variantId} AND r.released_at IS NULL
+         ORDER BY r.created_at, r.id
+         LIMIT ${Math.min(Math.max(1, limit), 200)}`,
+  );
+  return result.rows.map((row) => ({
+    orderId: row.order_id,
+    orderNumber: row.order_number,
+    status: row.status,
+    quantity: row.quantity,
+    at: row.at,
+    expires: row.expires,
+  }));
+}
+
+export interface ReservationView {
+  /** The reserved quantity: the same number the stock list shows to every role that opens it. */
+  reserved: number;
+  /** The orders behind it, or null for a role that may not see orders (`orders.view`). */
+  orders: ReservingOrderRow[] | null;
+}
+
+/**
+ * What a role may see of a variant's reservation. The quantity is stock data (`admin.view`); the
+ * order numbers, statuses and times are order data and need `orders.view`: for any other role the
+ * orders are not even read.
+ */
+export async function reservationView(
+  db: Reader,
+  variantId: string,
+  canSeeOrders: boolean,
+): Promise<ReservationView> {
+  const counted = await db.execute<{ reserved: number }>(
+    sql`SELECT reserved_quantity AS reserved FROM product_variants WHERE id = ${variantId}`,
+  );
+  return {
+    reserved: counted.rows[0]?.reserved ?? 0,
+    orders: canSeeOrders ? await listReservingOrders(db, variantId) : null,
+  };
+}
