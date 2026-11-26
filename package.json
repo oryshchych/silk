@@ -28,6 +28,7 @@
     "boundaries": "depcruise packages apps",
     "knip": "knip",
     "secrets": "./scripts/gitleaks.sh detect --redact --no-banner",
+    "content:check": "node scripts/content-check.ts",
     "smoke:web": "node scripts/smoke-web.ts",
     "admin:seed-local": "pnpm --filter @store/db exec node --env-file-if-exists=../../.env --import tsx ../../scripts/admin-user.ts seed-local",
     "admin:unlock": "pnpm --filter @store/db exec node --env-file-if-exists=../../.env --import tsx ../../scripts/admin-user.ts unlock",
