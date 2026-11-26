@@ -1703,19 +1703,41 @@ export const giftCardTransactions = pgTable('gift_card_transactions', {
  */
 export const legalDocuments = pgTable('legal_documents', {
   id: id(),
-  kind: varchar('kind', { length: 40 }).notNull(),   // offer | privacy | returns | delivery
+  /** terms | privacy | delivery_payment | returns | about | faq | contacts (CHECK below; mirrored in @store/shared/legal) */
+  kind: varchar('kind', { length: 40 }).notNull(),
+  /** A positive integer as text, assigned by the service (max + 1 per kind and locale). Never reused. */
   version: varchar('version', { length: 20 }).notNull(),
   locale: varchar('locale', { length: 5 }).notNull(),
-  /** Або текст, або файл — принаймні одне */
+  title: varchar('title', { length: 200 }).notNull(),
+  /** draft: editable and never public; published: immutable, public from `effective_from` by the DATABASE clock. */
+  status: varchar('status', { length: 12 }).notNull().default('draft'),
+  /** What the admin typed (a small Markdown subset). Only the admin sees it. */
+  bodySource: text('body_source'),
+  /** The SANITISED html rendered from the source; sanitised again on render. */
   bodyHtml: text('body_html'),
+  /** Public URL of an uploaded PDF (the object key is `fileKey`). */
   fileUrl: text('file_url'),
+  fileKey: varchar('file_key', { length: 300 }),
+  fileSize: integer('file_size'),
   effectiveFrom: timestamp('effective_from', { withTimezone: true }).notNull(),
+  publishedAt: timestamp('published_at', { withTimezone: true }),
+  publishedByUserId: uuid('published_by_user_id'),
   uploadedByUserId: uuid('uploaded_by_user_id'),
   createdAt: createdAt(),
+  updatedAt: updatedAt(),
 }, (t) => [
   uniqueIndex('legal_docs_uq').on(t.kind, t.version, t.locale),
-  index('legal_docs_current_idx').on(t.kind, t.locale, t.effectiveFrom),
+  /** No two published versions of one document start at the same instant, so "the current one" is never a tie. */
+  uniqueIndex('legal_docs_published_start_uq').on(t.kind, t.locale, t.effectiveFrom).where(sql`${t.status} = 'published'`),
   check('legal_docs_has_content', sql`${t.bodyHtml} IS NOT NULL OR ${t.fileUrl} IS NOT NULL`),
+  check('legal_docs_kind', sql`${t.kind} IN ('terms', 'privacy', 'delivery_payment', 'returns', 'about', 'faq', 'contacts')`),
+  check('legal_docs_locale', sql`${t.locale} IN ('uk', 'en')`),
+  check('legal_docs_status', sql`${t.status} IN ('draft', 'published')`),
+  check('legal_docs_version_format', sql`${t.version} ~ '^[1-9][0-9]{0,5}$'`),
+  check('legal_docs_title_nonblank', sql`char_length(btrim(${t.title})) > 0`),
+  check('legal_docs_body_size', sql`char_length(coalesce(${t.bodyHtml}, '')) <= 200000 AND char_length(coalesce(${t.bodySource}, '')) <= 100000`),
+  check('legal_docs_file_pair', sql`(${t.fileUrl} IS NULL) = (${t.fileKey} IS NULL)`),
+  check('legal_docs_published_stamp', sql`${t.status} <> 'published' OR ${t.publishedAt} IS NOT NULL`),
 ]);
 
 /* ═══════════════ ФІСКАЛЬНІ ДОКУМЕНТИ ═══════════════ */

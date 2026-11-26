@@ -1248,3 +1248,172 @@ describe('0019_returns_flow', () => {
     );
   });
 });
+
+describe('0021 and 0022: legal_documents', () => {
+  const CHECK = '23514';
+  const INSERT = `INSERT INTO legal_documents (kind, version, locale, title, status, body_html, effective_from, published_at)
+                  VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`;
+  const make = async (
+    over: Partial<
+      Record<
+        'kind' | 'version' | 'locale' | 'title' | 'status' | 'html' | 'start' | 'stamp',
+        string | null
+      >
+    > = {},
+  ) =>
+    (
+      await one<{ id: string }>(app, INSERT, [
+        over.kind ?? 'terms',
+        over.version ?? '1',
+        over.locale ?? 'uk',
+        over.title ?? 'Title',
+        over.status ?? 'draft',
+        over.html === undefined ? '<p>x</p>' : over.html,
+        over.start ?? new Date().toISOString(),
+        over.stamp === undefined ? null : over.stamp,
+      ])
+    ).id;
+  let n = 0;
+  const fresh = async (status: 'draft' | 'published') => {
+    n += 1;
+    // `published` rows are inserted directly (an INSERT is not guarded); the stamp CHECK needs published_at.
+    return await make({
+      kind: 'faq',
+      locale: 'uk',
+      version: String(n),
+      status,
+      // A distinct start per row: two published versions of one document cannot share an instant.
+      start: new Date(Date.UTC(2020, 0, 1) + n * 1000).toISOString(),
+      stamp: status === 'published' ? new Date().toISOString() : null,
+    });
+  };
+  const violation = async (promise: Promise<unknown>, constraint: string) => {
+    await expect(promise).rejects.toMatchObject({ code: CHECK, constraint });
+  };
+
+  it('every CHECK refuses its own bad row, by SQLSTATE and constraint name', async () => {
+    await violation(make({ kind: 'offer' }), 'legal_docs_kind');
+    await violation(make({ locale: 'de' }), 'legal_docs_locale');
+    await violation(make({ status: 'archived' }), 'legal_docs_status');
+    await violation(make({ version: 'v2' }), 'legal_docs_version_format');
+    await violation(make({ version: '0' }), 'legal_docs_version_format');
+    await violation(make({ title: '   ' }), 'legal_docs_title_nonblank');
+    await violation(make({ status: 'published', stamp: null }), 'legal_docs_published_stamp');
+    await violation(make({ html: 'x'.repeat(200_001) }), 'legal_docs_body_size');
+    await violation(make({ html: null }), 'legal_docs_has_content');
+    await violation(
+      app.query(`UPDATE legal_documents SET file_url = 'https://m.example/a.pdf' WHERE id = $1`, [
+        await fresh('draft'),
+      ]),
+      'legal_docs_file_pair',
+    );
+    await violation(
+      app.query(`UPDATE legal_documents SET file_key = 'legal/a.pdf' WHERE id = $1`, [
+        await fresh('draft'),
+      ]),
+      'legal_docs_file_pair',
+    );
+    await violation(
+      app.query(`UPDATE legal_documents SET body_source = $2 WHERE id = $1`, [
+        await fresh('draft'),
+        'x'.repeat(100_001),
+      ]),
+      'legal_docs_body_size',
+    );
+  });
+
+  it('two published versions of one document cannot start at the same instant; a draft may share it', async () => {
+    const start = new Date(Date.now() + 86_400_000).toISOString();
+    const stamp = new Date().toISOString();
+    await make({ kind: 'about', version: '1', status: 'published', start, stamp });
+    await expect(
+      make({ kind: 'about', version: '2', status: 'published', start, stamp }),
+    ).rejects.toMatchObject({
+      code: '23505',
+      constraint: 'legal_docs_published_start_uq',
+    });
+    await make({ kind: 'about', version: '3', status: 'draft', start });
+  });
+
+  const COLUMNS: [string, string, unknown][] = [
+    ['title', 'title', 'Other'],
+    ['body_source', 'body_source', 'changed'],
+    ['body_html', 'body_html', '<p>changed</p>'],
+    ['file_url and file_key', "file_url = 'https://m.example/a.pdf', file_key = $2", 'legal/a.pdf'],
+    ['file_size', 'file_size', 7],
+    ['kind', 'kind', 'privacy'],
+    ['version', 'version', '99'],
+    ['locale', 'locale', 'en'],
+    ['effective_from', 'effective_from', new Date(Date.now() + 86_400_000).toISOString()],
+    ['published_at', 'published_at', new Date(0).toISOString()],
+    ['published_by_user_id', 'published_by_user_id', '00000000-0000-4000-8000-0000000000ee'],
+    ['uploaded_by_user_id', 'uploaded_by_user_id', '00000000-0000-4000-8000-0000000000ee'],
+    ['created_at', 'created_at', new Date(0).toISOString()],
+    ['id', 'id', '00000000-0000-4000-8000-0000000000ef'],
+  ];
+  for (const [label, assignment, value] of COLUMNS) {
+    it(`a published row refuses a change of ${label} (legal_documents_guard_immutable)`, async () => {
+      const id = await fresh('published');
+      const set = assignment.includes('=') ? assignment : `${assignment} = $2`;
+      await violation(
+        app.query(`UPDATE legal_documents SET ${set} WHERE id = $1`, [id, value]),
+        'legal_documents_guard_immutable',
+      );
+    });
+  }
+
+  it('a published row cannot go back to draft, be deleted or be truncated; a draft can be deleted', async () => {
+    const id = await fresh('published');
+    await violation(
+      app.query(`UPDATE legal_documents SET status = 'draft' WHERE id = $1`, [id]),
+      'legal_documents_guard_status',
+    );
+    await violation(
+      app.query(`DELETE FROM legal_documents WHERE id = $1`, [id]),
+      'legal_documents_guard_delete',
+    );
+    // The app role has no TRUNCATE privilege at all; the owner is stopped by the trigger.
+    await expect(app.query(`TRUNCATE legal_documents`)).rejects.toMatchObject({ code: '42501' });
+    await violation(migrator.query(`TRUNCATE legal_documents`), 'legal_documents_guard_truncate');
+    const draft = await fresh('draft');
+    await app.query(`DELETE FROM legal_documents WHERE id = $1`, [draft]);
+  });
+
+  it('only updated_at may move on a published row, and a draft publishes once with a start that is not in the past', async () => {
+    const id = await fresh('published');
+    await app.query(`UPDATE legal_documents SET updated_at = now() WHERE id = $1`, [id]);
+    const draft = await fresh('draft');
+    await violation(
+      app.query(
+        `UPDATE legal_documents SET status = 'published', published_at = now(), effective_from = now() - interval '2 hours' WHERE id = $1`,
+        [draft],
+      ),
+      'legal_documents_guard_past_start',
+    );
+    await app.query(
+      `UPDATE legal_documents SET status = 'published', published_at = now(), effective_from = now() WHERE id = $1`,
+      [draft],
+    );
+  });
+
+  it('the redundant current-version index is gone and the touch trigger moves updated_at on a draft', async () => {
+    const gone = await root.query(
+      `SELECT 1 FROM pg_indexes WHERE indexname = 'legal_docs_current_idx'`,
+    );
+    expect(gone.rowCount).toBe(0);
+    const id = await fresh('draft');
+    const before = await one<{ updated_at: Date }>(
+      app,
+      `SELECT updated_at FROM legal_documents WHERE id = $1`,
+      [id],
+    );
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await app.query(`UPDATE legal_documents SET title = 'again' WHERE id = $1`, [id]);
+    const after = await one<{ updated_at: Date }>(
+      app,
+      `SELECT updated_at FROM legal_documents WHERE id = $1`,
+      [id],
+    );
+    expect(after.updated_at.getTime()).toBeGreaterThan(before.updated_at.getTime());
+  });
+});

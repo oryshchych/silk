@@ -363,7 +363,8 @@
       "customers": "Customers",
       "users": "Users",
       "reviews": "Reviews",
-      "returns": "Returns"
+      "returns": "Returns",
+      "legal": "Legal pages"
     },
     "dashboard": {
       "title": "Overview",
@@ -445,7 +446,12 @@
       "ADMIN_LAST_OWNER": "The last active owner cannot be demoted or deactivated.",
       "ADMIN_SELF_CHANGE": "You cannot change your own account here.",
       "ADMIN_EMAIL_TAKEN": "An account with this email already exists.",
-      "ADMIN_WEAK_PASSWORD": "The password must be at least 12 characters and must not contain the part of the email before the @."
+      "ADMIN_WEAK_PASSWORD": "The password must be at least 12 characters and must not contain the part of the email before the @.",
+      "LEGAL_NOT_FOUND": "Document not found.",
+      "LEGAL_NOT_DRAFT": "A published version cannot be changed. Create a new version.",
+      "LEGAL_EMPTY": "Add a text or a PDF before publishing.",
+      "LEGAL_START_TAKEN": "Another published version starts at the same time. Choose a different start.",
+      "LEGAL_START_TOO_EARLY": "A published version of this document already starts later. Pick a start after it, or leave the start as it is."
     },
     "editor": {
       "newTitle": "New product",
@@ -976,6 +982,74 @@
       "refund": "Refund the money",
       "close": "Close without a refund",
       "saved": "Saved."
+    },
+    "legal": {
+      "heading": "Legal pages",
+      "empty": "No documents yet.",
+      "back": "Back to the list",
+      "lawyerNotice": "Draft: needs a lawyer. The texts here are neutral drafts and must be reviewed by a lawyer before they are published; the shop owner is responsible for the final wording.",
+      "kind": "Document",
+      "locale": "Language",
+      "version": "Version",
+      "versionLabel": "Version {version}",
+      "statusLabel": "Status",
+      "effectiveFrom": "Effective from",
+      "effectiveHint": "A published version starts no earlier than the moment it is published. The version that is current at any time is chosen by the server clock.",
+      "current": "current",
+      "newDraft": "New draft",
+      "create": "Create draft",
+      "created": "Draft created.",
+      "title": "Title",
+      "source": "Text",
+      "sourceHint": "Markdown: ## heading, - list, **bold**, [link](https://...). Scripts and raw HTML are not allowed.",
+      "save": "Save draft",
+      "saved": "Saved.",
+      "publish": "Publish",
+      "published": "Published.",
+      "confirmPublish": "Publish this version? A published version cannot be changed or deleted.",
+      "delete": "Delete draft",
+      "deleted": "Deleted.",
+      "confirmDelete": "Delete this draft?",
+      "newVersion": "New version from this text",
+      "needsPublisher": "Only an owner or an admin can publish.",
+      "pdf": "PDF file",
+      "noPdf": "No PDF attached.",
+      "pdfLink": "Download the attached PDF",
+      "pdfChoose": "Attach a PDF (up to 8 MB)",
+      "pdfUploaded": "PDF attached.",
+      "pdfRemove": "Remove the PDF",
+      "pdfRemoved": "PDF removed.",
+      "pdfFailed": "Upload failed.",
+      "status": {
+        "draft": "Draft",
+        "published": "Published"
+      },
+      "kinds": {
+        "terms": "Terms of the offer",
+        "privacy": "Privacy policy",
+        "delivery_payment": "Delivery and payment",
+        "returns": "Returns and exchange",
+        "about": "About us",
+        "faq": "FAQ",
+        "contacts": "Contacts"
+      },
+      "locales": {
+        "uk": "Ukrainian",
+        "en": "English"
+      },
+      "uploadErrors": {
+        "TOO_LARGE": "The file is too large (up to 8 MB).",
+        "PDF_UNSUPPORTED_TYPE": "A PDF file is required.",
+        "MEDIA_NOT_CONFIGURED": "File storage is not configured.",
+        "RATE_LIMITED": "Too many uploads. Wait a moment.",
+        "FORBIDDEN": "You do not have permission.",
+        "UNAUTHENTICATED": "Your session ended. Sign in again.",
+        "STORAGE_FAILED": "Could not save to storage.",
+        "LEGAL_NOT_DRAFT": "A published version cannot be changed.",
+        "LEGAL_NOT_FOUND": "Document not found.",
+        "BUSY": "Another upload is in progress.",
+        "TIMEOUT": "The upload timed out."
+      }
     }
   },
   "consent": {

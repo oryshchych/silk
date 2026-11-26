@@ -46,6 +46,11 @@ const KNOWN_CODES = [
   'ADMIN_SELF_CHANGE',
   'ADMIN_EMAIL_TAKEN',
   'ADMIN_WEAK_PASSWORD',
+  'LEGAL_NOT_FOUND',
+  'LEGAL_NOT_DRAFT',
+  'LEGAL_EMPTY',
+  'LEGAL_START_TAKEN',
+  'LEGAL_START_TOO_EARLY',
 ] as const;
 
 export type ActionOutcome = { ok: true; data?: unknown } | { ok: false; code: string };

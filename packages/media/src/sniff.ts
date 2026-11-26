@@ -23,3 +23,13 @@ export function sniffImage(bytes: Uint8Array): ImageKind | null {
   }
   return null;
 }
+
+/**
+ * A PDF, from its first bytes: `%PDF-` and a version, nothing before it. The declared type and the file
+ * name are never trusted (an HTML page or a script renamed `.pdf` is `false`).
+ */
+export function sniffPdf(bytes: Uint8Array): boolean {
+  if (bytes.length < 8) return false;
+  const head = String.fromCharCode(...bytes.subarray(0, 8));
+  return /^%PDF-[12]\.\d/.test(head);
+}

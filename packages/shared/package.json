@@ -22,7 +22,10 @@
     "./dto/admin-customer": "./src/dto/admin-customer.ts",
     "./dto/account": "./src/dto/account.ts",
     "./dto/review": "./src/dto/review.ts",
-    "./dto/return": "./src/dto/return.ts"
+    "./dto/return": "./src/dto/return.ts",
+    "./dto/legal": "./src/dto/legal.ts",
+    "./legal": "./src/legal.ts",
+    "./rich-text": "./src/rich-text.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"

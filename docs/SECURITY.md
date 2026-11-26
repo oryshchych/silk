@@ -51,6 +51,8 @@ confirmed TOTP before a session counts; so must anyone who enrolled one.
 | `returns.manage` | owner, admin, manager | Read return requests (with the customer's e-mail), approve, refuse, record the physical receipt (the ONLY step that puts units back on the shelf) and close a return without a refund; the refund itself needs `orders.refund` |
 | `reviews.moderate` | owner, admin, content | Read customer reviews (text, rating, size, fit: never the reviewer's e-mail, so the `content` role sees no customer data), approve, refuse and reply; every decision recomputes the product's rating and fit counters and is audited |
 | `orders.confirm_payment` | owner, admin, manager | Record a received bank transfer (the confirmed source of a transfer payment, ADR-4) |
+| `legal.edit` | owner, admin, content | Read and write DRAFT legal documents (terms, privacy, delivery and payment, returns, about, FAQ, contacts): the text and the PDF. A draft is never public |
+| `legal.publish` | owner, admin | Publish a draft (it becomes immutable and public from its start time) and delete a draft. `content` drafts but cannot publish: a legal text going live is a decision with legal weight |
 | `media.upload` | owner, admin, content | Upload and edit product images |
 | `catalog.import` | owner, admin | CSV / XLSX import |
 | `catalog.export` | owner, admin | CSV / XLSX export |
@@ -200,6 +202,35 @@ product page byte for byte for an anonymous and a signed-in visitor.
 - **Reviews:** `reviews.moderate` approves, refuses and replies; every decision recomputes the product's rating and fit counters from the
   approved rows in the same transaction and drops the product's cached page after the commit; the audit rows name the decision, never the text.
   `AggregateRating` markup is emitted only when the page shows approved reviews, with the same count (a smoke check compares them).
+
+### Legal documents (phase 8)
+
+- **Versions are history.** A published version is immutable and never deleted: the database refuses an `UPDATE` of its text, dates or
+  identity and any `DELETE` (trigger `legal_documents_guard`, migration 0021). A correction is a NEW version. Return requests and recorded
+  acceptances store a reference (`kind/locale/version`) to the text a person agreed to, so that text must stay.
+- **Every column of a published row is protected** (migration 0022 compares `to_jsonb(NEW) - 'updated_at'` with the old row, so a column added
+  later is covered too); each refusal is SQLSTATE `23514` with a stable constraint name (`legal_documents_guard_immutable`, `_status`, `_delete`,
+  `_truncate`, `_past_start`). A version cannot be published with a start in the past by direct SQL either.
+- **A later start cannot be overridden.** Publishing is refused (`LEGAL_START_TOO_EARLY`) when a published version of the same document already
+  starts later, because the older text would silently become current again on that date and a published row cannot be taken back. A start is
+  bounded to one year ahead (a year typo is permanent once published).
+- **The current version is chosen by the database clock** (`effective_from <= now()`, latest wins, `status = 'published'`). A draft and a
+  version scheduled for the future are never served. A publish never starts in the past (`greatest(effective_from, now())`).
+- **Rich text is Markdown the editor types, rendered by `markdownToHtml` (every source character escaped first) and run through the
+  allowlist `sanitizeHtml` on WRITE (the stored html) and again on EVERY READ.** Allowed: p, h2 to h4, ul, ol, li, strong, em, b, i, br, hr,
+  blockquote and `a` with a vetted `href` (https, http, mailto, tel or a site path; `rel="noopener noreferrer"`). Scripts, event handlers,
+  styles, iframes, forms, `javascript:` and `data:` URLs, and unknown tags never survive; the XSS corpus is in
+  `packages/shared/src/rich-text.unit.test.ts`.
+- **PDF upload** (`POST /admin/upload/legal-pdf`, `legal.edit`): the type is read from the bytes (`%PDF-`), 8 MB cap enforced while the body
+  streams, the object key is built from ids, the object is stored with `Content-Type: application/pdf` and
+  `Content-Disposition: attachment` (it downloads, it never renders inline) and `Cache-Control: private, no-store`. A DRAFT's PDF sits on the public media host
+  under an unguessable key (uuid v4); it is removed from the store when the draft is deleted, when the file is removed and when it is replaced. Q76 is a
+  release gate for this feature: the host rules (`nosniff`, no public listing) must be in place before a PDF is published. `X-Content-Type-Options: nosniff` is a response header of the
+  media host (a Cloudflare transform rule, owner queue Q76): the object store cannot store it.
+- **Every change is audited** (`legal.created`, `legal.updated`, `legal.file_set`, `legal.published`, `legal.draft_deleted`); the diff names
+  the kind, locale and version, never the text.
+- **Placeholder company data** (legal name, tax id, address) comes from `settings.company` and is shown as an explicit "not set" marker until
+  the owner fills it in; it is never put into structured data.
 
 ## Catalog data and the cost
 
