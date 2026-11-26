@@ -113,11 +113,7 @@ export function AccountForm({
         {state.status === 'sent' ? (
           <p role="status">{t(kind === 'forgot' ? 'forgotSent' : 'registerSent')}</p>
         ) : null}
-        {state.status === 'error' ? (
-          <p role="alert" className="text-danger">
-            {t(ERRORS[state.code])}
-          </p>
-        ) : null}
+        {state.status === 'error' ? <p className="text-danger">{t(ERRORS[state.code])}</p> : null}
       </div>
     </form>
   );

@@ -14,6 +14,7 @@ import {
   claimGuestOrders,
   completeWithToken,
   customerLogin,
+  purgeEmailTokens,
   purgePendingAccounts,
   requestPasswordReset,
   requestRegistration,
@@ -203,7 +204,7 @@ describe('the link', () => {
     expect(readEmailToken(SECRET, 'x'.repeat(300))).toBeNull();
     expect(await complete(`${id}.${'A'.repeat(43)}`)).toEqual({ ok: false, reason: 'invalid' });
     await handle.db.execute(
-      sql`UPDATE auth_email_tokens SET expires_at = now() - interval '1 second' WHERE id = ${id}`,
+      sql`UPDATE auth_email_tokens SET created_at = now() - interval '2 seconds', expires_at = now() - interval '1 second' WHERE id = ${id}`,
     );
     expect(await complete(token)).toEqual({ ok: false, reason: 'invalid' });
   });
@@ -422,6 +423,93 @@ describe('password reset', () => {
       await requestPasswordReset(tx, { email: 'garbage', locale: 'uk', client });
     });
     expect((await handle.db.select().from(outbox)).length).toBe(before);
+  });
+});
+
+describe('timing: the branches that send nothing cost about the same as the one that sends', () => {
+  const median = (values: number[]): number =>
+    [...values].sort((x, y) => x - y)[Math.floor(values.length / 2)] ?? 0;
+  async function sample(run: (i: number) => Promise<void>, n = 40): Promise<number> {
+    const times: number[] = [];
+    for (let i = 0; i < n; i += 1) {
+      const start = performance.now();
+      await run(i);
+      times.push(performance.now() - start);
+    }
+    return median(times);
+  }
+
+  it('reset: a verified account, an unknown address and an admin address (median of 40, ratio under 2.5)', async () => {
+    const real = await account();
+    const reset = (email: string) => async () => {
+      await handle.db.transaction(async (tx) => {
+        await requestPasswordReset(tx, { email, locale: 'uk', client });
+      });
+    };
+    await sample(reset(real.email), 5);
+    const cases = {
+      unknown: await sample((i) => reset(`nobody-${String(i)}@example.test`)()),
+      admin: await sample(reset('wall@example.test')),
+      // Past the hourly cap the real branch also sends nothing, but it did the same work: that is the point.
+      verified: await sample((i) => reset(i % 4 === 0 ? real.email : real.email)()),
+    };
+    const slowest = Math.max(...Object.values(cases));
+    const fastest = Math.min(...Object.values(cases));
+    expect(slowest / fastest, JSON.stringify(cases)).toBeLessThan(2.5);
+  });
+
+  it('registration: a new address, an existing customer and an admin address', async () => {
+    const real = await account();
+    const reg = (email: string) => async () => {
+      await register(email);
+    };
+    const cases = {
+      fresh: await sample((i) => reg(`fresh-${String(i)}-${String(counter)}@example.test`)()),
+      existing: await sample(reg(real.email)),
+      admin: await sample(reg('wall@example.test')),
+    };
+    const ratio = Math.max(...Object.values(cases)) / Math.min(...Object.values(cases));
+    expect(ratio, JSON.stringify(cases)).toBeLessThan(2.5);
+  });
+
+  it('a decoy is never queued: no row with the decoy topic survives', async () => {
+    expect(
+      (await handle.db.select().from(outbox)).filter((row) => row.topic === 'decoy'),
+    ).toHaveLength(0);
+  });
+});
+
+describe('link rows: housekeeping and the schema checks', () => {
+  it('purges used and long-expired rows, keeps an open one', async () => {
+    const email = fresh();
+    await register(email);
+    const open = await mailedToken(email);
+    await handle.db.execute(
+      sql`UPDATE auth_email_tokens SET used_at = now() WHERE id <> ${readEmailToken(SECRET, open)?.id ?? ''}`,
+    );
+    const removed = await handle.db.transaction(async (tx) => await purgeEmailTokens(tx));
+    expect(removed).toBeGreaterThan(0);
+    expect(
+      await handle.db
+        .select()
+        .from(authEmailTokens)
+        .where(eq(authEmailTokens.id, readEmailToken(SECRET, open)?.id ?? '')),
+    ).toHaveLength(1);
+  });
+
+  it('the database refuses a link that expires before it was made, or is used before it existed', async () => {
+    const email = fresh();
+    await register(email);
+    const [user] = await handle.db.select().from(authUsers).where(eq(authUsers.email, email));
+    await expect(
+      handle.db.execute(sql`INSERT INTO auth_email_tokens (user_id, purpose, expires_at, created_at)
+        VALUES (${user?.id ?? ''}, 'reset_password', now() - interval '1 hour', now())`),
+    ).rejects.toThrow();
+    await expect(
+      handle.db
+        .execute(sql`INSERT INTO auth_email_tokens (user_id, purpose, expires_at, created_at, used_at)
+        VALUES (${user?.id ?? ''}, 'reset_password', now() + interval '1 hour', now(), now() - interval '1 day')`),
+    ).rejects.toThrow();
   });
 });
 

@@ -141,6 +141,20 @@ A customer is NOT an admin: `admin_users` has no row for them, and the two audie
   clients; 300 on the rest), every method but OPTIONS, every spelling (`/%61ccount`, `/en/account`); the
   actions repeat a per-client limit. Every response under `/account` is `private, no-store`, noindex,
   `Referrer-Policy: no-referrer`.
+- **Timing.** The branches that send nothing (unknown address, an admin, a throttled one) do the same
+  database work as the one that sends (lock, count, a queue insert rolled back with a savepoint), so the
+  request time does not say which branch ran; a test bounds the median ratio of the cases.
+- **Cookie name.** `__Host-customer_session` when `Secure` (the browser pins `Path=/`, no `Domain`: a
+  sibling subdomain cannot plant or shadow it); the plain name only on a local http server.
+- **Secrets.** Account security rests on `AUTH_SECRET` and its derived key purposes `customer-session` and
+  `email-token`. Rotating `AUTH_SECRET` ends every customer session and kills every outstanding link.
+- **Sessions.** 14 days absolute, no idle timeout, and a sign-in does not revoke the browser's earlier
+  session (both are on purpose for a shop; a reset and a sign-out do end sessions).
+- **Accepted risk (Q67).** The cap over ALL clients on the credential pages (600 a minute) can be filled
+  by an attacker with enough addresses, which locks every customer out of those forms for the minute; and
+  five wrong passwords lock a KNOWN account for 15 minutes, so anyone can lock a known account. A warning
+  is logged when the cap passes half. The hardening phase replaces the lockout with throttling keyed by
+  the target account and adds a proof-of-work or CAPTCHA step above half the cap.
 - **Ownership.** Every account query is scoped by the customer id of the SESSION, never by an id from the
   request; a customer who names another customer's order, address or review gets the same "not found" as
   for a record that does not exist.

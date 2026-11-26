@@ -15,7 +15,7 @@ import { z } from 'zod';
 
 import { requestOriginOk } from '@/lib/admin/bound-action';
 import { authConfig, cookiesAreSecure } from '@/lib/admin/config';
-import { CUSTOMER_COOKIE, customerCookieOptions } from '@/lib/account/cookies';
+import { customerCookieName, customerCookieOptions } from '@/lib/account/cookies';
 import { currentCustomer } from '@/lib/account/session';
 import { SIZES_COOKIE, formatSizesCookie } from '@/lib/my-sizes';
 import { getDb } from '@/lib/db';
@@ -38,7 +38,8 @@ export type AccountFormState =
 const credentialWork = createSemaphore(3, 6);
 const loginLimiter = createRateLimiter({ limit: 10, windowMs: 10 * 60_000 });
 /** Mails: a person asks once or twice; a script asks for thousands of inboxes. */
-const mailLimiter = createRateLimiter({ limit: 5, windowMs: 60 * 60_000 });
+const registerLimiter = createRateLimiter({ limit: 10, windowMs: 60 * 60_000 });
+const forgotLimiter = createRateLimiter({ limit: 10, windowMs: 60 * 60_000 });
 const setLimiter = createRateLimiter({ limit: 10, windowMs: 10 * 60_000 });
 
 const locale = z.enum(['uk', 'en']);
@@ -72,7 +73,7 @@ async function gate(limiter: RateLimiter): Promise<Gate> {
 
 async function setSession(token: string, expiresAt: Date): Promise<void> {
   (await cookies()).set(
-    CUSTOMER_COOKIE,
+    customerCookieName(await cookiesAreSecure()),
     token,
     customerCookieOptions(expiresAt, await cookiesAreSecure()),
   );
@@ -119,7 +120,7 @@ export async function customerLoginAction(input: unknown): Promise<AccountFormSt
 
 /** Step 1 of registration: an address only. The answer is the same for every address. */
 export async function registerAction(input: unknown): Promise<AccountFormState> {
-  const allowed = await gate(mailLimiter);
+  const allowed = await gate(registerLimiter);
   if (!allowed.ok) return { status: 'error', code: allowed.code };
   const parsed = mailSchema.safeParse(input);
   if (!parsed.success) return { status: 'error', code: 'invalid' };
@@ -136,7 +137,7 @@ export async function registerAction(input: unknown): Promise<AccountFormState> 
 }
 
 export async function forgotPasswordAction(input: unknown): Promise<AccountFormState> {
-  const allowed = await gate(mailLimiter);
+  const allowed = await gate(forgotLimiter);
   if (!allowed.ok) return { status: 'error', code: allowed.code };
   const parsed = mailSchema.safeParse(input);
   if (!parsed.success) return { status: 'error', code: 'invalid' };
@@ -182,6 +183,7 @@ export async function setPasswordAction(input: unknown): Promise<AccountFormStat
 export async function customerLogoutAction(input: unknown): Promise<void> {
   const parsed = z.object({ locale }).safeParse(input);
   const chosen = parsed.success ? parsed.data.locale : 'uk';
+  // A foreign page must not be able to sign a visitor out: nothing happens without the Origin check.
   if (await requestOriginOk()) {
     const customer = await currentCustomer();
     if (customer !== null) {
@@ -190,8 +192,9 @@ export async function customerLogoutAction(input: unknown): Promise<void> {
         await logoutCustomer(tx, { sid: customer.sid, userId: customer.userId });
       });
     }
+    const store = await cookies();
+    store.delete({ name: customerCookieName(await cookiesAreSecure()), path: '/' });
+    store.delete({ name: SIZES_COOKIE, path: '/' });
   }
-  (await cookies()).delete({ name: CUSTOMER_COOKIE, path: '/' });
-  (await cookies()).delete({ name: SIZES_COOKIE, path: '/' });
   redirect(href(chosen, '/account/login'));
 }

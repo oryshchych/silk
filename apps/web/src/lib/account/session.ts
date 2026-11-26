@@ -4,14 +4,14 @@ import { redirect } from 'next/navigation';
 
 import type { SiteLocale } from '@store/shared/seo';
 
-import { authConfig } from '../admin/config';
+import { authConfig, cookiesAreSecure } from '../admin/config';
 import { getDb } from '../db';
 import { href } from '../paths';
-import { CUSTOMER_COOKIE } from './cookies';
+import { customerCookieName } from './cookies';
 
 /** The customer of this request, read from the database (never trusted from the cookie), or null. */
 export async function currentCustomer(): Promise<CustomerSession | null> {
-  const token = (await cookies()).get(CUSTOMER_COOKIE)?.value;
+  const token = (await cookies()).get(customerCookieName(await cookiesAreSecure()))?.value;
   if (token === undefined) return null;
   return await resolveCustomerSession(await getDb(), await authConfig(), token);
 }

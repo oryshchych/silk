@@ -377,6 +377,16 @@ describe('proxy: customer account limits and headers', () => {
     expect((await proxy(account('/account', 'POST', '203.0.113.61'))).status).not.toBe(307);
   });
 
+  it('in production the session cookie is the __Host- one: the plain name does not count', async () => {
+    const proxy = await loadProxy('production');
+    const withName = (name: string) =>
+      new NextRequest('https://shop.example/account', {
+        headers: { cookie: `${name}=x`, 'x-forwarded-for': '203.0.113.70' },
+      });
+    expect((await proxy(withName('customer_session'))).status).toBe(307);
+    expect((await proxy(withName('__Host-customer_session'))).status).not.toBe(307);
+  });
+
   it('limits the credential pages to 30 a minute per client, every method but OPTIONS, every spelling', async () => {
     const proxy = await loadProxy('local');
     const spellings = [

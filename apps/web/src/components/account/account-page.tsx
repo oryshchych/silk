@@ -58,7 +58,11 @@ export async function CredentialPage({
 }) {
   const { locale, known } = resolveLocale(rawLocale);
   if (!known) notFound();
-  if ((await currentCustomer()) !== null) redirect(href(locale, paths.account));
+  // A mailed link must work for someone who is signed in elsewhere too (reset, verify): only the
+  // pages that ask for credentials send a signed-in person away.
+  if (kind !== 'setPassword' && (await currentCustomer()) !== null) {
+    redirect(href(locale, paths.account));
+  }
   const t = await getTranslations('account');
   const linkInvalid = kind === 'setPassword' && (token === undefined || token === '');
   return (
