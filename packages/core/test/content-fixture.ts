@@ -34,7 +34,7 @@ export interface CatalogIds {
   size2Id: string;
 }
 
-export async function seedDictionaries(tx: Tx): Promise<CatalogIds> {
+export async function seedDictionaries(tx: Tx, slugSuffix = ''): Promise<CatalogIds> {
   const cat = async (
     slug: string,
     extra: Partial<typeof categories.$inferInsert> = {},
@@ -42,7 +42,7 @@ export async function seedDictionaries(tx: Tx): Promise<CatalogIds> {
     const [row] = await tx
       .insert(categories)
       .values({
-        slug,
+        slug: `${slug}${slugSuffix}`,
         nameUk: `Категорія ${slug}`,
         nameEn: `Category ${slug}`,
         seoTextUk: SEO_TEXT('uk'),
@@ -56,17 +56,20 @@ export async function seedDictionaries(tx: Tx): Promise<CatalogIds> {
   const categoryId = await cat('ready-cat');
   const hiddenCategoryId = await cat('hidden-cat', { isActive: false });
   const emptyCategoryId = await cat('empty-cat', { seoTextUk: null, seoTextEn: null });
+  // Active with its texts but nothing to list, and excluded from search with no text at all.
+  await cat('nolive-cat');
+  await cat('noindex-cat', { noindex: true, seoTextUk: null, seoTextEn: null });
   const [color] = await tx
     .insert(colors)
-    .values({ slug: 'black', nameUk: 'Чорний', nameEn: 'Black', hex: '#101010' })
+    .values({ slug: `black${slugSuffix}`, nameUk: 'Чорний', nameEn: 'Black', hex: '#101010' })
     .returning({ id: colors.id });
   const [size] = await tx
     .insert(sizes)
-    .values({ system: 'apparel', label: 'S' })
+    .values({ system: 'apparel', label: `S${slugSuffix.slice(-6)}` })
     .returning({ id: sizes.id });
   const [size2] = await tx
     .insert(sizes)
-    .values({ system: 'apparel', label: 'M' })
+    .values({ system: 'apparel', label: `M${slugSuffix.slice(-6)}` })
     .returning({ id: sizes.id });
   if (color === undefined || size === undefined || size2 === undefined) throw new Error('dict');
   return {
@@ -86,6 +89,7 @@ export interface ProductSpec {
   /** Stock of the single variant; `null`: no variant at all. */
   stock?: number | null;
   variantActive?: boolean;
+  variantSku?: string;
   barcode?: string | null;
   /** Photos: default one good photo; `[]` none. */
   images?: readonly ImageSpec[];
@@ -141,7 +145,7 @@ export async function addProduct(tx: Tx, ids: CatalogIds, spec: ProductSpec): Pr
       productId: row.id,
       sizeId: ids.sizeId,
       colorId: ids.colorId,
-      sku: `V-${key}`,
+      sku: spec.variantSku ?? `V-${key}`,
       stockQuantity: spec.stock ?? 5,
       isActive: spec.variantActive ?? true,
       barcode: spec.barcode === undefined ? String((barcodeSeed += 1)) : spec.barcode,

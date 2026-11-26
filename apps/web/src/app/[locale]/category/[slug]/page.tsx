@@ -10,6 +10,7 @@ import { buildAlternates } from '@store/shared/seo';
 import { Breadcrumbs } from '@/components/breadcrumbs';
 import { FiltersForm } from '@/components/filters-form';
 import { JsonLd } from '@/components/json-ld';
+import { LegalBody } from '@/components/legal-body';
 import { Pagination } from '@/components/pagination';
 import { ProductCard } from '@/components/product-card';
 import { SiteShell } from '@/components/site-shell';
@@ -177,6 +178,11 @@ export default async function CategoryPage({ params, searchParams }: Props) {
           <Pagination current={listing.page} total={listing.totalPages} hrefFor={hrefForPage} />
         </section>
       </div>
+      {category.page.seoText === null || search !== '' || listing.page !== 1 ? null : (
+        <section aria-label={category.page.name} className="mt-12 max-w-3xl">
+          <LegalBody html={category.page.seoText} />
+        </section>
+      )}
     </SiteShell>
   );
 }

@@ -53,13 +53,14 @@ function facts(over: Partial<ProductFacts> = {}): ProductFacts {
       total: 2,
       altMissingUk: 0,
       altMissingEn: 0,
-      altLength: 0,
+      altTooShort: 0,
+      altTooLong: 0,
       tooNarrow: 0,
       aspect: 0,
       renditionsMissing: 0,
       urlUnsafe: 0,
     },
-    variants: { active: 2, available: 2, withoutGtin: 0 },
+    variants: { active: 2, available: 2, withoutGtin: 0, skuTooLong: 0 },
     attributeCount: 3,
     ...over,
   };
@@ -115,12 +116,12 @@ describe('evaluateProduct', () => {
     expect(blockers({ live: false, categoryVisible: false })).toEqual(['category_hidden']);
   });
   it('variants and stock', () => {
-    expect(blockers({ variants: { active: 0, available: 0, withoutGtin: 0 } })).toEqual([
-      'no_active_variant',
-    ]);
-    expect(blockers({ variants: { active: 2, available: 0, withoutGtin: 0 } })).toEqual([
-      'no_stock',
-    ]);
+    expect(
+      blockers({ variants: { active: 0, available: 0, withoutGtin: 0, skuTooLong: 0 } }),
+    ).toEqual(['no_active_variant']);
+    expect(
+      blockers({ variants: { active: 2, available: 0, withoutGtin: 0, skuTooLong: 0 } }),
+    ).toEqual(['no_stock']);
   });
   it('photos: none, a missing rendition and an unsafe URL block; size and shape warn', () => {
     expect(blockers({ photos: { ...facts().photos, total: 0 } })).toEqual(['no_photo']);
@@ -129,8 +130,31 @@ describe('evaluateProduct', () => {
     ]);
     expect(blockers({ photos: { ...facts().photos, urlUnsafe: 1 } })).toEqual(['photo_url_unsafe']);
     expect(
-      blockers({ photos: { ...facts().photos, tooNarrow: 1, aspect: 1, altLength: 1 } }),
+      blockers({
+        photos: { ...facts().photos, tooNarrow: 1, aspect: 1, altTooLong: 1 },
+      }),
     ).toEqual([]);
+  });
+  it('a product excluded from search blocks when it is meant to be sold, only informs as a draft', () => {
+    expect(blockers({ noindex: true })).toEqual(['noindex']);
+    expect(blockers({ noindex: true, isActive: false, live: false })).toEqual([]);
+  });
+  it('alt text too short to be real blocks; too long only warns', () => {
+    expect(blockers({ photos: { ...facts().photos, altTooShort: 1 } })).toEqual([
+      'photo_alt_too_short:alt',
+    ]);
+    expect(blockers({ photos: { ...facts().photos, altTooLong: 1 } })).toEqual([]);
+  });
+  it('the same meta text in both languages blocks, a copied body text only warns', () => {
+    expect(blockers({ sameText: { meta_description: true } })).toEqual([
+      'same_in_both_languages:meta_description',
+    ]);
+    expect(blockers({ sameText: { description: true } })).toEqual([]);
+  });
+  it('a variant SKU over the feed limit blocks', () => {
+    expect(
+      blockers({ variants: { active: 1, available: 1, withoutGtin: 0, skuTooLong: 1 } }),
+    ).toEqual(['variant_sku_too_long']);
   });
   it('slug, brand and price', () => {
     expect(blockers({ slugServable: false })).toEqual(['slug_unservable']);
@@ -139,12 +163,11 @@ describe('evaluateProduct', () => {
   });
   it('advice never blocks', () => {
     const advice = facts({
-      noindex: true,
       claimWording: true,
       attributeCount: 0,
       sameText: { description: true },
       sharedMeta: { meta_title_uk: 2 },
-      variants: { active: 1, available: 1, withoutGtin: 1 },
+      variants: { active: 1, available: 1, withoutGtin: 1, skuTooLong: 0 },
     });
     expect(hasBlocker(evaluateProduct(advice))).toBe(false);
     expect(
@@ -156,7 +179,6 @@ describe('evaluateProduct', () => {
       'duplicate_in_catalog',
       'gtin_missing',
       'no_attributes',
-      'noindex',
       'same_in_both_languages',
     ]);
   });
@@ -170,7 +192,8 @@ describe('evaluateProduct', () => {
           total: 0,
           altMissingUk: 1,
           altMissingEn: 1,
-          altLength: 1,
+          altTooShort: 1,
+          altTooLong: 1,
           tooNarrow: 1,
           aspect: 1,
           renditionsMissing: 1,
@@ -201,6 +224,8 @@ describe('toCategoryReadiness', () => {
     nameUk: 'Бюстгальтери',
     nameEn: 'Bras',
     isActive: true,
+    noindex: false,
+    liveProducts: 3,
     seoTextLength: { uk: 400, en: 400 },
     metaTitleLength: { uk: 30, en: 30 },
     metaDescriptionLength: { uk: 100, en: 100 },
@@ -215,13 +240,34 @@ describe('toCategoryReadiness', () => {
       { code: 'missing', severity: 'blocker', field: 'seo_text', locale: 'en', count: null },
     ]);
   });
-  it('a text outside its length only warns; a missing meta only warns', () => {
-    const short = toCategoryReadiness({
+  it('a text under its bound blocks, over it and a missing meta only warn', () => {
+    const under = toCategoryReadiness({
       ...base,
-      seoTextLength: { uk: CONTENT_BOUNDS.seoText.min - 1, en: CONTENT_BOUNDS.seoText.max + 1 },
+      seoTextLength: { uk: CONTENT_BOUNDS.seoText.min - 1, en: 400 },
+    });
+    expect(under.ready).toBe(false);
+    const over = toCategoryReadiness({
+      ...base,
+      seoTextLength: { uk: 400, en: CONTENT_BOUNDS.seoText.max + 1 },
       metaTitleLength: { uk: 0, en: 30 },
     });
-    expect(short.ready).toBe(true);
-    expect(short.findings.map((f) => f.code).sort()).toEqual(['missing', 'too_long', 'too_short']);
+    expect(over.ready).toBe(true);
+    expect(over.findings.map((f) => f.code).sort()).toEqual(['missing', 'too_long']);
+  });
+  it('an indexable category with no live products blocks; a noindex one needs neither text nor products', () => {
+    expect(toCategoryReadiness({ ...base, liveProducts: 0 }).findings).toEqual([
+      { code: 'no_products', severity: 'blocker', field: null, locale: null, count: null },
+    ]);
+    const hidden = toCategoryReadiness({
+      ...base,
+      noindex: true,
+      liveProducts: 0,
+      seoTextLength: { uk: 0, en: 0 },
+    });
+    expect(hidden.ready).toBe(true);
+    expect(hidden.findings.every((f) => f.severity === 'warning')).toBe(true);
+  });
+  it('an inactive category is not asked for products', () => {
+    expect(toCategoryReadiness({ ...base, isActive: false, liveProducts: 0 }).findings).toEqual([]);
   });
 });

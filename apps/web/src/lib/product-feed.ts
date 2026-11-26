@@ -14,13 +14,13 @@ import {
   validGtin,
   type FeedItem,
 } from '@store/shared/product-feed';
+import { FEED_MAX_ID_LENGTH } from '@store/shared/content-bounds';
 import { slugPath } from '@store/shared/sitemap-xml';
 
 import { htmlToSnippet } from './html-text';
 import { createSemaphore } from './semaphore';
 
 const BATCH = 1_000;
-const MAX_ID_LENGTH = 50;
 /** A feed this long is cut: a runaway table must not hold a connection for minutes. */
 const MAX_FEED_ITEMS = 200_000;
 /**
@@ -64,7 +64,7 @@ export function toFeedItem(siteUrl: string, r: FeedVariantRow): FeedItem | null 
   const imageLink = absolute(siteUrl, r.image);
   if (imageLink === null) return null;
   // Google's limit for `id` is 50 characters; a longer SKU cannot be listed (truncating would break the key).
-  if (r.sku.length > MAX_ID_LENGTH) return null;
+  if (r.sku.length > FEED_MAX_ID_LENGTH) return null;
   const onSale = r.compareAtPrice !== null && r.compareAtPrice > r.price;
   const description = htmlToSnippet(r.shortDescription ?? r.description, 5000) ?? r.name;
   return {

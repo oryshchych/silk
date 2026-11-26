@@ -5,39 +5,67 @@ import type { ContentReadinessDto } from '@store/shared/dto/content-readiness';
 import { assertSafeTarget, formatSummary, plain, UnsafeTargetError } from './cli.ts';
 
 describe('assertSafeTarget', () => {
-  it('accepts a local or staging database outside production', () => {
-    expect(assertSafeTarget('postgres://u:p@localhost:5432/store', undefined).hostname).toBe(
-      'localhost',
-    );
-    expect(
-      assertSafeTarget('postgresql://u:p@staging-db:5432/store_staging', 'staging'),
-    ).toBeInstanceOf(URL);
+  const local = { allowRemote: false };
+  const remote = { allowRemote: true };
+  it('accepts loopback, .local and bare service names by default', () => {
+    for (const host of ['localhost', '127.0.0.1', '[::1]', 'db.local', 'x.localhost', 'postgres'])
+      expect(assertSafeTarget(`postgres://u:p@${host}:5432/store`, local)).toBeInstanceOf(URL);
   });
-  it('refuses a missing, malformed or non-postgres URL', () => {
-    for (const bad of [undefined, '', 'not a url', 'mysql://u:p@h/db', 'https://example.com'])
-      expect(() => assertSafeTarget(bad, undefined)).toThrow(UnsafeTargetError);
+  it('refuses a remote host unless --allow-remote was given', () => {
+    for (const host of [
+      'staging-db.example.com',
+      'abc.rds.amazonaws.com',
+      '10.1.2.3',
+      'db.internal.example',
+    ]) {
+      expect(() => assertSafeTarget(`postgres://u:p@${host}/store`, local)).toThrow(/not local/);
+      expect(assertSafeTarget(`postgres://u:p@${host}/store`, remote)).toBeInstanceOf(URL);
+    }
   });
-  it('refuses anything that looks like production unless the process is production', () => {
+  it('refuses anything that names production, even with --allow-remote', () => {
     for (const url of [
       'postgres://u:p@db.prod.example.com:5432/store',
       'postgres://u:p@prod-db:5432/store',
       'postgres://u:p@h:5432/store_production',
       'postgres://store_prod:p@h:5432/store',
-      'postgres://u:p@h:5432/prod',
+      'postgres://u:p@PRD-db.internal/x',
+      'postgres://u:p@db-live.internal/x',
+      'postgres://u:p@localhost/prod',
+      'postgres://u:p@localhost/prod_2',
     ]) {
-      expect(() => assertSafeTarget(url, undefined)).toThrow(/production/);
-      expect(() => assertSafeTarget(url, 'local')).toThrow(/production/);
-      expect(assertSafeTarget(url, 'production')).toBeInstanceOf(URL);
+      expect(() => assertSafeTarget(url, local)).toThrow(UnsafeTargetError);
+      expect(() => assertSafeTarget(url, remote)).toThrow(/production/);
     }
   });
+  it('refuses the parameters that redirect the driver to another host', () => {
+    for (const query of [
+      'host=prod.example.com',
+      'hostaddr=10.0.0.1',
+      'service=prod',
+      'options=-c%20x=1',
+    ])
+      expect(() => assertSafeTarget(`postgres://u:p@localhost:1/x?${query}`, remote)).toThrow(
+        /not accepted/,
+      );
+  });
+  it('refuses a missing, malformed or non-postgres URL', () => {
+    for (const bad of [undefined, '', 'not a url', 'mysql://u:p@h/db', 'https://example.com'])
+      expect(() => assertSafeTarget(bad, remote)).toThrow(UnsafeTargetError);
+  });
   it('does not mistake a word that merely contains prod', () => {
-    expect(assertSafeTarget('postgres://u:p@h:5432/products', undefined)).toBeInstanceOf(URL);
+    expect(assertSafeTarget('postgres://u:p@localhost:5432/products', local)).toBeInstanceOf(URL);
+    expect(assertSafeTarget('postgres://u:p@localhost:5432/lively', local)).toBeInstanceOf(URL);
   });
   it('never puts the credentials in the error message', () => {
-    try {
-      assertSafeTarget('postgres://admin:s3cret@prod-db:5432/store', undefined);
-    } catch (error) {
-      expect(String(error)).not.toMatch(/s3cret|admin/);
+    for (const url of [
+      'postgres://admin:s3cret@prod-db:5432/store',
+      'postgres://admin:s3cret@remote.example.com/store',
+    ]) {
+      try {
+        assertSafeTarget(url, local);
+      } catch (error) {
+        expect(String(error)).not.toMatch(/s3cret|admin/);
+      }
     }
   });
 });
@@ -93,8 +121,36 @@ describe('formatSummary', () => {
     const text = formatSummary(report());
     expect(text).toContain('1 of 40 live products ready');
     expect(text).toContain('GATE: FAIL');
-    expect(text).toContain('no_photo');
+    expect(text).toContain('no photo');
     expect(text).not.toContain('\u001b');
+  });
+  it('lists advice with a plain-language gloss and counts, never raw codes alone', () => {
+    const [first] = report().products;
+    if (first === undefined) throw new Error('fixture');
+    const withAdvice = report({
+      products: [
+        {
+          ...first,
+          findings: [
+            { code: 'gtin_missing', severity: 'warning', field: null, locale: null, count: 2 },
+            {
+              code: 'same_in_both_languages',
+              severity: 'warning',
+              field: 'description',
+              locale: null,
+              count: null,
+            },
+          ],
+        },
+      ],
+    });
+    const text = formatSummary(withAdvice);
+    expect(text).toContain('Advice (does not fail the gate)');
+    expect(text).toContain('variants without a valid GTIN');
+    expect(text).toContain('the same text in both languages');
+  });
+  it('says when the target is the default', () => {
+    expect(formatSummary(report(), { defaultTarget: true, brief: true })).toContain('default');
   });
   it('brief mode lists no products', () => {
     expect(formatSummary(report(), { brief: true })).not.toContain('Active products with blockers');

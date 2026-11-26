@@ -23,6 +23,7 @@ import {
 } from '../packages/payments/test/fake-wayforpay.ts';
 import { runAccountSmoke } from './smoke-account.ts';
 import { runAdminSmoke } from './smoke-admin.ts';
+import { runContentSmoke } from './smoke-content.ts';
 import { runCheckoutSmoke } from './smoke-checkout.ts';
 import { runLegalSmoke } from './smoke-legal.ts';
 import { runPaymentSmoke } from './smoke-payments.ts';
@@ -428,6 +429,14 @@ try {
     );
   }
   await runLegalSmoke({ base, databaseUrl, site: SITE, check, storedFiles });
+  await runContentSmoke({
+    base,
+    databaseUrl,
+    authSecret: AUTH_SECRET_FOR_SMOKE,
+    buildRoot: copy,
+    siteOrigin: SITE,
+    check,
+  });
   await runSeoSmoke({ base, site: SITE, check, storedFiles });
   await runPostFloodSmoke({ base, site: SITE, check, storedFiles });
   await runAnalyticsSmoke({ base, check });

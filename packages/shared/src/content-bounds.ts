@@ -7,9 +7,16 @@
  * Lengths are characters after trimming. A text the storefront stores as rich text (category SEO
  * text) is measured on its visible text, without tags.
  */
+/**
+ * The storefront appends ` | <site name>` to every title (the shop name is a placeholder, Q1: "LACE & SILK",
+ * 11 characters, plus the 3 of the separator). A search result shows about 60 characters, so the meta
+ * title itself may use the rest. A test in `apps/web` fails when the site name outgrows this reserve.
+ */
+export const TITLE_SUFFIX_RESERVE = 14;
+export const TITLE_DISPLAY_MAX = 60;
+
 export const CONTENT_BOUNDS = {
-  /** The storefront appends ` | <site name>`, so a longer title is cut in a result page. */
-  metaTitle: { min: 20, max: 60 },
+  metaTitle: { min: 20, max: TITLE_DISPLAY_MAX - TITLE_SUFFIX_RESERVE },
   metaDescription: { min: 70, max: 160 },
   shortDescription: { min: 20, max: 300 },
   description: { min: 80, max: 5_000 },
@@ -22,6 +29,9 @@ export const CONTENT_BOUNDS = {
 } as const;
 
 export type ContentField = keyof typeof CONTENT_BOUNDS;
+
+/** The product feed drops a variant whose SKU is longer (Google's `id` limit; `apps/web/src/lib/product-feed.ts`). */
+export const FEED_MAX_ID_LENGTH = 50;
 
 /** Photo bounds, measured on the stored source dimensions (`product_images.width` and `height`). */
 export const PHOTO_BOUNDS = {

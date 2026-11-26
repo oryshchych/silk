@@ -31,6 +31,8 @@ export const findingCodeValues = [
   'no_stock',
   'no_attributes',
   'gtin_missing',
+  'variant_sku_too_long',
+  'no_products',
   // text
   'missing',
   'too_short',
@@ -41,7 +43,8 @@ export const findingCodeValues = [
   // photos
   'no_photo',
   'photo_alt_missing',
-  'photo_alt_length',
+  'photo_alt_too_short',
+  'photo_alt_too_long',
   'photo_too_narrow',
   'photo_aspect',
   'photo_renditions_missing',
@@ -65,8 +68,8 @@ export const productReadinessDto = z.object({
   id: z.uuid(),
   sku: z.string(),
   slug: z.string(),
-  nameUk: z.string(),
-  nameEn: z.string(),
+  nameUk: z.string().max(300),
+  nameEn: z.string().max(300),
   /** `is_active`: the owner meant it to be sold (a draft has this false). */
   isActive: z.boolean(),
   /** The storefront would show it right now (the same rule as the catalogue: active, published, visible category). */
@@ -82,9 +85,11 @@ export type ProductReadinessDto = z.output<typeof productReadinessDto>;
 export const categoryReadinessDto = z.object({
   id: z.uuid(),
   slug: z.string(),
-  nameUk: z.string(),
-  nameEn: z.string(),
+  nameUk: z.string().max(300),
+  nameEn: z.string().max(300),
   isActive: z.boolean(),
+  noindex: z.boolean(),
+  liveProductCount: z.number().int(),
   seoTextLengthUk: z.number().int(),
   seoTextLengthEn: z.number().int(),
   ready: z.boolean(),
@@ -95,7 +100,8 @@ export type CategoryReadinessDto = z.output<typeof categoryReadinessDto>;
 export const photoIssueValues = [
   'alt_missing_uk',
   'alt_missing_en',
-  'alt_length',
+  'alt_too_short',
+  'alt_too_long',
   'too_narrow',
   'aspect',
   'renditions_missing',
@@ -113,7 +119,13 @@ export const photoProblemDto = z.object({
 export type PhotoProblemDto = z.output<typeof photoProblemDto>;
 
 export const acceptanceCheckDto = z.object({
-  id: z.enum(['active_products', 'variants_stock_photos', 'alt_meta_photo', 'category_seo_text']),
+  id: z.enum([
+    'active_products',
+    'variants_stock_photos',
+    'alt_meta_photo',
+    'category_seo_text',
+    'no_blockers',
+  ]),
   ok: z.boolean(),
   actual: z.number().int(),
   expected: z.number().int(),
@@ -140,7 +152,7 @@ export const contentReadinessDto = z.object({
     photosWithProblems: z.number().int(),
   }),
   acceptance: z.array(acceptanceCheckDto),
-  /** The launch gate: every acceptance check passes AND no active product or category has a blocker. */
+  /** The launch gate: every acceptance check passes (the last one is "no blocker anywhere"). */
   gatePassed: z.boolean(),
   /** Not ready first (by SKU), then the rest. Capped: see `productsTruncated`. */
   products: z.array(productReadinessDto),

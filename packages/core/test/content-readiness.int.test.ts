@@ -8,7 +8,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import type { DbHandle } from '@store/db/client';
 import { productImages, products } from '@store/db/schema';
-import { CONTENT_BOUNDS } from '@store/shared/content-bounds';
+import { CONTENT_BOUNDS, FEED_MAX_ID_LENGTH } from '@store/shared/content-bounds';
 import type { ContentReadinessDto } from '@store/shared/dto/content-readiness';
 import { createTestDatabase, type TestDatabase } from '@store/db/test/db';
 import { createDb } from '@store/db/client';
@@ -131,6 +131,28 @@ beforeAll(async () => {
       categoryId: c,
       product: { metaTitleUk: filler('Same title', 45) },
     });
+    const ZW = '\u200b';
+    await addProduct(tx, dict, {
+      key: 'zerowidth',
+      categoryId: c,
+      images: [{ altUk: `${ZW.repeat(6)}.`, altEn: ZW }],
+      product: {
+        metaTitleUk: ZW.repeat(25),
+        metaDescriptionUk: ZW.repeat(80),
+        shortDescriptionEn: '\u00a0',
+        descriptionUk: 'x',
+      },
+    });
+    await addProduct(tx, dict, { key: 'noindex', categoryId: c, product: { noindex: true } });
+    await addProduct(tx, dict, { key: 'longsku', categoryId: c, variantSku: 'S'.repeat(51) });
+    await addProduct(tx, dict, {
+      key: 'copymeta',
+      categoryId: c,
+      product: {
+        metaDescriptionEn: filler('Опис для пошуку copymeta', 120),
+        metaDescriptionUk: filler('Опис для пошуку copymeta', 120),
+      },
+    });
     await addProduct(tx, dict, {
       key: 'gift',
       categoryId: c,
@@ -237,6 +259,33 @@ describe('failure classes', () => {
   });
 });
 
+describe('junk content does not pass for content', () => {
+  it('zero-width and blank-only text is missing, a placeholder alt is a blocker', () => {
+    const found = codes('zerowidth');
+    expect(found).toContain('missing:meta_title:uk');
+    expect(found).toContain('missing:meta_description:uk');
+    expect(found).toContain('missing:short_description:en');
+    expect(found).toContain('photo_alt_too_short:alt');
+    expect(found).toContain('photo_alt_missing:alt:en');
+  });
+  it('a one-character body text is only advice, a one-character meta is a blocker', () => {
+    const row = report.products.find((p) => p.sku === 'SKU-zerowidth');
+    expect(row?.findings.find((f) => f.field === 'description' && f.locale === 'uk')).toMatchObject(
+      { code: 'too_short', severity: 'warning' },
+    );
+  });
+  it('an excluded (noindex) active product blocks, a variant SKU over the feed limit blocks', () => {
+    expect(codes('noindex')).toEqual(['noindex']);
+    expect(codes('longsku')).toEqual(['variant_sku_too_long']);
+  });
+  it('the same meta snippet in both languages blocks', () => {
+    expect(codes('copymeta')).toEqual(['same_in_both_languages:meta_description']);
+  });
+  it('the long SKU really is the one the feed drops (the same limit)', () => {
+    expect(FEED_MAX_ID_LENGTH).toBe(50);
+  });
+});
+
 describe('categories', () => {
   it('a category with the text in one language only blocks; both missing blocks twice', async () => {
     await handle.db.execute(
@@ -249,9 +298,41 @@ describe('categories', () => {
     ]);
     const empty = again.categories.find((c) => c.slug === 'empty-cat');
     expect(empty?.ready).toBe(false);
-    expect(empty?.findings.filter((f) => f.severity === 'blocker')).toHaveLength(2);
+    expect(
+      empty?.findings.filter((f) => f.severity === 'blocker' && f.field === 'seo_text'),
+    ).toHaveLength(2);
   });
-  it('the text length is the visible text: tags do not count', async () => {
+  it('an indexable category with no live products blocks; one excluded from search needs nothing', () => {
+    const nolive = report.categories.find((c) => c.slug === 'nolive-cat');
+    expect(nolive?.findings.filter((f) => f.severity === 'blocker').map((f) => f.code)).toEqual([
+      'no_products',
+    ]);
+    expect(nolive?.ready).toBe(false);
+    const hidden = report.categories.find((c) => c.slug === 'noindex-cat');
+    expect(hidden?.ready).toBe(true);
+    expect(hidden?.findings.some((f) => f.severity === 'blocker')).toBe(false);
+  });
+  it('a parent counts the live products of its subcategories', async () => {
+    const [parent] = (
+      await handle.db.execute(
+        sql`INSERT INTO categories (slug, name_uk, name_en, seo_text_uk, seo_text_en, depth)
+            VALUES ('parent-cat', 'Батьківська', 'Parent', ${`<p>${filler('p', 300)}</p>`}, ${`<p>${filler('q', 300)}</p>`}, 0)
+            RETURNING id`,
+      )
+    ).rows;
+    await handle.db.execute(
+      sql`UPDATE categories SET parent_id = ${String(parent?.['id'])}::uuid, depth = 1 WHERE slug = 'ready-cat'`,
+    );
+    const again = await readContentReadiness(handle.db);
+    const row = again.categories.find((c) => c.slug === 'parent-cat');
+    expect(row?.liveProductCount).toBeGreaterThan(0);
+    expect(row?.findings.some((f) => f.code === 'no_products')).toBe(false);
+    await handle.db.execute(
+      sql`UPDATE categories SET parent_id = NULL, depth = 0 WHERE slug = 'ready-cat'`,
+    );
+    await handle.db.execute(sql`DELETE FROM categories WHERE slug = 'parent-cat'`);
+  });
+  it('the text length is the visible text: tags and invisible characters do not count', async () => {
     const ready = report.categories.find((c) => c.slug === 'ready-cat');
     expect(ready?.seoTextLengthUk).toBe(400);
     await handle.db.execute(
@@ -272,6 +353,7 @@ describe('the gate and the totals', () => {
     expect(check('active_products')?.ok).toBe(false);
     expect(check('alt_meta_photo')?.ok).toBe(false);
     expect(check('category_seo_text')?.actual).toBe(1);
+    expect(check('no_blockers')?.ok).toBe(false);
     expect(report.totals.drafts).toBe(1);
     expect(report.totals.live).toBeLessThan(report.totals.active);
   });
@@ -281,9 +363,7 @@ describe('the gate and the totals', () => {
     try {
       await h.db.transaction(async (tx) => {
         const dict = await seedDictionaries(tx);
-        await tx.execute(
-          sql`UPDATE categories SET is_active = false WHERE slug IN ('hidden-cat', 'empty-cat')`,
-        );
+        await tx.execute(sql`UPDATE categories SET is_active = false WHERE slug <> 'ready-cat'`);
         for (const key of ['a', 'b', 'c'])
           await addProduct(tx, dict, { key, categoryId: dict.categoryId });
         await addProduct(tx, dict, {
