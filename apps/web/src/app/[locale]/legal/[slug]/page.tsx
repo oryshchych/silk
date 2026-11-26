@@ -4,9 +4,7 @@ import { notFound } from 'next/navigation';
 
 import { parseFaqEntries } from '@store/shared/faq';
 import { legalKindFromSlug } from '@store/shared/legal';
-import { safeHref } from '@store/shared/rich-text';
 import { buildBreadcrumbList, buildFaqPage } from '@store/shared/schema-org';
-import { buildAlternates, siteLocales } from '@store/shared/seo';
 
 import { Breadcrumbs } from '@/components/breadcrumbs';
 import { CompanyBlock } from '@/components/company-block';
@@ -15,13 +13,13 @@ import { LegalBody } from '@/components/legal-body';
 import { ReturnPolicySummary } from '@/components/return-policy-summary';
 import { SiteShell } from '@/components/site-shell';
 import { resolveLocale } from '@/i18n/locale';
-import { htmlToSnippet } from '@/lib/html-text';
 import {
   getCachedCompanyProfile,
   getCachedLegalDocument,
   getCachedLegalNav,
   getCachedReturnWindow,
 } from '@/lib/legal';
+import { legalAlternates, publishedInBoth } from '@/lib/legal-seo';
 import { pageMetadata } from '@/lib/metadata';
 import { href, paths } from '@/lib/paths';
 import { getSiteUrl } from '@/lib/site-url';
@@ -46,17 +44,15 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const t = await getTranslations({ locale, namespace: 'meta' });
   const siteUrl = await getSiteUrl();
   const nav = await getCachedLegalNav();
-  const both = siteLocales.every((code) =>
-    nav.some((row) => row.kind === kind && row.locale === code),
-  );
-  const alternates = buildAlternates({ siteUrl, locale, path: paths.legal(kind) });
   return pageMetadata({
     title: `${doc.title} | ${t('siteName')}`,
-    description: htmlToSnippet(doc.bodyHtml, 160),
+    // A per-kind description (site content): the document's own opening is the draft notice, which is no snippet.
+    description: (await getTranslations({ locale, namespace: 'legal' }))(`descriptions.${kind}`),
     locale,
     siteName: t('siteName'),
     // hreflang only when BOTH languages are published: never a pair with a missing counterpart.
-    alternates: both ? alternates : { canonical: alternates.canonical },
+    alternates: legalAlternates({ siteUrl, locale, kind, nav }),
+    hasCounterpart: publishedInBoth(nav, kind),
     index: true,
   });
 }
@@ -76,8 +72,8 @@ export default async function LegalPage({ params }: Props) {
   const returnWindow = kind === 'returns' ? await getCachedReturnWindow() : null;
   // Only the questions the page SHOWS go into the structured data.
   const faq = kind === 'faq' && doc.bodyHtml !== null ? parseFaqEntries(doc.bodyHtml) : [];
-  const pdf =
-    doc.fileUrl !== null && /^https:\/\//.test(doc.fileUrl) ? safeHref(doc.fileUrl) : null;
+  // `fileUrl` is already pinned to the media host by the read.
+  const pdf = doc.fileUrl;
   const absolute = (path: string): string => {
     const local = href(locale, path);
     return `${siteUrl}${local === '/' ? '' : local}`;

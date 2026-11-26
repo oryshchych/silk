@@ -85,6 +85,7 @@ vi.mock('@/lib/media', () => ({
 }));
 
 vi.mock('@/lib/admin/invalidate', () => ({ invalidateTags: () => undefined }));
+vi.mock('@/lib/legal-pages', () => ({ knownLegalPages: { invalidate: () => undefined } }));
 
 const { POST } = await import('../src/app/admin/upload/legal-pdf/route');
 const actions = await import('../src/actions/admin-legal');

@@ -58,6 +58,13 @@ export async function runLegalSmoke({
        VALUES ('terms', 'en', '2', $1, 'published', $2, now() - interval '1 hour', now() - interval '1 hour')`,
       [legalDraft('terms', 'en').title, HOSTILE],
     );
+    // A BOMB: 199 990 `<` is inside the table's CHECK and the sanitiser's input limit, and grows to 800 000
+    // characters when sanitised, so the render pass refuses it. The page must answer 200 with no body, not 500.
+    await handle.pool.query(
+      `INSERT INTO legal_documents (kind, locale, version, title, status, body_html, effective_from, published_at)
+       VALUES ('privacy', 'en', '2', $1, 'published', $2, now() - interval '1 hour', now() - interval '1 hour')`,
+      [legalDraft('privacy', 'en').title, '<'.repeat(199_990)],
+    );
   } finally {
     await handle.close();
   }
@@ -72,8 +79,19 @@ export async function runLegalSmoke({
       hostile.html.includes('click'),
   );
 
+  const bomb = await page(`${base}/en${legalPath('privacy')}`);
+  check(
+    'a stored body that grows past the sanitiser limit answers 200 with the title and no body, not 500',
+    bomb.status === 200 &&
+      new RegExp(`<h1[^>]*>${legalDraft('privacy', 'en').title}</h1>`).test(bomb.html) &&
+      !bomb.html.includes('&lt;&lt;&lt;'),
+  );
+
   for (const locale of LEGAL_LOCALES) {
     for (const kind of LEGAL_KINDS) {
+      // `about` exists in Ukrainian only (the seed): its English side is checked below as a one-language page.
+      if (kind === 'about' && locale === 'en') continue;
+      const oneLanguage = kind === 'about';
       const path = `${prefix(locale)}${legalPath(kind)}`;
       const { status, html } = await page(`${base}${path}`);
       const draft = legalDraft(kind, locale);
@@ -83,16 +101,22 @@ export async function runLegalSmoke({
         status === 200 &&
           html.includes(`<html lang="${locale}"`) &&
           new RegExp(`<h1[^>]*>${draft.title}</h1>`).test(html) &&
-          text.includes(NOTICE[locale]) &&
+          // The bomb page has no body by design (the render pass refused it): only the title is asserted there.
+          (kind === 'privacy' && locale === 'en' ? true : text.includes(NOTICE[locale])) &&
           !RAW_KEY.test(text),
       );
       check(
         `legal ${locale}/${kind}: self canonical, indexable, both hreflang and x-default, the disclaimer`,
         html.includes(`rel="canonical" href="${site}${path}"`) &&
           !html.includes('name="robots" content="noindex') &&
-          html.includes(`hrefLang="en" href="${site}/en${legalPath(kind)}"`) &&
-          html.includes(`hrefLang="uk" href="${site}${legalPath(kind)}"`) &&
-          html.includes('hrefLang="x-default"') &&
+          (oneLanguage
+            ? // A page published in one language: a self canonical and NO alternate, no switch link, no og alternate.
+              !html.includes('hrefLang=') &&
+              !html.includes(`/en${legalPath(kind)}`) &&
+              !html.includes('og:locale:alternate')
+            : html.includes(`hrefLang="en" href="${site}/en${legalPath(kind)}"`) &&
+              html.includes(`hrefLang="uk" href="${site}${legalPath(kind)}"`) &&
+              html.includes('hrefLang="x-default"')) &&
           text.includes(DISCLAIMER[locale]),
       );
     }
@@ -100,8 +124,10 @@ export async function runLegalSmoke({
     const home = await page(`${base}${locale === 'uk' ? '/' : '/en'}`);
     check(
       `footer ${locale}: a link to every legal page and the disclaimer`,
-      LEGAL_KINDS.every((kind) =>
-        home.html.includes(`href="${prefix(locale)}${legalPath(kind)}"`),
+      LEGAL_KINDS.every(
+        (kind) =>
+          (kind === 'about' && locale === 'en') ===
+          !home.html.includes(`href="${prefix(locale)}${legalPath(kind)}"`),
       ) && home.html.includes(DISCLAIMER[locale]),
     );
     const contacts = await page(`${base}${prefix(locale)}${legalPath('contacts')}`);
@@ -122,6 +148,22 @@ export async function runLegalSmoke({
       visible > 0 && questions === visible,
     );
   }
+
+  // The one-language page: its English URL is the shared 404 (with the disclaimer, in both languages), and the
+  // sitemap lists it once with no alternates.
+  const aboutEn = await page(`${base}/en${legalPath('about')}`);
+  check(
+    'a legal page published in Ukrainian only: its English URL is a 404 that carries the disclaimer',
+    aboutEn.status === 404 &&
+      aboutEn.html.includes(DISCLAIMER.en) &&
+      aboutEn.html.includes('name="robots" content="noindex'),
+  );
+  const pagesXml = await page(`${base}/sitemaps/pages.xml`);
+  check(
+    'the sitemap lists the one-language page once, with no alternates',
+    pagesXml.html.includes(`<loc>${site}${legalPath('about')}</loc>`) &&
+      !pagesXml.html.includes(`${site}/en${legalPath('about')}`),
+  );
 
   const notFound = await page(`${base}/legal/nope`);
   check(
@@ -149,7 +191,8 @@ export async function runLegalSmoke({
       (kind) =>
         new RegExp(
           `<loc>${site}${legalPath(kind)}</loc><lastmod>\\d{4}-\\d{2}-\\d{2}T[\\d:]+Z</lastmod>`,
-        ).test(sitemap.html) && sitemap.html.includes(`<loc>${site}/en${legalPath(kind)}</loc>`),
+        ).test(sitemap.html) &&
+        (kind === 'about' || sitemap.html.includes(`<loc>${site}/en${legalPath(kind)}</loc>`)),
     ) && sitemap.html.includes(`hreflang="en" href="${site}/en/legal/terms"`),
   );
 
@@ -188,25 +231,65 @@ async function runReturnPolicySmoke({
     );
   }
 
-  const index = await page(`${base}/sitemaps/products-0.xml`);
-  const slug = /<loc>[^<]*\/product\/([^<]+)<\/loc>/.exec(index.html)?.[1];
-  if (slug === undefined) {
-    check('a product exists for the return policy markup check', false);
-    return;
-  }
+  // The class of a product decides whether its markup makes a claim: underwear (Resolution 172) says "not
+  // permitted" with a link to the returns page; homewear carries no claim until the owner decides (Q79).
+  const policy =
+    '"hasMerchantReturnPolicy":{"@type":"MerchantReturnPolicy","applicableCountry":"UA","returnPolicyCategory":"https://schema.org/MerchantReturnNotPermitted","merchantReturnLink":"https://smoke.example/legal/returns"}';
   const ldOf = (html: string): string =>
     [...html.matchAll(/<script type="application\/ld\+json">([^<]*)<\/script>/g)]
       .map((m) => m[1] ?? '')
       .find((json) => json.includes('"@type":"Product"')) ?? '';
-  const first = await page(`${base}/product/${slug}`);
-  const second = await fetch(`${base}/product/${slug}`, {
+  const firstProductOf = async (category: string): Promise<string | undefined> =>
+    /href="\/product\/([a-z0-9-]+)"/.exec((await page(`${base}/category/${category}`)).html)?.[1];
+  const bra = await firstProductOf('bras');
+  const pyjama = await firstProductOf('pyjamas');
+  if (bra === undefined || pyjama === undefined) {
+    check('a lingerie and a homewear product exist for the return policy markup check', false);
+    return;
+  }
+  const braPage = await page(`${base}/product/${bra}`);
+  const braSecond = await fetch(`${base}/product/${bra}`, {
     headers: { cookie: 'silk_cart=abc; silk_sizes=x', 'accept-language': 'en' },
   });
-  const policy =
-    '"hasMerchantReturnPolicy":{"@type":"MerchantReturnPolicy","applicableCountry":"UA","returnPolicyCategory":"https://schema.org/MerchantReturnNotPermitted"}';
-  const ld = ldOf(first.html);
+  const pyjamaLd = ldOf((await page(`${base}/product/${pyjama}`)).html);
   check(
-    'the product JSON-LD carries hasMerchantReturnPolicy (not permitted, UA) on its offers, the same for every visitor',
-    ld.includes(policy) && ld === ldOf(await second.text()),
+    'a lingerie product carries hasMerchantReturnPolicy (not permitted, UA, link to the returns page), the same for every visitor; a homewear product carries none',
+    ldOf(braPage.html).includes(policy) &&
+      ldOf(braPage.html) === ldOf(await braSecond.text()) &&
+      pyjamaLd.includes('"@type":"Product"') &&
+      !pyjamaLd.includes('hasMerchantReturnPolicy'),
   );
+  // The markup and the page say the same thing: "not permitted" in the markup means the returns page lists the refused reasons.
+  const returnsUk = await page(`${base}${legalPath('returns')}`);
+  check(
+    'the markup says not permitted exactly where the returns page lists the refused reasons',
+    ldOf(braPage.html).includes('MerchantReturnNotPermitted') &&
+      returnsUk.html.includes('data-testid="refused-reasons"'),
+  );
+
+  // The trademark disclaimer is on EVERY kind of page, in both languages.
+  const everywhere = [
+    '/',
+    '/category/bras',
+    `/product/${bra}`,
+    '/cart',
+    '/checkout',
+    '/search?q=bra',
+    '/order/track',
+    '/account/login',
+    '/account/register',
+    '/account/forgot',
+    '/unsubscribe',
+    '/nope',
+  ];
+  let missing = '';
+  for (const locale of LEGAL_LOCALES) {
+    for (const path of everywhere) {
+      const url = `${base}${prefix(locale)}${path === '/' && locale === 'en' ? '' : path}`;
+      // Redirects are followed: a page that sends the visitor elsewhere is judged by where it lands.
+      const html = await (await fetch(url)).text();
+      if (!html.includes(DISCLAIMER[locale]) && !html.includes(DISCLAIMER.uk)) missing += ` ${url}`;
+    }
+  }
+  check(`the disclaimer is on every kind of page in both languages${missing}`, missing === '');
 }

@@ -12,6 +12,7 @@ import { customerCookieName } from './lib/account/cookies';
 import { SESSION_COOKIE } from './lib/admin/cookies';
 import { missingPath, parseProductPath } from './lib/product-path';
 import { redirectMap } from './lib/redirect-map';
+import { knownLegalPages } from './lib/legal-pages';
 import { parseLegalPath } from './lib/legal-path';
 import { knownProductSlugs } from './lib/product-slugs';
 import { createRateLimiter } from './lib/rate-limit';
@@ -315,7 +316,12 @@ async function route(request: NextRequest): Promise<NextResponse> {
   // A legal page word that is not one of the fixed seven is answered here with the 404 page, for the same
   // reason as an unknown product slug: nothing a client chooses may become a page cache entry.
   const legal = parseLegalPath(pathname);
-  if (legal !== null && legal.kind === null && request.method !== 'OPTIONS') {
+  // A known word whose page is not published in THIS language is a 404 too (a page may exist in one language first).
+  const legalMissing =
+    legal === null || legal.kind === null
+      ? legal !== null
+      : (await knownLegalPages.has(`${legal.locale}:${legal.kind}`)) === false;
+  if (legal !== null && legalMissing && request.method !== 'OPTIONS') {
     const target = request.nextUrl.clone();
     target.pathname = missingPath(legal.locale);
     target.search = '';

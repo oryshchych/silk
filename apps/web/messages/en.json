@@ -1216,6 +1216,15 @@
     "faqHeading": "Questions and answers",
     "returnSummaryHeading": "In short",
     "returnSummaryAccepted": "Requests we accept:",
-    "returnSummaryNotAccepted": "Requests we do not accept for products of proper quality:"
+    "returnSummaryNotAccepted": "Requests we do not accept for products of proper quality:",
+    "descriptions": {
+      "terms": "Terms of the offer of the online shop: orders, prices, payment and delivery.",
+      "privacy": "Privacy policy: what data we process, why, and the buyer's rights.",
+      "delivery_payment": "Delivery and payment methods, costs and order tracking.",
+      "returns": "Returns and exchange: what we accept, within what period and how to submit a request.",
+      "about": "About the shop of original women's lingerie and homewear.",
+      "faq": "Answers to common questions about orders, delivery, payment and returns.",
+      "contacts": "Contact details of the shop: phone, e-mail and address."
+    }
   }
 }

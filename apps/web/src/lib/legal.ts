@@ -14,12 +14,24 @@ import { LEGAL_NAV_TAG, legalTag } from '@store/shared/cache-tags';
 import type { LegalKind, LegalLocale } from '@store/shared/legal';
 
 import { getDb } from './db';
+import { runtimeEnv } from './runtime-env';
 
 const TTL = 5 * 60;
 
+/** The origin of the media host (runtime env): the only host a legal PDF link may point at. */
+async function mediaOrigin(): Promise<string | null> {
+  const base = (await runtimeEnv()).MEDIA_PUBLIC_BASE_URL;
+  if (base === undefined || base === '') return null;
+  try {
+    return new URL(base).origin;
+  } catch {
+    return null;
+  }
+}
+
 export const getCachedLegalDocument = (kind: LegalKind, locale: LegalLocale) =>
   unstable_cache(
-    async () => await getCurrentLegalDocument(await getDb(), kind, locale),
+    async () => await getCurrentLegalDocument(await getDb(), kind, locale, await mediaOrigin()),
     ['legal-document', kind, locale],
     { tags: [legalTag(kind), LEGAL_NAV_TAG], revalidate: TTL },
   )();

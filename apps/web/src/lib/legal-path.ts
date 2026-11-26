@@ -13,3 +13,8 @@ export function parseLegalPath(pathname: string): LegalPath | null {
   if (match === null || word === undefined) return null;
   return { locale: match[1] === undefined ? 'uk' : 'en', kind: legalKindFromSlug(word) };
 }
+
+/** The kind of a LOCALE-LESS storefront path (`/legal/about`), or null for any other path. */
+export function legalKindOfPath(path: string): LegalKind | null {
+  return parseLegalPath(path)?.kind ?? null;
+}

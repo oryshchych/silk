@@ -50,3 +50,24 @@ export const isReasonAccepted = (
   reason: string,
   policy: Pick<ReturnPolicy, 'voluntaryReturns'> = RETURN_POLICY,
 ): boolean => acceptedReturnReasons(policy).some((accepted) => accepted === reason);
+
+/**
+ * Product classes (owner queue Q79, needs a lawyer). Resolution No. 172 covers underwear and hosiery, not
+ * homewear, and a distance-sale withdrawal right may apply to homewear, so the markup makes a claim ONLY for the
+ * classes the Resolution names. Until the owner and a lawyer decide homewear, a homewear product carries NO
+ * `hasMerchantReturnPolicy` (silence, not a claim that may be wrong). The category slugs are the ROOT or LEAF
+ * slugs of the catalogue tree (`lingerie` and everything under it are underwear; socks and hosiery too).
+ */
+export const NON_RETURNABLE_CATEGORY_SLUGS: readonly string[] = [
+  'lingerie',
+  'bras',
+  'panties',
+  'sets',
+  'hosiery',
+  'socks',
+  'tights',
+];
+
+/** True when any category of the product's breadcrumb (root to leaf) is one the Resolution names. */
+export const isNonReturnableClass = (categorySlugs: readonly string[]): boolean =>
+  categorySlugs.some((slug) => NON_RETURNABLE_CATEGORY_SLUGS.includes(slug));

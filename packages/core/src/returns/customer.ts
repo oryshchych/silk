@@ -184,8 +184,15 @@ export async function createReturnRequest(tx: Tx, who: Who, input: ReturnInput):
     const remaining = left.rows[0]?.remaining;
     if (remaining === undefined || item.quantity > remaining) throw new ReturnItemsInvalidError();
   }
-  // The edition of the returns text in force NOW (database clock), recorded with the request.
-  const policyRef = await currentPolicyRef(tx, 'returns', 'uk');
+  // The edition of the returns text in force NOW (database clock), in the customer's own language, recorded with the request.
+  const owner = await tx.execute<{ locale: string }>(
+    sql`SELECT locale FROM customers WHERE id = ${who.customerId}::uuid`,
+  );
+  const policyRef = await currentPolicyRef(
+    tx,
+    'returns',
+    owner.rows[0]?.locale === 'en' ? 'en' : 'uk',
+  );
   const numbered = await tx.execute<{ n: string }>(sql`SELECT next_return_number() AS n`);
   const requestNumber = numbered.rows[0]?.n;
   if (requestNumber === undefined) throw new Error('no return number');

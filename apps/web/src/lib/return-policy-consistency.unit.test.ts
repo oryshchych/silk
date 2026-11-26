@@ -13,7 +13,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { returnReasonValues } from '@store/shared/dto/return';
 import {
   acceptedReturnReasons,
+  isNonReturnableClass,
   isReasonAccepted,
+  NON_RETURNABLE_CATEGORY_SLUGS,
   REASONS_ACCEPTED_BY_LAW,
   REASONS_VOLUNTARY,
   RETURN_POLICY,
@@ -94,7 +96,7 @@ describe('the JSON-LD says what the policy says', () => {
 
   it('becomes a finite window with the shared days, method and fees when voluntary returns are on', () => {
     const on: ReturnPolicy = { ...RETURN_POLICY, voluntaryReturns: true };
-    expect(buildMerchantReturnPolicy(on, 21)).toEqual({
+    expect(buildMerchantReturnPolicy(on, { windowDays: 21 })).toEqual({
       '@type': 'MerchantReturnPolicy',
       applicableCountry: 'UA',
       returnPolicyCategory: 'https://schema.org/MerchantReturnFiniteReturnWindow',
@@ -102,6 +104,12 @@ describe('the JSON-LD says what the policy says', () => {
       returnMethod: 'https://schema.org/ReturnByMail',
       returnFees: 'https://schema.org/ReturnShippingFees',
     });
+    expect(
+      buildMerchantReturnPolicy(on, { link: 'https://s.example/legal/returns' }).merchantReturnLink,
+    ).toBe('https://s.example/legal/returns');
+    expect(
+      buildMerchantReturnPolicy(RETURN_POLICY, { link: 'https://s.example/legal/returns' }),
+    ).toMatchObject({ merchantReturnLink: 'https://s.example/legal/returns' });
     expect(buildMerchantReturnPolicy(on).merchantReturnDays).toBe(RETURN_POLICY.defaultWindowDays);
   });
 
@@ -143,6 +151,19 @@ describe('the JSON-LD says what the policy says', () => {
         }),
       ),
     ).toBe(JSON.stringify(one));
+  });
+});
+
+describe('the class of a product decides whether the markup makes a claim', () => {
+  it('names underwear and hosiery (Resolution 172) and leaves homewear without a claim', () => {
+    expect(isNonReturnableClass(['lingerie', 'bras'])).toBe(true);
+    expect(isNonReturnableClass(['bras'])).toBe(true);
+    expect(isNonReturnableClass(['hosiery', 'socks'])).toBe(true);
+    expect(isNonReturnableClass(['homewear', 'pyjamas'])).toBe(false);
+    expect(isNonReturnableClass(['homewear', 'robes'])).toBe(false);
+    expect(isNonReturnableClass([])).toBe(false);
+    // The summary cites the Resolution for underwear and hosiery only: the list matches that wording.
+    expect(NON_RETURNABLE_CATEGORY_SLUGS).not.toContain('homewear');
   });
 });
 
@@ -198,6 +219,7 @@ describe('the page summary, the form and the server agree with the JSON-LD', () 
 
   it('the product page builds its markup from the same constants', () => {
     const source = readFileSync(join(__dirname, '../app/[locale]/product/[slug]/page.tsx'), 'utf8');
-    expect(source).toContain('buildMerchantReturnPolicy(RETURN_POLICY)');
+    expect(source).toContain('buildMerchantReturnPolicy(RETURN_POLICY');
+    expect(source).toContain('isNonReturnableClass(');
   });
 });

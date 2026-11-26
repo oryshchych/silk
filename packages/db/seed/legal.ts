@@ -16,6 +16,9 @@ export async function seedLegal(tx: Tx): Promise<number> {
   let count = 0;
   for (const kind of LEGAL_KINDS) {
     for (const locale of LEGAL_LOCALES) {
+      // `about` is seeded in Ukrainian only on purpose: the one-language path (no hreflang, no switch link, a 404
+      // in English with the disclaimer) is exercised by the smoke test against this data.
+      if (kind === 'about' && locale === 'en') continue;
       const draft = legalDraft(kind, locale);
       await tx.execute(
         sql`INSERT INTO legal_documents (kind, locale, version, title, status, body_source, body_html, effective_from, published_at)

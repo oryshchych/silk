@@ -10,6 +10,8 @@ import { LEGAL_KINDS } from '@store/shared/legal';
 
 import { getAnalyticsConfig } from '@/lib/analytics-config';
 import { getCachedLegalNav } from '@/lib/legal';
+import { legalKindOfPath } from '@/lib/legal-path';
+import { publishedInBoth } from '@/lib/legal-seo';
 import { loadCategoryTree } from '@/lib/navigation';
 import { href, paths } from '@/lib/paths';
 
@@ -49,6 +51,9 @@ export async function SiteShell({
     if (!degrade) throw error;
     return [];
   });
+  // A legal page that exists in one language only has no counterpart to switch to (the link would be a 404).
+  const legalKind = legalKindOfPath(path);
+  const canSwitch = legalKind === null || publishedInBoth(legalNav, legalKind);
   const legalLinks = LEGAL_KINDS.flatMap((kind) => {
     const row = legalNav.find((entry) => entry.kind === kind && entry.locale === locale);
     return row === undefined ? [] : [{ kind, title: row.title }];
@@ -109,14 +114,16 @@ export async function SiteShell({
             {t('account')}
           </Link>
           <CartLink href={href(locale, paths.cart)} />
-          <Link
-            href={href(other, path, search)}
-            hrefLang={other}
-            lang={other}
-            className="min-h-8 rounded-full border border-border px-3 py-1 text-sm hover:bg-surface-raised"
-          >
-            {t('switchTo')}
-          </Link>
+          {canSwitch ? (
+            <Link
+              href={href(other, path, search)}
+              hrefLang={other}
+              lang={other}
+              className="min-h-8 rounded-full border border-border px-3 py-1 text-sm hover:bg-surface-raised"
+            >
+              {t('switchTo')}
+            </Link>
+          ) : null}
         </div>
       </header>
       <main id="main" className="mx-auto w-full max-w-6xl px-4 py-6">

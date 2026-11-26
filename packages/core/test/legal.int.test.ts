@@ -25,6 +25,7 @@ import {
   updateLegalDraft,
   listLegalDocuments,
 } from '../src/legal/admin.ts';
+import { sanitizeHtml } from '@store/shared/rich-text';
 import { getCompanyProfile } from '../src/legal/company.ts';
 import {
   currentConsentRefs,
@@ -244,7 +245,12 @@ describe('a published version is history', () => {
         }),
     );
     await publish(d.id);
-    const current = await getCurrentLegalDocument(handle.db, 'terms', 'uk');
+    const current = await getCurrentLegalDocument(
+      handle.db,
+      'terms',
+      'uk',
+      'https://media.example',
+    );
     expect(current?.fileUrl).toBe('https://media.example/legal/a/b.pdf');
     expect(current?.bodyHtml).toBeNull();
   });
@@ -395,7 +401,25 @@ describe('text the sanitiser refuses is an input error on write and an empty bod
       [d.id],
     );
     await publish(d.id);
-    expect((await getCurrentLegalDocument(handle.db, 'contacts', 'uk'))?.fileUrl).toBeNull();
+    expect(
+      (await getCurrentLegalDocument(handle.db, 'contacts', 'uk', 'https://media.example'))
+        ?.fileUrl,
+    ).toBeNull();
+  });
+
+  it('pins the file link to the media origin: another host, no media host configured and a look-alike are dropped', async () => {
+    const d = await draft({ kind: 'faq', locale: 'en', title: 'file', source: '' });
+    await handle.pool.query(
+      `UPDATE legal_documents SET file_url = 'https://media.example/legal/a/b.pdf', file_key = 'legal/a/b.pdf' WHERE id = $1`,
+      [d.id],
+    );
+    await publish(d.id);
+    const read = async (origin: string | null) =>
+      (await getCurrentLegalDocument(handle.db, 'faq', 'en', origin))?.fileUrl;
+    expect(await read('https://media.example')).toBe('https://media.example/legal/a/b.pdf');
+    expect(await read('https://evil.example')).toBeNull();
+    expect(await read('https://media.example.evil.example')).toBeNull();
+    expect(await read(null)).toBeNull();
   });
 });
 
@@ -441,5 +465,30 @@ describe('company profile (placeholders are never values)', () => {
       viber: null,
       address: null,
     });
+  });
+});
+
+describe('a stored body that grows when it is sanitised (the page must not 500)', () => {
+  it('reads without throwing and the render pass of the web page is tolerant too', async () => {
+    const d = await draft({
+      kind: 'privacy',
+      locale: 'uk',
+      title: 'bomb',
+      source: 'ok',
+      effectiveFrom: new Date(Date.now() + 1_000).toISOString(),
+    });
+    // 199 990 `<` is inside the 200 000 CHECK and inside the sanitiser's input limit; its output is four times longer.
+    await handle.pool.query(`UPDATE legal_documents SET body_html = $2 WHERE id = $1`, [
+      d.id,
+      '<'.repeat(199_990),
+    ]);
+    await handle.db.transaction(async (tx) => await publishLegalDocument(tx, USER, d.id));
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+    const current = await getCurrentLegalDocument(handle.db, 'privacy', 'uk');
+    expect(current?.title).toBe('bomb');
+    const html = current?.bodyHtml ?? '';
+    expect(html.length).toBeGreaterThan(200_000);
+    // The second sanitise (what `LegalBody` runs) refuses the longer string: the component must treat that as "no body".
+    expect(() => sanitizeHtml(html)).toThrow(RangeError);
   });
 });

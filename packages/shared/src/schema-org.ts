@@ -72,6 +72,8 @@ export interface MerchantReturnPolicyLd {
   returnPolicyCategory:
     | 'https://schema.org/MerchantReturnNotPermitted'
     | 'https://schema.org/MerchantReturnFiniteReturnWindow';
+  /** Absolute URL of the returns page (the schema.org property is `merchantReturnLink`). */
+  merchantReturnLink?: string;
   merchantReturnDays?: number;
   returnMethod?: `https://schema.org/${ReturnPolicy['returnMethod']}`;
   returnFees?: `https://schema.org/${ReturnPolicy['returnFees']}`;
@@ -85,18 +87,22 @@ export interface MerchantReturnPolicyLd {
  */
 export function buildMerchantReturnPolicy(
   policy: ReturnPolicy,
-  windowDays: number = policy.defaultWindowDays,
+  options: { windowDays?: number; link?: string } = {},
 ): MerchantReturnPolicyLd {
+  const windowDays = options.windowDays ?? policy.defaultWindowDays;
+  const link = options.link === undefined ? {} : { merchantReturnLink: options.link };
   if (!policy.voluntaryReturns) {
     return {
       '@type': 'MerchantReturnPolicy',
       applicableCountry: policy.applicableCountry,
       returnPolicyCategory: 'https://schema.org/MerchantReturnNotPermitted',
+      ...link,
     };
   }
   return {
     '@type': 'MerchantReturnPolicy',
     applicableCountry: policy.applicableCountry,
+    ...link,
     returnPolicyCategory: 'https://schema.org/MerchantReturnFiniteReturnWindow',
     merchantReturnDays: windowDays,
     returnMethod: `https://schema.org/${policy.returnMethod}`,

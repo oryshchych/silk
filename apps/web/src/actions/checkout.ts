@@ -145,8 +145,6 @@ export async function placeOrderAction(input: unknown): Promise<PlaceOrderResult
   if (token === null) return { ok: false, kind: 'error', code: 'CHECKOUT_EMPTY_CART' };
 
   const db = await getDb();
-  // The editions of the terms and the privacy policy in force NOW (database clock), stored with the acceptance.
-  const consentRefs = await currentConsentRefs(db, data.locale);
   let created: { orderId: string; orderNumber: string; accessToken: string | null };
   try {
     const intent = await db.transaction(
@@ -155,6 +153,8 @@ export async function placeOrderAction(input: unknown): Promise<PlaceOrderResult
     created = await db.transaction(
       async (tx) =>
         await createOrder(tx, {
+          // Resolved INSIDE the order's transaction (database clock): the edition stored is the one in force at the commit.
+          consentRefs: await currentConsentRefs(tx, data.locale),
           intentId: intent.intentId,
           ownerToken: token,
           contact: { email: data.email, phone: data.phone, name: data.name },
@@ -168,7 +168,6 @@ export async function placeOrderAction(input: unknown): Promise<PlaceOrderResult
           promoCode: data.promoCode === undefined || data.promoCode === '' ? null : data.promoCode,
           locale: data.locale,
           termsAccepted: data.terms,
-          consentRefs,
         }),
     );
   } catch (error) {

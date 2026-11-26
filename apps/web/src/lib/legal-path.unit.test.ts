@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseLegalPath } from './legal-path';
+import { legalKindOfPath, parseLegalPath } from './legal-path';
 
 describe('parseLegalPath', () => {
   it('knows the seven fixed words in both locales', () => {
@@ -21,5 +21,14 @@ describe('parseLegalPath', () => {
     for (const path of ['/legal', '/legal/terms/extra', '/product/legal', '/en/legal/']) {
       expect(parseLegalPath(path)).toBeNull();
     }
+  });
+});
+
+describe('legalKindOfPath', () => {
+  it('gives the kind of a locale-less legal path and null for everything else', () => {
+    expect(legalKindOfPath('/legal/about')).toBe('about');
+    expect(legalKindOfPath('/legal/nope')).toBeNull();
+    expect(legalKindOfPath('/category/bras')).toBeNull();
+    expect(legalKindOfPath('/')).toBeNull();
   });
 });

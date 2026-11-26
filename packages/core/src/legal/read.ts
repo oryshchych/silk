@@ -31,6 +31,8 @@ export async function getCurrentLegalDocument(
   reader: Reader,
   kind: LegalKind,
   locale: LegalLocale,
+  /** The origin of `MEDIA_PUBLIC_BASE_URL`: a file link on any other host is dropped (null: no file link at all). */
+  mediaOrigin: string | null = null,
 ): Promise<PublicLegalDto | null> {
   const result = await reader.execute<{
     kind: string;
@@ -58,9 +60,8 @@ export async function getCurrentLegalDocument(
       throw error;
     }
   })();
-  // Only an https link to a file is ever handed out.
-  const fileUrl =
-    row.file_url !== null && /^https:\/\//.test(row.file_url) ? safeHref(row.file_url) : null;
+  // Only an https link on the media host is ever handed out.
+  const fileUrl = pinnedFileUrl(row.file_url, mediaOrigin);
   return serialize(publicLegalDto, {
     kind: row.kind,
     locale: row.locale,
@@ -132,4 +133,15 @@ export async function listLegalForSitemap(
     locale: row.locale,
     lastmod: new Date(row.effectiveFrom),
   }));
+}
+
+function pinnedFileUrl(fileUrl: string | null, mediaOrigin: string | null): string | null {
+  if (fileUrl === null || mediaOrigin === null || !/^https:\/\//.test(fileUrl)) return null;
+  const safe = safeHref(fileUrl);
+  if (safe === null) return null;
+  try {
+    return new URL(safe).origin === mediaOrigin ? safe : null;
+  } catch {
+    return null;
+  }
 }

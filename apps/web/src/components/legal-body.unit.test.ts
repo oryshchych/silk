@@ -35,4 +35,14 @@ describe('LegalBody (the one place legal html enters a page)', () => {
     expect(out).toContain('<h2>T</h2>');
     expect(out).toContain('<a href="https://ok.example/x" rel="noopener noreferrer">l</a>');
   });
+
+  it('renders an empty body, never throws, for text the second pass refuses (the first pass output is longer than its input)', () => {
+    // 199 990 `<` passes the first sanitise (input under the limit) and grows to 800 000 characters of `&lt;`.
+    const firstPass = '&lt;'.repeat(199_990);
+    expect(() => render(firstPass)).not.toThrow();
+    expect(render(firstPass)).toBe(render(''));
+    expect(() => render('<'.repeat(199_990))).not.toThrow();
+    expect(() => render('<ul>'.repeat(5_000))).not.toThrow();
+    expect(render('<ul>'.repeat(5_000))).toBe(render(''));
+  });
 });

@@ -18,8 +18,19 @@ export function pageMetadata(input: {
   alternates: Pick<Alternates, 'canonical'> & { languages?: Alternates['languages'] };
   index: boolean;
   image?: string | null;
+  /** False for a page with no counterpart in the other language: no `og:locale:alternate`. */
+  hasCounterpart?: boolean;
 }): Metadata {
-  const { title, description, locale, siteName, alternates, index, image } = input;
+  const {
+    title,
+    description,
+    locale,
+    siteName,
+    alternates,
+    index,
+    image,
+    hasCounterpart = true,
+  } = input;
   const other = locale === 'uk' ? 'en' : 'uk';
   const images = image === undefined || image === null ? undefined : [image];
   return {
@@ -37,7 +48,7 @@ export function pageMetadata(input: {
       url: alternates.canonical,
       siteName,
       locale: OG_LOCALE[locale],
-      alternateLocale: [OG_LOCALE[other]],
+      ...(hasCounterpart ? { alternateLocale: [OG_LOCALE[other]] } : {}),
       ...(images === undefined ? {} : { images }),
     },
     twitter: {
