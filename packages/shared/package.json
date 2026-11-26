@@ -15,7 +15,8 @@
     "./dto/order": "./src/dto/order.ts",
     "./phone": "./src/phone.ts",
     "./dto/admin-catalog": "./src/dto/admin-catalog.ts",
-    "./dto/admin-order": "./src/dto/admin-order.ts"
+    "./dto/admin-order": "./src/dto/admin-order.ts",
+    "./dto/admin-customer": "./src/dto/admin-customer.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"

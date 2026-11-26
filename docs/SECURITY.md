@@ -44,6 +44,10 @@ confirmed TOTP before a session counts; so must anyone who enrolled one.
 | `orders.edit` | owner, admin, manager | Change a quantity or take a line off an order that has not shipped (totals recomputed, reservation adjusted, history row with the reason) |
 | `orders.refund` | owner, admin | Start a refund through the payment provider (full or part); money leaves only through the provider call |
 | `orders.waybill` | owner, admin, manager | Create a Nova Poshta waybill, close an unknown one by hand, print the waybill and its sticker |
+| `orders.export` | owner, admin | Download the orders CSV for the accountant (no email, phone or cost; every download audited) |
+| `customers.view` | owner, admin, manager | Open the customer list and a customer card (name, email, phone, orders, sizes; no cost) |
+| `customers.manage` | owner, admin, manager | Set a customer's tags and internal note |
+| `customers.export` | owner, admin | Download the customers CSV (email and phone: personal data; every download audited) |
 | `orders.confirm_payment` | owner, admin, manager | Record a received bank transfer (the confirmed source of a transfer payment, ADR-4) |
 | `media.upload` | owner, admin, content | Upload and edit product images |
 | `catalog.import` | owner, admin | CSV / XLSX import |
@@ -160,6 +164,10 @@ functions as the editor, so one bad row never undoes the good ones and every rul
 SKU, old price over price, 301 on a renamed slug) holds. An empty cell on an update changes
 nothing. The export neutralises formulas (a cell starting with `=`, `+`, `-`, `@`, tab or CR gets
 a leading apostrophe, removed again when the same file is imported) and reads the cost into the file only for a role that may see it. A file with a NUL byte, invalid UTF-8 or a repeated header is refused whole. A catalogue larger than one file (10 000 rows) is exported in parts (`?after=<sku>`; the screen lists them and a cut file answers `X-Export-Truncated`).
+
+## Exports (orders and customers CSV)
+
+Both routes check the session, the permission and a per-user limit (a 429 carries `Retry-After`) before anything is read. The columns are fixed in code (the audit row lists the range, the row count and whether the file was cut, not the columns). The audit row is written BEFORE the response is sent, so a download the browser aborts is still audited. Money cells are two-decimal text that a sheet reads as numbers, a phone is written as it is, and any other cell that starts with `=`, `+`, `-` or `@` (also after blanks) gets a leading apostrophe. A file is cut at 10 000 rows: its last line is `# truncated: next part starts after <cursor>`, so a person who only opens the file sees it, and the next download starts after that cursor (`after=`).
 
 ## Responses
 

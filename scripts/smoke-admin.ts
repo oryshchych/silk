@@ -556,6 +556,33 @@ export async function runAdminSmoke({
       'orders: a manager cancels with a reason; the order is cancelled',
       cancelled.body.includes('"ok":true') && (await statusNow()) === 'cancelled',
     );
+    // Customers and the CSV routes (phase 5): the same role rules on the real pages and files.
+    const customerList = await get('/admin/customers', cookie(managerToken));
+    const contentCustomers = await get('/admin/customers', cookie(contentToken));
+    check(
+      'customers: a manager lists customers; a content role gets the not-found page with no customer data',
+      customerList.status === 200 &&
+        customerList.html.includes('Smoke Buyer') &&
+        !contentCustomers.html.includes('Smoke Buyer') &&
+        !contentCustomers.html.includes('smoke-buyer@example.test'),
+    );
+    const range = 'from=2020-01-01&to=2099-12-31';
+    const managerOrdersCsv = await get(`/admin/export/orders?${range}`, cookie(managerToken));
+    const managerCustomersCsv = await get('/admin/export/customers', cookie(managerToken));
+    const adminOrdersCsv = await get(`/admin/export/orders?${range}`, cookie(adminToken));
+    const adminCustomersCsv = await get('/admin/export/customers', cookie(adminToken));
+    check(
+      'exports: a manager is refused both files (403); an admin gets the orders CSV with no email or phone and the customers CSV with them',
+      managerOrdersCsv.status === 403 &&
+        managerCustomersCsv.status === 403 &&
+        adminOrdersCsv.status === 200 &&
+        adminOrdersCsv.html.includes(orderNumber) &&
+        !adminOrdersCsv.html.includes('smoke-buyer@example.test') &&
+        !adminOrdersCsv.html.includes('+380501112299') &&
+        adminCustomersCsv.status === 200 &&
+        adminCustomersCsv.html.includes('smoke-buyer@example.test'),
+    );
+
     // The waybill print route: its own auth, checked before the carrier or the order is touched.
     const printPath = `/admin/print/waybill/${order.id}?kind=document`;
     const anonymousPrint = await get(printPath);

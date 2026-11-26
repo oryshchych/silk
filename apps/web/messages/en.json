@@ -338,7 +338,8 @@
       "dictionaries": "Dictionaries",
       "importExport": "Import and export",
       "stock": "Stock",
-      "orders": "Orders"
+      "orders": "Orders",
+      "customers": "Customers"
     },
     "dashboard": {
       "title": "Overview",
@@ -784,7 +785,65 @@
       "resolveAttach": "A waybill exists: enter its number",
       "resolveNone": "No waybill was made",
       "resolveSubmit": "Save",
-      "lastError": "Last carrier answer"
+      "lastError": "Last carrier answer",
+      "export": "Download CSV for accounting",
+      "exportFrom": "From",
+      "exportTo": "To",
+      "exportHint": "A file holds at most 10 000 orders. If it was cut, its last line says where the next part starts (use that order number as the start of the next download)."
+    },
+    "customers": {
+      "title": "Customers",
+      "search": "Search (email, name, phone)",
+      "segmentLabel": "Segment",
+      "tag": "Tag",
+      "submit": "Show",
+      "any": "Any",
+      "export": "Download CSV",
+      "total": "Customers: {count}",
+      "empty": "No customers found.",
+      "pages": "Pages",
+      "previous": "Previous",
+      "next": "Next",
+      "pageOf": "Page {page} of {total}",
+      "col": {
+        "customer": "Customer",
+        "orders": "Orders",
+        "ltv": "Lifetime value",
+        "last": "Last order",
+        "segment": "Segment",
+        "tags": "Tags"
+      },
+      "segment": {
+        "new": "New",
+        "repeat": "Repeat",
+        "vip": "VIP",
+        "lapsed": "Lapsed"
+      },
+      "back": "Back to customers",
+      "average": "Average order",
+      "first": "First order",
+      "sizes": "Sizes from purchases",
+      "noSizes": "No purchases yet.",
+      "favourite": "Most bought",
+      "tagsLabel": "Tags",
+      "tagsHint": "Separated by spaces, up to 10, letters, digits, - and _.",
+      "noteLabel": "Internal note",
+      "save": "Save",
+      "saved": "Saved.",
+      "orders": "Orders",
+      "orderNumber": "Number",
+      "orderStatus": "Status",
+      "orderTotal": "Total",
+      "status": {
+        "pending": "New",
+        "confirmed": "Confirmed",
+        "processing": "Processing",
+        "shipped": "Shipped",
+        "delivered": "Delivered",
+        "cancelled": "Cancelled",
+        "returned": "Returned"
+      },
+      "exportHint": "A file holds at most 10 000 customers. If it was cut, its last line says where the next part starts."
     }
   }
 }
