@@ -36,10 +36,18 @@ const AUTH_PATHS = [
   '/account/register',
   '/account/forgot',
   '/account/set-password',
-  '/unsubscribe',
 ] as const;
 
 export function isAccountAuthPath(pathname: string): boolean {
   const path = normalise(pathname);
   return path !== null && (AUTH_PATHS as readonly string[]).includes(path);
+}
+
+/**
+ * The link of a back-in-stock mail. It has its OWN limits: sharing the credential bucket would let a
+ * flood of unsubscribe requests lock customers out of sign-in and registration.
+ */
+export function isUnsubscribePath(pathname: string): boolean {
+  const path = normalise(pathname);
+  return path !== null && (path === '/unsubscribe' || path.startsWith('/unsubscribe/'));
 }

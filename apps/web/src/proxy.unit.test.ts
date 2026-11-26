@@ -420,3 +420,34 @@ describe('proxy: customer account limits and headers', () => {
     expect(blocked).toBeGreaterThanOrEqual(90);
   });
 });
+
+describe('proxy: the unsubscribe link has its own limits', () => {
+  const unsub = (ip: string, method = 'POST') =>
+    new NextRequest('http://localhost:3000/unsubscribe?t=x', {
+      method,
+      headers: { 'x-forwarded-for': ip },
+    });
+  it("a flood of unsubscribe requests from many clients does not use up the credential forms' cap", async () => {
+    const proxy = await loadProxy('local');
+    for (let i = 0; i < 700; i++) {
+      await proxy(
+        unsub(`10.${String(Math.floor(i / 250))}.${String(i % 250)}.1, 192.0.2.${String(i % 250)}`),
+      );
+    }
+    const login = await proxy(
+      new NextRequest('http://localhost:3000/account/login', {
+        method: 'POST',
+        headers: { 'x-forwarded-for': '198.51.100.77' },
+      }),
+    );
+    expect(login.status).not.toBe(429);
+  });
+
+  it('limits one client to 30 a minute, with the account headers', async () => {
+    const proxy = await loadProxy('local');
+    for (let i = 0; i < 30; i++) expect((await proxy(unsub('203.0.113.99'))).status).not.toBe(429);
+    const blocked = await proxy(unsub('203.0.113.99'));
+    expect(blocked.status).toBe(429);
+    expect(blocked.headers.get('cache-control')).toBe('private, no-store');
+  });
+});

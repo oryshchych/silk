@@ -10,7 +10,10 @@ import type { DbHandle } from '@store/db/client';
 import { auditLog, customers, outbox, stockNotifications } from '@store/db/schema';
 
 import {
+  AlertLimitError,
   AlertNotNeededError,
+  MAX_ALERTS,
+  rearmIfSoldOut,
   AlertVariantNotFoundError,
   buildUnsubscribeToken,
   cancelStockAlert,
@@ -21,6 +24,8 @@ import {
   unsubscribeByToken,
 } from '../src/account/stock-alerts.ts';
 import {
+  MAX_WISHLIST,
+  WishlistFullError,
   WishlistProductNotFoundError,
   addToWishlist,
   listMyWishlist,
@@ -272,5 +277,74 @@ describe('back-in-stock alerts', () => {
     expect(rows.some((r) => r.action === 'customer.stock_alert_added')).toBe(true);
     expect(rows.some((r) => r.action === 'customer.wishlist_added')).toBe(true);
     expect(JSON.stringify(rows)).not.toContain('@example');
+  });
+});
+
+describe('the caps', () => {
+  it('the constants are what the docs say', () => {
+    expect(MAX_WISHLIST).toBe(200);
+    expect(MAX_ALERTS).toBe(50);
+  });
+
+  it('the wishlist refuses one more than the cap (and rolls the insert back)', async () => {
+    const c = await customer('cap-w@example.test');
+    await handle.db.transaction(async (tx) => {
+      await addToWishlist(tx, c, productId, 1);
+    });
+    await expect(
+      handle.db.transaction(async (tx) => {
+        await addToWishlist(tx, c, productId, 1);
+      }),
+    ).resolves.toBeUndefined();
+    // A second DIFFERENT product would pass the cap check: the one product is already saved (a repeat is a no-op).
+    const extra = await handle.db.execute<{ id: string }>(
+      sql`INSERT INTO products (slug, sku, brand, category_id, name_uk, name_en, base_price, is_active, published_at)
+          SELECT 'cap-product', 'cap-sku', brand, category_id, 'x', 'x', 100, true, now() - interval '1 day'
+            FROM products WHERE id = ${productId} RETURNING id`,
+    );
+    await expect(
+      handle.db.transaction(async (tx) => {
+        await addToWishlist(tx, c, extra.rows[0]?.id ?? '', 1);
+      }),
+    ).rejects.toBeInstanceOf(WishlistFullError);
+    expect(await listMyWishlist(handle.db, c.customerId, 'uk')).toHaveLength(1);
+  });
+
+  it('alerts refuse one more than the cap for an address; a repeat of an existing one still works', async () => {
+    const c = await customer('cap-a@example.test');
+    await setStock(variantOne, 0);
+    await setStock(variantTwo, 0);
+    await handle.db.transaction(async (tx) => {
+      await subscribeStockAlert(tx, c, variantOne, 1);
+    });
+    await expect(
+      handle.db.transaction(async (tx) => {
+        await subscribeStockAlert(tx, c, variantTwo, 1);
+      }),
+    ).rejects.toBeInstanceOf(AlertLimitError);
+    await expect(
+      handle.db.transaction(async (tx) => await subscribeStockAlert(tx, c, variantOne, 1)),
+    ).resolves.toMatch(/^[0-9a-f-]{36}$/);
+  });
+});
+
+describe('re-arming', () => {
+  it('rearmIfSoldOut puts a claimed alert back to waiting only when the size is gone again', async () => {
+    const c = await customer('rearm@example.test');
+    await setStock(variantTwo, 0);
+    const id = await handle.db.transaction(
+      async (tx) => await subscribeStockAlert(tx, c, variantTwo),
+    );
+    await setStock(variantTwo, 3);
+    expect(await run()).toBeGreaterThanOrEqual(1);
+    expect(await rearmIfSoldOut(handle.db, id)).toBe(false);
+    await setStock(variantTwo, 0);
+    expect(await rearmIfSoldOut(handle.db, id)).toBe(true);
+    const [row] = await handle.db
+      .select()
+      .from(stockNotifications)
+      .where(eq(stockNotifications.id, id));
+    expect(row?.notifiedAt).toBeNull();
+    await setStock(variantTwo, 0);
   });
 });
