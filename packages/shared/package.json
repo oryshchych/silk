@@ -24,6 +24,8 @@
     "./dto/review": "./src/dto/review.ts",
     "./dto/return": "./src/dto/return.ts",
     "./dto/legal": "./src/dto/legal.ts",
+    "./dto/content-readiness": "./src/dto/content-readiness.ts",
+    "./content-bounds": "./src/content-bounds.ts",
     "./legal": "./src/legal.ts",
     "./faq": "./src/faq.ts",
     "./return-policy": "./src/return-policy.ts",
