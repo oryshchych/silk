@@ -203,6 +203,6 @@ export async function submitReviewAction(input: unknown): Promise<CustomerAction
         { customerId: who.customer.customerId, userId: who.customer.userId, ip: who.ip },
         data,
       ),
-    { notFoundCodes: [] },
+    { notFoundCodes: ['REVIEW_NOT_ALLOWED'] },
   );
 }
