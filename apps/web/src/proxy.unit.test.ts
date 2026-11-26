@@ -39,7 +39,11 @@ async function loadProxy(appEnv: 'local' | 'production') {
 }
 
 vi.mock('./lib/redirect-map', () => ({
-  redirectMap: { lookup: () => Promise.resolve(null), invalidate: () => undefined },
+  redirectMap: {
+    lookup: () => Promise.resolve(null),
+    invalidate: () => undefined,
+    noteHit: () => undefined,
+  },
 }));
 
 afterEach(() => {

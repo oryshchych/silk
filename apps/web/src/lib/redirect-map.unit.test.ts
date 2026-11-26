@@ -92,3 +92,65 @@ describe('createRedirectMap', () => {
     expect(await map.lookup('/product/old')).toBeNull();
   });
 });
+
+describe('createRedirectMap: 410 and hit counting', () => {
+  const table = [
+    { fromPath: '/product/old', toPath: '/product/new', statusCode: 301 as const },
+    { fromPath: '/product/gone', toPath: '/', statusCode: 410 as const },
+  ];
+
+  it('serves a 410 row as a hit with status 410', async () => {
+    const map = createRedirectMap(() => Promise.resolve(table));
+    expect(await map.lookup('/product/gone')).toEqual({ to: '/', status: 410 });
+  });
+
+  it('counts only paths of the table, so counters cannot grow with client input', async () => {
+    const flushHits = vi.fn<(hits: ReadonlyMap<string, number>) => Promise<void>>(() =>
+      Promise.resolve(),
+    );
+    const map = createRedirectMap(() => Promise.resolve(table), { flushHits, flushAt: 3 });
+    await map.lookup('/product/old');
+    for (let i = 0; i < 1000; i++) map.noteHit(`/product/random-${String(i)}`);
+    expect(flushHits).not.toHaveBeenCalled();
+    map.noteHit('/product/old');
+    map.noteHit('/product/old');
+    map.noteHit('/product/gone');
+    await Promise.resolve();
+    expect(flushHits).toHaveBeenCalledTimes(1);
+    expect([...(flushHits.mock.calls[0]?.[0] ?? new Map())]).toEqual([
+      ['/product/old', 2],
+      ['/product/gone', 1],
+    ]);
+  });
+
+  it('flushes on the timer, and keeps the counts when the write fails (retry on the timer only)', async () => {
+    vi.useFakeTimers();
+    try {
+      let fail = true;
+      const written: [string, number][] = [];
+      const flushHits = vi.fn((hits: ReadonlyMap<string, number>) => {
+        if (fail) return Promise.reject(new Error('db down'));
+        written.push(...hits);
+        return Promise.resolve();
+      });
+      const map = createRedirectMap(() => Promise.resolve(table), {
+        flushHits,
+        flushMs: 1000,
+        flushAt: 2,
+        onError: () => undefined,
+      });
+      await map.lookup('/product/old');
+      map.noteHit('/product/old');
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(flushHits).toHaveBeenCalledTimes(1);
+      // During the outage more hits do not trigger a query each.
+      for (let i = 0; i < 20; i++) map.noteHit('/product/old');
+      expect(flushHits.mock.calls.length).toBeLessThanOrEqual(2);
+      fail = false;
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(written.reduce((sum, [, n]) => sum + n, 0)).toBe(21);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

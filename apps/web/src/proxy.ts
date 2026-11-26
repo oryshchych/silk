@@ -166,6 +166,19 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   // slug is not a visible slug and would otherwise be answered 404.
   if (request.method === 'GET' || request.method === 'HEAD') {
     const hit = await redirectMap.lookup(pathname);
+    // Gone for good: 410 (not 404), so a search engine drops the URL at once. Counted like a redirect.
+    if (hit !== null && hit.status === 410) {
+      redirectMap.noteHit(pathname);
+      return withNoindex(
+        new NextResponse('Gone', {
+          status: 410,
+          headers: {
+            'Cache-Control': 'public, max-age=300',
+            'Content-Type': 'text/plain; charset=utf-8',
+          },
+        }),
+      );
+    }
     // A product redirect is served only while its TARGET is a visible product: a renamed draft
     // must not reveal its new slug to an anonymous visitor.
     const targetProduct = hit === null ? null : parseProductPath(hit.to);
@@ -174,6 +187,7 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
     if (hit !== null && targetVisible) {
       const target = request.nextUrl.clone();
       target.pathname = hit.to;
+      redirectMap.noteHit(pathname);
       const response = NextResponse.redirect(target, hit.status);
       // A short public cache: an unbounded one would pin a browser to a redirect that a later
       // rename (A to B to A) has made wrong.
