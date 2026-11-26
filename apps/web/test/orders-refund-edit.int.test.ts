@@ -266,6 +266,60 @@ describe('refund', () => {
   });
 });
 
+describe('review round 1 (#73)', () => {
+  it('a double submit of a partial refund (one request id, in parallel) pays out once and calls the provider once', async () => {
+    const id = await place('mono');
+    await pay(id);
+    const requestId = crypto.randomUUID();
+    const input = { orderId: id, amount: '100.00', reason: 'size did not fit', requestId };
+    const [a, b] = await Promise.all([
+      actions.refundOrderAction(input),
+      actions.refundOrderAction(input),
+    ]);
+    expect(a.ok && b.ok).toBe(true);
+    expect(Number(await orderField(id, 'refunded_total'))).toBe(10_000);
+    expect(await refundRows(id)).toBe(1);
+    expect(fake.requests.filter((r) => r.url.includes('cancel'))).toHaveLength(1);
+  });
+
+  it('a forged userId in the input is ignored: the author is the session', async () => {
+    const id = await place('mono');
+    await pay(id);
+    await actions.refundOrderAction({
+      orderId: id,
+      amount: '10.00',
+      reason: 'forged author',
+      userId: '11111111-1111-4111-8111-111111111111',
+      initiatedBy: '11111111-1111-4111-8111-111111111111',
+    });
+    expect(
+      await one(
+        'SELECT initiated_by_user_id::text AS v FROM refund_operations WHERE order_id = $1',
+        [id],
+        'v',
+      ),
+    ).toBe(USER);
+  });
+
+  it('an unpaid online order with an open payment cannot be edited (typed code)', async () => {
+    const id = await place('mono', 2);
+    await handle.pool.query(
+      "INSERT INTO payment_attempts (order_id, attempt_number, provider, amount, state, status) SELECT id, 1, 'mono', total, 'in_flight', 'pending' FROM orders WHERE id = $1",
+      [id],
+    );
+    const itemId = String(
+      await one('SELECT id AS v FROM order_items WHERE order_id = $1', [id], 'v'),
+    );
+    expect(
+      await actions.editOrderItemsAction({
+        orderId: id,
+        reason: 'customer asked',
+        changes: [{ itemId, quantity: 1 }],
+      }),
+    ).toEqual({ ok: false, code: 'ORDER_PAYMENT_OPEN' });
+  });
+});
+
 describe('edit items through the chain', () => {
   const itemOf = async (id: string) =>
     String(await one('SELECT id AS v FROM order_items WHERE order_id = $1', [id], 'v'));

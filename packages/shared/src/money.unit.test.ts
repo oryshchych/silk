@@ -181,3 +181,22 @@ describe('prorate', () => {
     expect(() => prorate(money(1), 0.5, 2)).toThrow(RangeError);
   });
 });
+
+describe('prorate (property)', () => {
+  it('never exceeds the amount for n <= d, and grows with n', () => {
+    const amounts = [0, 1, 7, 999, 1000, 129_900, 2_000_000_000];
+    for (const a of amounts) {
+      for (let d = 1; d <= 12; d += 1) {
+        let previous = -1;
+        for (let n = 0; n <= d; n += 1) {
+          const share = prorate(money(a), n, d);
+          expect(share, `${String(a)} ${String(n)}/${String(d)}`).toBeGreaterThanOrEqual(0);
+          expect(share).toBeLessThanOrEqual(a);
+          expect(share).toBeGreaterThanOrEqual(previous);
+          previous = share;
+        }
+        expect(prorate(money(a), d, d)).toBe(a);
+      }
+    }
+  });
+});

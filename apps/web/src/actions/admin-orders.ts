@@ -4,7 +4,7 @@ import { cancelOrder, shipOrder } from '@store/core/fulfilment';
 import { advanceOrder, addOrderNote, ADMIN_SOURCE } from '@store/core/orders-admin';
 import { editOrderItems } from '@store/core/orders-admin-edit';
 import { reserveAdminRefund } from '@store/core/orders-admin-refund';
-import { processRefund } from '@store/core/refunds';
+import { processRefund, type ProviderMap } from '@store/core/refunds';
 import {
   cancelOrderSchema,
   confirmTransferSchema,
@@ -195,7 +195,7 @@ export async function editOrderItemsAction(input: unknown) {
         entity: 'order_items',
         entityId: parsed.orderId,
         diff: {
-          changes: parsed.changes,
+          changes: done.applied,
           total: { from: done.totalFrom, to: done.totalTo },
           reason: parsed.reason,
         },
@@ -211,16 +211,19 @@ export async function editOrderItemsAction(input: unknown) {
  * the order moves when the provider's answer settles the operation, never before.
  */
 export async function refundOrderAction(input: unknown) {
-  const providers = await getPaymentProviders();
+  // Built after the permission check (inside `run`), used again after the commit.
+  let providers: ProviderMap = {};
   const reserved = await adminAction({
     permission: 'orders.refund',
     schema: refundSchema,
     input,
     run: async ({ tx, input: parsed, session, audit }) => {
+      providers = await getPaymentProviders();
       const reservations = await reserveAdminRefund(tx, {
         orderId: parsed.orderId,
         amount: parsed.amount,
         attemptId: parsed.attemptId,
+        requestId: parsed.requestId,
         reason: parsed.reason,
         actorUserId: session.userId,
         providers,
@@ -238,13 +241,19 @@ export async function refundOrderAction(input: unknown) {
   });
   if (!reserved.ok) return reserved;
   const db = await getDb();
+  // Each operation on its own: one that cannot be sent (routing, a settle error) must not skip the
+  // others or turn a committed reservation into a 500. Its state is reported as it is.
   const states: string[] = [];
   for (const operationId of reserved.data) {
-    const outcome = await processRefund(
-      { providers, runInTransaction: async (fn) => await db.transaction(fn) },
-      operationId,
-    );
-    states.push(outcome.state);
+    try {
+      const outcome = await processRefund(
+        { providers, runInTransaction: async (fn) => await db.transaction(fn) },
+        operationId,
+      );
+      states.push(outcome.state);
+    } catch {
+      states.push('pending');
+    }
   }
   return { ok: true as const, data: { states } };
 }

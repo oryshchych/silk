@@ -12,6 +12,7 @@ import { setCartItem, startCheckout } from '../src/cart/cart.ts';
 import {
   InsufficientStockError,
   OrderNotShippableError,
+  OrderPaymentOpenError,
   OrderTransitionError,
 } from '../src/errors.ts';
 import { createOrder } from '../src/orders/create-order.ts';
@@ -332,5 +333,73 @@ describe('races (separate connections)', () => {
     } else {
       expect(state).toEqual({ s: 10, r: 1 });
     }
+  });
+});
+
+describe('review round 1 (#73)', () => {
+  it('a larger quantity keeps the line discount it had: a capped promo cannot grow', async () => {
+    const orderId = await place([[v1, 3]]);
+    const [item] = await itemsOf(orderId);
+    await admin.db.execute(
+      sql`UPDATE order_items SET line_discount = 1000, line_total = unit_price * 3 - 1000 WHERE order_id = ${orderId}`,
+    );
+    await admin.db.execute(
+      sql`UPDATE orders SET discount_total = 1000, total = subtotal - 1000 + shipping_total + adjustment_total WHERE id = ${orderId}`,
+    );
+    await edit(orderId, [{ itemId: item?.id ?? '', quantity: 6 }]);
+    expect((await orderRow(orderId))?.discount).toBe(1000);
+    await edit(orderId, [{ itemId: item?.id ?? '', quantity: 3 }]);
+    expect((await orderRow(orderId))?.discount).toBe(500);
+  });
+
+  it('an open online payment blocks the edit until it is settled', async () => {
+    const orderId = await place([[v1, 2]]);
+    const [item] = await itemsOf(orderId);
+    await admin.db.execute(
+      sql`INSERT INTO payment_attempts (order_id, attempt_number, provider, amount, state, status) SELECT id, 1, 'mono', total, 'in_flight', 'pending' FROM orders WHERE id = ${orderId}`,
+    );
+    await expect(edit(orderId, [{ itemId: item?.id ?? '', quantity: 1 }])).rejects.toBeInstanceOf(
+      OrderPaymentOpenError,
+    );
+    expect((await itemsOf(orderId))[0]?.qty).toBe(2);
+    await admin.db.execute(
+      sql`UPDATE payment_attempts SET state = 'failed', status = 'failed' WHERE order_id = ${orderId}`,
+    );
+    expect(await edit(orderId, [{ itemId: item?.id ?? '', quantity: 1 }])).toMatchObject({
+      changed: true,
+    });
+  });
+
+  it('the surplus nets refunds that are already held; the result lists the lines that really changed', async () => {
+    const orderId = await place([[v1, 3]]);
+    await markPaid(orderId);
+    await admin.db.execute(
+      sql`INSERT INTO payment_attempts (order_id, attempt_number, provider, amount, state, status, captured_amount, external_id)
+          SELECT id, 1, 'mono', total, 'succeeded', 'paid', total, 'inv-held' FROM orders WHERE id = ${orderId}`,
+    );
+    await admin.db.execute(
+      sql`INSERT INTO refund_operations (order_id, payment_attempt_id, amount, state)
+          SELECT ${orderId}::uuid, id, 129900, 'unknown'::operation_state FROM payment_attempts WHERE order_id = ${orderId}`,
+    );
+    const [item] = await itemsOf(orderId);
+    const result = await edit(orderId, [{ itemId: item?.id ?? '', quantity: 2 }]);
+    // Received 3 x 1299, one unit is already being refunded, the order now costs 2 x 1299: nothing is owed.
+    expect(result.refundDue).toBe(0);
+    expect(result.applied).toHaveLength(1);
+    expect(result.applied[0]).toMatchObject({ itemId: item?.id, from: 3, to: 2 });
+    const noop = await edit(orderId, [{ itemId: item?.id ?? '', quantity: 2 }]);
+    expect(noop.applied).toEqual([]);
+  });
+
+  it('two lines of one variant are refused (they would share one reservation)', async () => {
+    const orderId = await place([[v1, 1]]);
+    await admin.db.execute(
+      sql`INSERT INTO order_items (order_id, product_uid_snapshot, variant_uid_snapshot, variant_id, name_snapshot, sku_snapshot, size_label, color_name, unit_price, quantity, line_total)
+          SELECT order_id, product_uid_snapshot, variant_uid_snapshot, variant_id, name_snapshot, sku_snapshot, size_label, color_name, unit_price, 1, unit_price FROM order_items WHERE order_id = ${orderId}`,
+    );
+    const [item] = await itemsOf(orderId);
+    await expect(edit(orderId, [{ itemId: item?.id ?? '', quantity: 2 }])).rejects.toBeInstanceOf(
+      OrderTransitionError,
+    );
   });
 });

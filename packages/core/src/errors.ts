@@ -267,3 +267,13 @@ export class OrderTransitionError extends DomainError {
     super('ORDER_TRANSITION_INVALID', `The order cannot move there: ${reason}`);
   }
 }
+
+/** An unpaid online order has an open payment attempt at the old amount: editing it now would mismatch. */
+export class OrderPaymentOpenError extends DomainError {
+  constructor() {
+    super(
+      'ORDER_PAYMENT_OPEN',
+      'The order has a payment in progress: wait for it or cancel the order',
+    );
+  }
+}

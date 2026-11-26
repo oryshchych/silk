@@ -37,6 +37,7 @@ const KNOWN_CODES = [
   'REFUND_NO_PROVIDER',
   'REFUND_NOT_ALLOWED',
   'CHECKOUT_INSUFFICIENT_STOCK',
+  'ORDER_PAYMENT_OPEN',
 ] as const;
 
 export type ActionOutcome = { ok: true; data?: unknown } | { ok: false; code: string };

@@ -28,6 +28,8 @@ export async function reserveAdminRefund(
     amount?: Money | undefined;
     attemptId?: string | undefined;
     reason: string;
+    /** A client uuid made once per form (partial refunds only): a double submit reserves once. */
+    requestId?: string | undefined;
     actorUserId: string;
     providers: ProviderMap;
   },
@@ -60,5 +62,12 @@ export async function reserveAdminRefund(
     }
     attemptId = captured[0].id;
   }
-  return [await requestRefund(tx, { ...base, attemptId, amount: money(input.amount) })];
+  return [
+    await requestRefund(tx, {
+      ...base,
+      attemptId,
+      amount: money(input.amount),
+      ...(input.requestId === undefined ? {} : { requestId: input.requestId }),
+    }),
+  ];
 }

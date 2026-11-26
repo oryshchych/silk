@@ -65,6 +65,12 @@ export interface RefundRequest {
   providers: ProviderMap;
   /** The caller writes the audit row itself (an admin action: author and address, one row). */
   auditByCaller?: boolean;
+  /**
+   * A client-made uuid, filled once per form: it becomes the operation's `local_reference` (unique
+   * in the database). The same request again returns the SAME operation instead of reserving a
+   * second one, so a double submit of a PARTIAL refund (whose budget does not run out) pays once.
+   */
+  requestId?: string;
 }
 
 export interface RefundReservation {
@@ -124,6 +130,7 @@ async function reserveUnderLocks(
       amount: input.amount,
       reason: input.reason,
       initiatedByUserId: input.initiatedBy,
+      ...(input.requestId === undefined ? {} : { localReference: input.requestId }),
     })
     .returning({ id: refundOperations.id, localReference: refundOperations.localReference });
   if (operation === undefined) throw new Error('refund operation insert returned no row');
@@ -155,6 +162,28 @@ export async function requestRefund(tx: Tx, input: RefundRequest): Promise<Refun
     );
   if (attempt === undefined)
     throw new RefundNotAllowedError('no such payment attempt on this order');
+  if (input.requestId !== undefined) {
+    // Under the order lock: a repeat of the same request finds the operation the first one made.
+    const [existing] = await tx
+      .select()
+      .from(refundOperations)
+      .where(eq(refundOperations.localReference, input.requestId));
+    if (existing !== undefined) {
+      if (
+        existing.orderId !== input.orderId ||
+        existing.paymentAttemptId !== attempt.id ||
+        existing.amount !== input.amount
+      ) {
+        throw new RefundNotAllowedError('this request id was used for another refund');
+      }
+      return {
+        operationId: existing.id,
+        localReference: existing.localReference,
+        attemptId: attempt.id,
+        amount: input.amount,
+      };
+    }
+  }
   return await reserveUnderLocks(tx, input, attempt);
 }
 

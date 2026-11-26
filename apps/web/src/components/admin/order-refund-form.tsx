@@ -2,11 +2,12 @@
 
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 
 import { refundOrderAction } from '@/actions/admin-orders';
 
 import { StatusLine } from './fields';
-import { readForm, textOf, useAdminAction } from './use-admin-action';
+import { dataField, readForm, textOf, useAdminAction } from './use-admin-action';
 
 const field = 'mt-1 block min-h-11 w-full rounded-md border border-border bg-surface px-3';
 
@@ -26,6 +27,8 @@ export function OrderRefundForm({
   const t = useTranslations('admin.orders');
   const router = useRouter();
   const { message, pending, run, setMessage } = useAdminAction();
+  // One id per form mount: a double click or a retry after a lost answer is the SAME refund.
+  const [requestId, setRequestId] = useState(() => crypto.randomUUID());
   return (
     <form
       className="mt-4 flex flex-wrap items-end gap-3"
@@ -41,11 +44,20 @@ export function OrderRefundForm({
             await refundOrderAction({
               orderId,
               reason: textOf(data, 'reason'),
+              ...(amount === '' ? {} : { requestId }),
               ...(amount === '' ? {} : { amount }),
               ...(attemptId === '' ? {} : { attemptId }),
             }),
-          t('refundStarted'),
+          (result) => {
+            const states = dataField(result, 'states');
+            const list = Array.isArray(states) ? states : [];
+            if (list.includes('unknown')) return t('refundUnknown');
+            if (list.includes('failed')) return t('refundFailed');
+            if (list.some((state) => state !== 'succeeded')) return t('refundNotSent');
+            return t('refundDone');
+          },
           () => {
+            setRequestId(crypto.randomUUID());
             router.refresh();
           },
         );

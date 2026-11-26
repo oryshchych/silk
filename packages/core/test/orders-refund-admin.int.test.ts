@@ -15,6 +15,7 @@ import { setCartItem, startCheckout } from '../src/cart/cart.ts';
 import { RefundBudgetError, RefundNotAllowedError } from '../src/errors.ts';
 import { createOrder } from '../src/orders/create-order.ts';
 import { reserveAdminRefund } from '../src/orders-admin/refund.ts';
+import { requestRefund } from '../src/payments/refunds.ts';
 import { Barrier } from './barrier.ts';
 import { createWorld, type TestWorld } from './fixtures.ts';
 
@@ -206,5 +207,122 @@ describe('admin refund reservation', () => {
       ),
     ).rejects.toThrow();
     expect(await held()).toBe(0);
+  });
+});
+
+describe('review round 1 (#73)', () => {
+  const withId = async (requestId: string, amount: number, h: DbHandle = admin) =>
+    await h.db.transaction(
+      async (tx) =>
+        await reserveAdminRefund(tx, {
+          orderId,
+          amount: money(amount),
+          requestId,
+          reason: 'idempotent',
+          actorUserId: USER,
+          providers,
+        }),
+    );
+
+  it('a double submit of a PARTIAL refund with one request id reserves once (parallel, separate connections)', async () => {
+    const requestId = crypto.randomUUID();
+    const barrier = new Barrier(2);
+    const attempt = async () => {
+      const handle = world.connect();
+      return await handle.db.transaction(async (tx) => {
+        await barrier.wait();
+        return await reserveAdminRefund(tx, {
+          orderId,
+          amount: money(10_000),
+          requestId,
+          reason: 'double',
+          actorUserId: USER,
+          providers,
+        });
+      });
+    };
+    const [a, b] = await Promise.all([attempt(), attempt()]);
+    expect(a[0]?.operationId).toBe(b[0]?.operationId);
+    expect(await held()).toBe(10_000);
+    expect(
+      (
+        await admin.db.execute<{ n: number }>(
+          sql`SELECT count(*)::int AS n FROM refund_operations WHERE order_id = ${orderId}`,
+        )
+      ).rows[0]?.n,
+    ).toBe(1);
+  });
+
+  it('the same request id for another amount, or another order, is refused', async () => {
+    const requestId = crypto.randomUUID();
+    await withId(requestId, 10_000);
+    await expect(withId(requestId, 20_000)).rejects.toBeInstanceOf(RefundNotAllowedError);
+    expect(await held()).toBe(10_000);
+  });
+
+  it('an attempt of another order is refused and creates no operation on either order', async () => {
+    const other =
+      (
+        await admin.db.execute<{ id: string }>(
+          sql`INSERT INTO orders (order_number, customer_email, customer_phone, customer_name, delivery_method, subtotal, total, status, payment_status, captured_total)
+            VALUES ('LS-2026-909090', 'o@example.com', '+380501112244', 'Other Buyer', 'pickup', 5000, 5000, 'pending', 'paid', 5000) RETURNING id`,
+        )
+      ).rows[0]?.id ?? '';
+    const foreignAttempt =
+      (
+        await admin.db.execute<{ id: string }>(
+          sql`INSERT INTO payment_attempts (order_id, attempt_number, provider, amount, state, status, captured_amount, external_id)
+            VALUES (${other}, 1, 'mono', 5000, 'succeeded', 'paid', 5000, 'inv-other') RETURNING id`,
+        )
+      ).rows[0]?.id ?? '';
+    await expect(
+      admin.db.transaction(
+        async (tx) =>
+          await reserveAdminRefund(tx, {
+            orderId,
+            attemptId: foreignAttempt,
+            amount: money(100),
+            reason: 'cross order',
+            actorUserId: USER,
+            providers,
+          }),
+      ),
+    ).rejects.toBeInstanceOf(RefundNotAllowedError);
+    expect((await admin.db.execute(sql`SELECT 1 FROM refund_operations`)).rows).toHaveLength(0);
+  });
+
+  it('the operation records the author, and the generic audit row exists only when the caller does not write it', async () => {
+    await reserve(1000);
+    expect(
+      (
+        await admin.db.execute<{ u: string }>(
+          sql`SELECT initiated_by_user_id::text AS u FROM refund_operations WHERE order_id = ${orderId}`,
+        )
+      ).rows[0]?.u,
+    ).toBe(USER);
+    // reserveAdminRefund sets auditByCaller: the domain wrote no audit row.
+    expect(
+      (await admin.db.execute(sql`SELECT 1 FROM audit_log WHERE action = 'refund'`)).rows,
+    ).toHaveLength(0);
+    const attemptId =
+      (
+        await admin.db.execute<{ id: string }>(
+          sql`SELECT id FROM payment_attempts WHERE order_id = ${orderId}`,
+        )
+      ).rows[0]?.id ?? '';
+    await admin.db.transaction(
+      async (tx) =>
+        await requestRefund(tx, {
+          orderId,
+          attemptId,
+          amount: money(500),
+          reason: 'direct',
+          initiatedBy: USER,
+          providers,
+        }),
+    );
+    expect(
+      (await admin.db.execute(sql`SELECT 1 FROM audit_log WHERE action = 'refund'`)).rows,
+    ).toHaveLength(1);
   });
 });

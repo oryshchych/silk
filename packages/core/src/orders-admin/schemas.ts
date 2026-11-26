@@ -42,5 +42,7 @@ export const refundSchema = z.object({
   orderId: z.uuid(),
   amount: hryvnias.refine((value) => value > 0, 'must be positive').optional(),
   attemptId: z.uuid().optional(),
+  /** Made once per form mount; a repeat of the same request is the same refund. */
+  requestId: z.uuid().optional(),
   reason: text(3, 200),
 });

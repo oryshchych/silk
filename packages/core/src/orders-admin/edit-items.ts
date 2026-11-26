@@ -18,6 +18,7 @@ import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import {
   orderItems,
   orderStatusHistory,
+  paymentAttempts,
   orders,
   outbox,
   refundOperations,
@@ -27,7 +28,12 @@ import type { Tx } from '@store/db/types';
 import { money, prorate } from '@store/shared/money';
 
 import { AdminNotFoundError } from '../catalog-admin/errors.ts';
-import { InsufficientStockError, OrderTransitionError, StockDriftError } from '../errors.ts';
+import {
+  InsufficientStockError,
+  OrderPaymentOpenError,
+  OrderTransitionError,
+  StockDriftError,
+} from '../errors.ts';
 import { acquireLocks } from '../locks/acquire-locks.ts';
 import { ADMIN_SOURCE } from './workflow.ts';
 
@@ -44,6 +50,8 @@ export interface EditItemsResult {
   totalTo: number;
   /** Received money the cheaper order no longer needs: a human starts the refund. */
   refundDue: number;
+  /** What really changed, per line: the audit row records this, not the request. */
+  applied: { itemId: string; sku: string; from: number; to: number }[];
 }
 
 const EDITABLE = ['pending', 'confirmed', 'processing'];
@@ -72,11 +80,29 @@ export async function editOrderItems(
   if (order.fiscalStatus !== 'not_required') {
     throw new OrderTransitionError('a fiscal receipt exists or is queued for this order');
   }
+  // An unpaid online order has a payment attempt (and a provider invoice) at the OLD amount: a
+  // customer could still pay it. Editing waits until it is settled or the order is cancelled.
+  const [open] = await tx
+    .select({ id: paymentAttempts.id })
+    .from(paymentAttempts)
+    .where(
+      and(
+        eq(paymentAttempts.orderId, order.id),
+        inArray(paymentAttempts.state, ['pending', 'in_flight']),
+        inArray(paymentAttempts.status, ['pending', 'authorized']),
+      ),
+    )
+    .limit(1);
+  if (open !== undefined) throw new OrderPaymentOpenError();
   const items = await tx
     .select()
     .from(orderItems)
     .where(eq(orderItems.orderId, order.id))
     .orderBy(asc(orderItems.id));
+  // The reservation of a variant is one row per order; two lines of one variant would share it.
+  if (new Set(items.map((item) => item.variantId)).size !== items.length) {
+    throw new OrderTransitionError('two lines share a variant: edit is not supported');
+  }
   await acquireLocks(tx, { order_items: items.map((item) => item.id) });
 
   // Only real differences count: a repeat of the same edit is a no-op, not a second history row.
@@ -94,6 +120,7 @@ export async function editOrderItems(
       totalFrom: order.total,
       totalTo: order.total,
       refundDue: 0,
+      applied: [],
     };
   }
   const removed = new Set(effective.filter((e) => e.quantity === 0).map((e) => e.item.id));
@@ -150,7 +177,13 @@ export async function editOrderItems(
             RETURNING id`,
       );
       if (moved.rows.length === 0) throw new StockDriftError('reservation does not cover the edit');
-      const discount = prorate(money(item.lineDiscount), quantity, item.quantity);
+      // A smaller quantity keeps its share of the discount (one half-up rounding); a larger one
+      // keeps the discount it had: never scaled UP, so a capped or fixed promo cannot exceed its
+      // limit. Thresholds (minimum order, free shipping) are not re-evaluated, see the PR notes.
+      const discount =
+        quantity >= item.quantity
+          ? money(item.lineDiscount)
+          : prorate(money(item.lineDiscount), quantity, item.quantity);
       await tx
         .update(orderItems)
         .set({
@@ -215,5 +248,17 @@ export async function editOrderItems(
         .onConflictDoNothing();
     }
   }
-  return { orderId: order.id, changed: true, totalFrom: order.total, totalTo: total, refundDue };
+  return {
+    orderId: order.id,
+    changed: true,
+    totalFrom: order.total,
+    totalTo: total,
+    refundDue,
+    applied: effective.map((e) => ({
+      itemId: e.item.id,
+      sku: e.item.skuSnapshot,
+      from: e.item.quantity,
+      to: e.quantity,
+    })),
+  };
 }
