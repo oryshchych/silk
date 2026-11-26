@@ -27,6 +27,7 @@ import {
   productImages,
   productVariants,
   products,
+  reviews,
 } from '../packages/db/src/schema.ts';
 import net from 'node:net';
 
@@ -558,6 +559,75 @@ export async function runAdminSmoke({
       'orders: a manager cancels with a reason; the order is cancelled',
       cancelled.body.includes('"ok":true') && (await statusNow()) === 'cancelled',
     );
+    // Reviews (phase 7): who moderates, what a decision changes, and that the cached product page follows.
+    const pendingReview = (await db.select().from(reviews)).find(
+      (row) => !row.isApproved && row.rejectedAt === null,
+    );
+    if (pendingReview !== undefined) {
+      const reviewProduct = (await db.select().from(products)).find(
+        (row) => row.id === pendingReview.productId,
+      );
+      const reviewPath = `/product/${reviewProduct?.slug ?? ''}`;
+      const before = await (await fetch(base + reviewPath)).text();
+      const queue = await get('/admin/reviews', cookie(contentToken));
+      const managerQueue = await get('/admin/reviews', cookie(managerToken));
+      check(
+        'reviews: a content role sees the queue; a manager gets the not-found page with no review data',
+        queue.status === 200 &&
+          queue.html.includes('type="button"') &&
+          !managerQueue.html.includes(pendingReview.body ?? 'no-body-marker'),
+      );
+      const refusedDecision = await form(
+        'decideReviewAction',
+        { id: pendingReview.id, decision: 'approve' },
+        cookie(managerToken),
+        '/admin/reviews',
+      );
+      const stillPending = (await db.select().from(reviews)).find(
+        (row) => row.id === pendingReview.id,
+      );
+      check(
+        'reviews: a manager cannot approve (FORBIDDEN) and the review stays pending',
+        refusedDecision.body.includes('FORBIDDEN') && stillPending?.isApproved === false,
+      );
+      const approved = await form(
+        'decideReviewAction',
+        { id: pendingReview.id, decision: 'approve' },
+        cookie(contentToken),
+        '/admin/reviews',
+      );
+      const after = await (await fetch(base + reviewPath)).text();
+      const nowApproved = (await db.select().from(reviews)).find(
+        (row) => row.id === pendingReview.id,
+      );
+      check(
+        'reviews: a content role approves; the product page shows the text after the commit and the counters moved',
+        approved.body.includes('"ok":true') &&
+          nowApproved?.isApproved === true &&
+          !before.includes(pendingReview.body ?? 'x-no-body') &&
+          after.includes(pendingReview.body ?? 'x-no-body') &&
+          /data-review-count="\d+"/.test(after),
+      );
+      const ratingLd = [...after.matchAll(/<script type="application\/ld\+json">(.*?)<\/script>/g)]
+        .map((match) => match[1] ?? '')
+        .find((json) => json.includes('aggregateRating'));
+      const visible = /data-review-count="(\d+)"/.exec(after)?.[1];
+      check(
+        'reviews: the AggregateRating markup equals the visible review count',
+        ratingLd !== undefined && ratingLd.includes(`"reviewCount":${visible ?? 'none'}`),
+      );
+      const rejected = await form(
+        'decideReviewAction',
+        { id: pendingReview.id, decision: 'reject' },
+        cookie(contentToken),
+        '/admin/reviews',
+      );
+      const gone = await (await fetch(base + reviewPath)).text();
+      check(
+        'reviews: refusing it again removes the text from the product page',
+        rejected.body.includes('"ok":true') && !gone.includes(pendingReview.body ?? 'x-no-body'),
+      );
+    }
     // Customers and the CSV routes (phase 5): the same role rules on the real pages and files.
     const customerList = await get('/admin/customers', cookie(managerToken));
     const contentCustomers = await get('/admin/customers', cookie(contentToken));

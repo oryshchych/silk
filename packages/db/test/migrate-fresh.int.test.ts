@@ -1098,3 +1098,19 @@ describe('0015_customer_auth', () => {
     expect(rows[0]?.indexdef).toContain('lower((customer_email)::text)');
   });
 });
+
+describe('0017_review_moderation', () => {
+  it('a refused review is a column, and the two review checks exist', async () => {
+    const column = await app.query(
+      `SELECT 1 FROM information_schema.columns WHERE table_name = 'reviews' AND column_name = 'rejected_at'`,
+    );
+    expect(column.rowCount).toBe(1);
+    const checks = await app.query<{ conname: string }>(
+      `SELECT conname FROM pg_constraint WHERE conname IN ('reviews_not_both', 'reviews_text_length') ORDER BY 1`,
+    );
+    expect(checks.rows.map((row) => row.conname)).toEqual([
+      'reviews_not_both',
+      'reviews_text_length',
+    ]);
+  });
+});

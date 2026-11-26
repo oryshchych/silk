@@ -26,6 +26,8 @@ const product = serialize(productDetailDto, {
   badge: 'none',
   ratingAvg: null,
   reviewsCount: 0,
+  fit: null,
+  reviews: [],
   metaTitle: null,
   metaDescription: null,
   ogImageUrl: null,

@@ -6,6 +6,7 @@ import { z } from 'zod';
 
 import { addAddress, addressInputSchema, deleteAddress } from '@store/core/account-addresses';
 import { cancelStockAlert, subscribeStockAlert } from '@store/core/account-alerts';
+import { reviewInputSchema, submitReview } from '@store/core/reviews';
 import { reorderMyOrder } from '@store/core/account-orders';
 import { addToWishlist, removeFromWishlist } from '@store/core/account-wishlist';
 import type { CustomerSession } from '@store/core/customer-session';
@@ -188,5 +189,20 @@ export async function cancelStockAlertAction(
     input,
     z.object({ id: z.uuid() }),
     async (tx, who, data) => await cancelStockAlert(tx, alertWho(who), data.id),
+  );
+}
+
+/** A review of a product I bought: the purchase is checked in the database, the size comes from the order line. */
+export async function submitReviewAction(input: unknown): Promise<CustomerActionResult<string>> {
+  return await customerAction(
+    input,
+    reviewInputSchema,
+    async (tx, who, data) =>
+      await submitReview(
+        tx,
+        { customerId: who.customer.customerId, userId: who.customer.userId, ip: who.ip },
+        data,
+      ),
+    { notFoundCodes: [] },
   );
 }

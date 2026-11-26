@@ -161,6 +161,15 @@
       "alerted": "We will email you when the size is back.",
       "error": "That did not work. Please try again.",
       "available": "This size can be ordered now."
+    },
+    "reviews": {
+      "title": "Customer reviews",
+      "summary": "Rated {rating} out of 5 ({count})",
+      "fit": "{percent}% say it fits true to size ({total} answered)",
+      "stars": "{rating} out of 5",
+      "verifiedBuyer": "Buyer",
+      "size": "size {size}",
+      "reply": "Reply from the shop:"
     }
   },
   "search": {
@@ -352,7 +361,8 @@
       "stock": "Stock",
       "orders": "Orders",
       "customers": "Customers",
-      "users": "Users"
+      "users": "Users",
+      "reviews": "Reviews"
     },
     "dashboard": {
       "title": "Overview",
@@ -907,6 +917,21 @@
       "resetPassword": "Reset password",
       "saved": "Saved.",
       "passwordReset": "Password reset; the person was signed out everywhere."
+    },
+    "reviews": {
+      "title": "Reviews",
+      "filter": "Filter",
+      "status": {
+        "pending": "Pending",
+        "approved": "Approved",
+        "rejected": "Rejected"
+      },
+      "empty": "No reviews.",
+      "approve": "Approve",
+      "reject": "Reject",
+      "reply": "Reply from the shop (shown on the product page)",
+      "saveReply": "Save the reply",
+      "saved": "Saved."
     }
   },
   "consent": {
@@ -961,7 +986,8 @@
       "orders": "Orders",
       "profile": "Profile",
       "addresses": "Addresses",
-      "wishlist": "Wishlist"
+      "wishlist": "Wishlist",
+      "reviews": "My reviews"
     },
     "noOrders": "No orders yet.",
     "reorder": "Order again",
@@ -1003,6 +1029,19 @@
     "unsubscribeTitle": "Stop a back-in-stock alert",
     "unsubscribeIntro": "Confirm that you no longer want to hear when this size is back.",
     "unsubscribeConfirm": "Unsubscribe",
-    "unsubscribed": "Done: no more emails about this size."
+    "unsubscribed": "Done: no more emails about this size.",
+    "noReviewable": "You can review a product you bought and received.",
+    "reviewDone": "You already reviewed this product.",
+    "rating": "Rating",
+    "reviewTitle": "Title",
+    "reviewBody": "Your review",
+    "fitQuestion": "How does the size fit?",
+    "fitSmall": "Runs small",
+    "fitTrue": "True to size",
+    "fitLarge": "Runs large",
+    "reviewSubmit": "Send the review",
+    "reviewSent": "Thank you! The review will appear on the product page after it is checked.",
+    "reviewInvalid": "That did not work: you may have reviewed this product already or sent too many today.",
+    "reviewNotAllowed": "Only buyers of this product can review it."
   }
 }

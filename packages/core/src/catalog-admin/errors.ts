@@ -5,6 +5,7 @@ export class AdminNotFoundError extends DomainError {
     what:
       | 'product'
       | 'variant'
+      | 'review'
       | 'category'
       | 'color'
       | 'size'
