@@ -427,8 +427,8 @@ try {
         page.html.includes('Сторінку не знайдено'),
     );
   }
+  await runLegalSmoke({ base, databaseUrl, site: SITE, check, storedFiles });
   await runSeoSmoke({ base, site: SITE, check, storedFiles });
-  await runLegalSmoke({ base, site: SITE, check, storedFiles });
   await runPostFloodSmoke({ base, site: SITE, check, storedFiles });
   await runAnalyticsSmoke({ base, check });
   await runCheckoutSmoke({ base, buildRoot: copy, check, storedFiles });

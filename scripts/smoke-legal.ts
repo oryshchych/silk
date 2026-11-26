@@ -5,10 +5,12 @@
  * as "not set", the FAQ markup equals the visible questions, the sitemap lists the pages with a real lastmod,
  * and unknown words are 404s that store nothing.
  */
+import { createDb } from '../packages/db/src/client.ts';
 import { LEGAL_KINDS, LEGAL_LOCALES, legalPath } from '../packages/shared/src/legal.ts';
 import { legalDraft } from '../packages/shared/src/legal-drafts.ts';
 
 interface Context {
+  databaseUrl: string;
   base: string;
   site: string;
   check: (name: string, ok: boolean) => void;
@@ -30,7 +32,44 @@ async function page(url: string): Promise<{ status: number; html: string }> {
   return { status: response.status, html: await response.text() };
 }
 
-export async function runLegalSmoke({ base, site, check, storedFiles }: Context): Promise<void> {
+/** Hostile html written AROUND the service (straight into the table): the page must still render it inert. */
+const HOSTILE =
+  '<p>' +
+  NOTICE.en +
+  '</p><script>window.__pwned=1</script><img src=x onerror="window.__pwned=2">' +
+  '<a href="javascript:window.__pwned=3">click</a><iframe src="https://evil.example"></iframe>' +
+  '<p onclick="window.__pwned=4">safe text</p><svg onload="window.__pwned=5"></svg>';
+
+export async function runLegalSmoke({
+  base,
+  databaseUrl,
+  site,
+  check,
+  storedFiles,
+}: Context): Promise<void> {
+  // A newer published version of terms/en whose stored html is hostile. Nothing has rendered terms/en yet,
+  // so this is what the page cache is filled from (a smoke run starts from a fresh build copy).
+  const handle = createDb(databaseUrl, { max: 1 });
+  try {
+    await handle.pool.query(
+      `INSERT INTO legal_documents (kind, locale, version, title, status, body_html, effective_from, published_at)
+       VALUES ('terms', 'en', '2', $1, 'published', $2, now() - interval '1 hour', now() - interval '1 hour')`,
+      [legalDraft('terms', 'en').title, HOSTILE],
+    );
+  } finally {
+    await handle.close();
+  }
+  const hostile = await page(`${base}/en${legalPath('terms')}`);
+  check(
+    'a hostile stored body renders inert over a built server (no script, handler, javascript: URL, iframe or svg), its text stays',
+    hostile.status === 200 &&
+      !/<script[^>]*>window|onerror=|onclick=|onload=|javascript:|<iframe|<svg/i.test(
+        hostile.html,
+      ) &&
+      hostile.html.includes('safe text') &&
+      hostile.html.includes('click'),
+  );
+
   for (const locale of LEGAL_LOCALES) {
     for (const kind of LEGAL_KINDS) {
       const path = `${prefix(locale)}${legalPath(kind)}`;
