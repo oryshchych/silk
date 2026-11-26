@@ -1,0 +1,7 @@
+ALTER TABLE "return_requests" DROP CONSTRAINT "return_requests_refund_operation_id_refund_operations_id_fk";
+--> statement-breakpoint
+ALTER TABLE "return_requests" ADD CONSTRAINT "return_requests_refund_op_same_order_fk" FOREIGN KEY ("refund_operation_id","order_id") REFERENCES "public"."refund_operations"("id","order_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+CREATE UNIQUE INDEX "refund_ops_return_live_uq" ON "refund_operations" USING btree ("return_request_id") WHERE "refund_operations"."return_request_id" IS NOT NULL AND "refund_operations"."state" IN ('pending', 'in_flight', 'unknown', 'succeeded');--> statement-breakpoint
+CREATE INDEX "return_requests_customer_idx" ON "return_requests" USING btree ("customer_id","created_at") WHERE "return_requests"."customer_id" IS NOT NULL;--> statement-breakpoint
+ALTER TABLE "return_requests" ADD CONSTRAINT "return_requests_received_status" CHECK ("return_requests"."received_at" IS NULL OR "return_requests"."status" IN ('received', 'refunded', 'closed'));--> statement-breakpoint
+ALTER TABLE "return_requests" ADD CONSTRAINT "return_requests_refund_needs_amount" CHECK ("return_requests"."refund_operation_id" IS NULL OR "return_requests"."refund_amount" IS NOT NULL);

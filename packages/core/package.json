@@ -74,7 +74,9 @@
     "./account-alerts": "./src/account/stock-alerts.ts",
     "./reviews": "./src/reviews/customer.ts",
     "./reviews-read": "./src/reviews/read.ts",
-    "./reviews-moderation": "./src/reviews/moderation.ts"
+    "./reviews-moderation": "./src/reviews/moderation.ts",
+    "./returns": "./src/returns/customer.ts",
+    "./returns-admin": "./src/returns/admin.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"

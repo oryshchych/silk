@@ -16,6 +16,8 @@ const INVALID_CODES: readonly string[] = [
   'WISHLIST_FULL',
   'REVIEW_EXISTS',
   'REVIEW_RATE',
+  'RETURN_ITEMS',
+  'RETURN_LIMIT',
 ];
 
 /** Mutations of a signed-in customer: a person edits a few things a minute, a script hundreds. */
@@ -61,7 +63,7 @@ export async function customerAction<S extends z.ZodType, T>(
     if ((options.notFoundCodes ?? ['ADDRESS_NOT_FOUND']).includes(code)) {
       return { ok: false, code: 'notFound' };
     }
-    // A refusal the person caused (a limit, a size that can be bought now): the UI says so, no error is logged.
+    // A refusal the person caused (a limit, a duplicate, a size that can be bought now): the UI says so, no error is logged.
     if (INVALID_CODES.includes(code) || code.startsWith('CHECKOUT_')) {
       return { ok: false, code: 'invalid' };
     }

@@ -48,6 +48,7 @@ confirmed TOTP before a session counts; so must anyone who enrolled one.
 | `customers.view` | owner, admin, manager | Open the customer list and a customer card (name, email, phone, orders, sizes; no cost) |
 | `customers.manage` | owner, admin, manager | Set a customer's tags and internal note |
 | `customers.export` | owner, admin | Download the customers CSV (email and phone: personal data; every download audited) |
+| `returns.manage` | owner, admin, manager | Read return requests (with the customer's e-mail), approve, refuse, record the physical receipt (the ONLY step that puts units back on the shelf) and close a return without a refund; the refund itself needs `orders.refund` |
 | `reviews.moderate` | owner, admin, content | Read customer reviews (text, rating, size, fit: never the reviewer's e-mail, so the `content` role sees no customer data), approve, refuse and reply; every decision recomputes the product's rating and fit counters and is audited |
 | `orders.confirm_payment` | owner, admin, manager | Record a received bank transfer (the confirmed source of a transfer payment, ADR-4) |
 | `media.upload` | owner, admin, content | Upload and edit product images |
@@ -173,11 +174,32 @@ refused before its body is read.
 | Edit the profile (names, phone, language) | `updateProfileAction`; the audit row names the fields, never the values |
 | Save sizes | `saveSizesAction`; a size of the wrong system is refused; the browser gets only the labels in the readable `silk_sizes` cookie |
 | Newsletter on or off | `setNewsletterAction`; the consent row (`newsletter_subscribers`) records the time and the source `account`; a repeat records nothing; the history is in `audit_log` |
+| Review a product I bought | `submitReviewAction`; the purchase is decided in the database from MY orders (not cancelled or returned; shipped, delivered or paid), the size is copied from the order line, one per product, five a day; the text is stored as plain text and shown escaped; the review is PENDING and absent from every cached page until a moderator approves it |
+| Ask for a return | `requestReturnAction`; my order only (another number is "not found"), DELIVERED, inside the window on the database clock, units capped by what was ordered minus non-refused requests, counted under the order and line locks (ADR-22); it changes NO stock and NO money |
 | Add or delete an address | `addAddressAction`, `deleteAddressAction`; an id of another customer is "not found"; ten at most (a per-customer lock), one default |
 
 "Your size" on a product page never touches the cached HTML: the saved size travels in the `silk_sizes`
 cookie (a label, not a secret) and a client component reads it after hydration. A smoke check compares the
 product page byte for byte for an anonymous and a signed-in visitor.
+
+### Returns and reviews (admin)
+
+- **Stock moves in one place.** `receiveReturn` (permission `returns.manage`) is the only step that adds units back (ADR-18 "receive
+  return"): a conditional UPDATE of the line's received quantity, ONE atomic `stock_quantity + delta`, a `stock_adjustments` row (reason
+  `return`), all in one transaction under the per-return advisory lock, then the order (3), lines (4) and variants (8) via
+  `acquireLocks`. A repeat of the same total, or a parallel call, applies the difference once. Approving or refusing never touches stock.
+- **Money moves through the phase 5 flow.** `reserveReturnRefund` (needs `orders.refund` AND `returns.manage`) only after the receipt, and
+  the amount is decided on the server from what was RECEIVED: `min(the amount agreed at approval, prorate(line total, received units))`
+  with cumulative proration per order line (several partial returns add up to exactly the line total). At most one LIVE operation per
+  return (claim under the lock, a composite key tying it to the same order, a partial unique index on each side); a FAILED refund is
+  released and may be retried with a new request id, one that is pending, in flight, unknown or succeeded blocks a new one; the order's
+  refund budget still bounds the money. The provider is called after the commit. The return becomes "refunded" only when the operation
+  SUCCEEDED, by the refund action or the worker's sweep, with an audit row (`return.refunded`); the admin page only reads. A receipt
+  is refused once a refund is linked, and an approval cannot grant more than the returned units are worth (a goodwill amount is a manual
+  refund on the order).
+- **Reviews:** `reviews.moderate` approves, refuses and replies; every decision recomputes the product's rating and fit counters from the
+  approved rows in the same transaction and drops the product's cached page after the commit; the audit rows name the decision, never the text.
+  `AggregateRating` markup is emitted only when the page shows approved reviews, with the same count (a smoke check compares them).
 
 ## Catalog data and the cost
 

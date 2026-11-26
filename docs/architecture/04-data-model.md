@@ -55,6 +55,7 @@ admin_users · audit_log · newsletter_subscribers · jobs (pg-boss)
 - `UNIQUE (idempotency_key)` на `orders` — подвійна відправка checkout не створює друге замовлення (ADR-11)
 - `UNIQUE (provider, external_id)` на `payment_events` — ідемпотентність вебхуків
 - `UNIQUE (promo_code_id, order_id)` та `UNIQUE (promo_code_id, customer_id)` (частковий, коли є ліміт на клієнта) — промокод не застосується двічі
+- `return_requests`: `received_at` (лише для received/refunded/closed), `refund_operation_id` (складений FK з `order_id` на `refund_operations(id, order_id)`, RESTRICT; потрібен `refund_amount`), `refund_operations.return_request_id` — не більше ОДНОЇ живої (pending/in_flight/unknown/succeeded) операції на повернення; `stock_adjustments.reason` має `return` (приймання повернення, ADR-18). DROP+ADD CHECK причини склад має лишатися в одній транзакції міграції
 - `UNIQUE (product_id, customer_id)` на `reviews` — один відгук на товар від клієнта; `rejected_at` (відхилений відгук лишається, щоб його не подавали знову), `CHECK NOT (is_approved AND rejected_at IS NOT NULL)`, `CHECK char_length(body|admin_reply) <= 2000`; лічильники `products.rating_avg / reviews_count / fit_*` перераховуються з СХВАЛЕНИХ рядків у транзакції рішення під одним advisory-локом на товар
 - `CHECK (rating BETWEEN 1 AND 5)`
 - `slug` unique на `products`, `categories`, `pages`, `blog_posts`

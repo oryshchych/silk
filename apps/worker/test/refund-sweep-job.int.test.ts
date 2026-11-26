@@ -195,6 +195,7 @@ describe('the outbox topics', () => {
       'alerted',
       'failed',
       'level',
+      'returnsRefunded',
       'scope',
       'sent',
     ]);
