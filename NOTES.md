@@ -326,3 +326,5 @@ Left as notes:
 - `packages/core/test/auth.int.test.ts` "unknown account costs about as much time as a wrong password" failed once under full-suite load and passes alone. A timing comparison is sensitive to a loaded machine; if it fails again in CI, widen the tolerance or repeat the samples instead of skipping it.
 
 - Phase 5: `transitions.ts` still allows `pending`/`confirmed` to `shipped` (skeleton jump) because the webhook and worker tests build on it. The ADMIN path enforces the one-step workflow instead: `shipOrder(..., { requireConfirmed: true })` refuses a pending order, and `availableActions` does not offer Ship before Confirm. Remove the two entries together with those tests when the worker no longer ships.
+
+- Phase 5 (2026-11-26): `catalog-admin.int.test.ts` "two category moves racing to make a cycle" failed once under the full integration suite and passes alone: a flaky candidate under load, like the auth timing test.

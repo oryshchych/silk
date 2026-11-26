@@ -82,6 +82,8 @@ confirmed TOTP before a session counts; so must anyone who enrolled one.
 
 The order card lists the email of the staff member behind each history row (note, status change, item edit) to every role that holds `orders.view`; like the stock history it never leaves the admin.
 
+The reservation list on a variant's stock history page (the orders that hold the reserved quantity) is order data: a role without `orders.view` (content) receives only the reserved QUANTITY, the orders are not read for it.
+
 The stock history lists the author's email next to every change, to every role that can open the admin (`admin.view`, content included): staff see who counted or wrote off stock. It is not exposed outside the admin. A replayed request id or a stocktake to the current quantity writes no second audit row: the audit log records a change once.
 
 ## Authentication facts
