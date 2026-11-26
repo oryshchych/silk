@@ -25,6 +25,7 @@ import { runAccountSmoke } from './smoke-account.ts';
 import { runAdminSmoke } from './smoke-admin.ts';
 import { runContentSmoke } from './smoke-content.ts';
 import { runCheckoutSmoke } from './smoke-checkout.ts';
+import { runImportSmoke } from './smoke-import.ts';
 import { runLegalSmoke } from './smoke-legal.ts';
 import { runPaymentSmoke } from './smoke-payments.ts';
 import { runAnalyticsSmoke, runPostFloodSmoke, runSeoSmoke } from './smoke-seo.ts';
@@ -429,6 +430,13 @@ try {
     );
   }
   await runLegalSmoke({ base, databaseUrl, site: SITE, check, storedFiles });
+  await runImportSmoke({
+    base,
+    databaseUrl,
+    authSecret: AUTH_SECRET_FOR_SMOKE,
+    siteOrigin: SITE,
+    check,
+  });
   await runContentSmoke({
     base,
     databaseUrl,

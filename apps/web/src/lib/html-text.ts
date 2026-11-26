@@ -1,3 +1,5 @@
+import { visibleText } from '@store/shared/content-text';
+
 const NAMED: Record<string, string> = {
   amp: '&',
   lt: '<',
@@ -49,10 +51,13 @@ export function htmlToParagraphs(html: string | null): string[] {
     // A tag starts with a letter or a slash and a letter: `5 < 6 > 3` is text, not a tag.
     .replace(/<\/?[a-zA-Z][^>]*>/g, '');
   const decoded = decodeEntities(text);
-  return decoded
-    .split('\n')
-    .map((line) => line.replace(/\s+/g, ' ').trim())
-    .filter((line) => line !== '');
+  return (
+    decoded
+      .split('\n')
+      // The same "visible text" rule as the readiness report: a line of zero-width characters is no line.
+      .map((line) => visibleText(line))
+      .filter((line) => line !== '')
+  );
 }
 
 /** Single-line text cut at a word boundary, for meta descriptions and JSON-LD. */

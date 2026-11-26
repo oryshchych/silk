@@ -55,6 +55,21 @@ export default async function ImportExportPage() {
           ) : null}
         </section>
       ) : null}
+      {canImport ? (
+        <section aria-labelledby="template" className="space-y-2">
+          <h2 id="template" className="text-lg font-semibold">
+            {t('templateTitle')}
+          </h2>
+          <p className="max-w-3xl text-text-muted">{t('templateHint')}</p>
+          <a
+            href="/admin/export/content-template"
+            download
+            className="inline-flex min-h-11 items-center rounded-md bg-accent px-4 font-medium text-accent-contrast"
+          >
+            {t('templateCsv')}
+          </a>
+        </section>
+      ) : null}
       {canImport ? <ImportPanel /> : null}
       {!canImport && !canExport ? <p>{t('noAccess')}</p> : null}
     </div>

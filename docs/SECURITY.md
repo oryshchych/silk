@@ -78,7 +78,8 @@ confirmed TOTP before a session counts; so must anyone who enrolled one.
 | Assign attribute values to a product | `catalog.edit` | `setProductAttributesAction` |
 | Upload a product photo | `media.upload` | `POST /admin/upload/product-image` (`app/admin/upload/product-image/route.ts`): its own route, see "Uploads" below |
 | Edit a photo's alt text, colour, order; delete it | `media.upload` | `updateProductImageAction`, `deleteProductImageAction` |
-| Preview and commit a CSV import | `catalog.import` | `previewImportAction` (writes nothing), `commitImportAction` (`actions/admin-import.ts`): a column the role may not write (price without `catalog.price`, cost without `catalog.cost.view`) turns the row into an error; each written row has its own audit row |
+| Preview and commit a CSV import | `catalog.import` | `POST /admin/upload/products-csv?mode=preview` or `commit` (`app/admin/upload/products-csv/route.ts`): its own route like the photo upload (the proxy's 64 KB body limit is why), see "Uploads" below; it runs `previewImport` (writes nothing) and `commitImport` (`lib/admin/csv-import.ts`) through `adminAction`: a column the role may not write (price without `catalog.price`, cost without `catalog.cost.view`) turns the row into an error; each written row has its own audit row |
+| Download the content template | `catalog.import` | `GET /admin/export/content-template`: a header and one example row the import refuses (`EXAMPLE-` SKU); no database read |
 | Read the content readiness report (what is missing before launch) | `admin.view` | `/admin/content-readiness` (`requirePermission`); `readContentReadiness` takes a `Reader`, its DTO (`dto/content-readiness.ts`) has no cost, price or customer field in any shape, so every role gets the same shape; `private, no-store` and `noindex` from the admin proxy; staff text is escaped by React; the CLI form (`pnpm content:check`) runs in a `READ ONLY` transaction, takes the URL only from the environment and refuses a production-looking database outside a production process |
 | Download the product CSV | `catalog.export` | `GET /admin/export/products` (`app/admin/export/products/route.ts`): the cost column only for `catalog.cost.view`, every export audited |
 | Change a quantity or take a line off an unshipped order | `orders.edit` | `editOrderItemsAction`: refused while an online payment is open, after a fiscal receipt, and for a shipped or cancelled order; the audit row records the lines that really changed |
@@ -284,9 +285,16 @@ The row, its order number and the 30-photo cap are decided under a per-product a
 without an admin session, and every response is `private, no-store`.
 ## Import and export
 
-CSV only (XLSX needs a library: owner queue). The parser is bounded (2 MB, 1000 rows, 30 columns,
-20 000 characters a cell) and a file goes through a server action, so `proxy.ts`'s 64 KB body
-limit applies, and it is a limit in BYTES (the screen and the action check UTF-8 bytes, 56 000): about 250 rows per file. An import is PREVIEWED first (every row validated, nothing
+CSV only (XLSX needs a library: owner queue Q46). The parser is bounded (2 MB, 1000 rows, 30 columns,
+20 000 characters a cell). A file goes through its OWN ROUTE, `POST /admin/upload/products-csv`, not a
+server action, because `proxy.ts` buffers every body it handles (64 KB: about 25 rows once the texts are in);
+the route is under `admin/upload/`, which the proxy's matcher skips, and it does what the photo route does,
+in the same order and BEFORE a byte of the body is read: a per-client limit, the content type (`text/csv`
+or `text/plain`, 415 otherwise), Origin (CSRF), a full session from the database, the `catalog.import`
+permission, a per-user limit. Then ONE in-flight slot over everybody (429 `BUSY`, held to the end: a commit
+is a long transaction), the 2 MB cap enforced WHILE the body streams (413) and a read deadline (408), strict
+UTF-8 (422), and the same `adminAction` as before (all its checks and the audit again). The columns are the
+ones of `CONTENT_COLUMNS`; the template download carries one example row whose SKU the import refuses. An import is PREVIEWED first (every row validated, nothing
 written), then committed; each row is written in its own savepoint through the same domain
 functions as the editor, so one bad row never undoes the good ones and every rule (unique slug and
 SKU, old price over price, 301 on a renamed slug) holds. An empty cell on an update changes

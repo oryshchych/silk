@@ -1,29 +1,25 @@
-'use server';
-
 import { randomUUID } from 'node:crypto';
 
-import { CsvError, parseCsv } from '@store/core/admin-csv';
+import { CSV_LIMITS, CsvError, parseCsv } from '@store/core/admin-csv';
 import { ImportFileError } from '@store/core/admin-errors';
 import { applyImport, planImport } from '@store/core/admin-import';
 import { can } from '@store/core/auth-permissions';
 import { z } from 'zod';
 
-import { adminAction } from '@/lib/admin/bound-action';
-import { catalogAction } from '@/lib/admin/catalog-action';
+import { adminAction } from './bound-action';
+import { catalogAction } from './catalog-action';
 
 /**
- * The CSV arrives as text in a server action, so the body passes through `proxy.ts` and its 64 KB
- * limit (`proxyClientMaxBodySize`): that is about 250 rows. A bigger file is refused at the
- * limit with a clear message; the file is split. (A dedicated route like the photo upload would
- * lift it; queued.)
+ * The CSV import, previewed and committed. Called by `POST /admin/upload/products-csv`, which has
+ * already read the body under its own caps; every check of `adminAction` (Origin, session, the
+ * `catalog.import` permission, the per-user limit, validation, audit) still runs here, so this
+ * module is as safe as a server action on its own.
  */
-/** BYTES, not characters: the proxy limit is on the request body, and a Cyrillic letter is two bytes. */
-const MAX_CSV_BYTES = 56_000;
 const schema = z.object({
   csv: z
     .string()
     .min(1)
-    .refine((value) => Buffer.byteLength(value, 'utf8') <= MAX_CSV_BYTES, 'too large')
+    .refine((value) => Buffer.byteLength(value, 'utf8') <= CSV_LIMITS.maxBytes, 'too large')
     .refine((value) => !value.includes('\u0000'), 'no NUL byte'),
 });
 
@@ -37,30 +33,34 @@ function parse(csv: string) {
 }
 
 /** Validates every row and writes nothing. */
-export async function previewImportAction(input: unknown) {
+export async function previewImport(csv: string) {
   return await adminAction({
     permission: 'catalog.import',
     schema,
-    input,
-    run: async ({ tx, input: parsed, session, skipAudit }) => {
-      const plan = await planImport(tx, parse(parsed.csv), {
+    input: { csv },
+    run: async ({ tx, input, session, skipAudit }) => {
+      const plan = await planImport(tx, parse(input.csv), {
         canPrice: can(session.role, 'catalog.price'),
         canSeeCost: can(session.role, 'catalog.cost.view'),
       });
       skipAudit();
-      return { results: plan.results, ignoredColumns: plan.ignoredColumns };
+      return {
+        results: plan.results,
+        ignoredColumns: plan.ignoredColumns,
+        absentColumns: plan.absentColumns,
+      };
     },
   });
 }
 
 /** Applies the valid rows (each in its own savepoint) and reports the rest by line. */
-export async function commitImportAction(input: unknown) {
+export async function commitImport(csv: string) {
   return await catalogAction({
     permission: 'catalog.import',
     schema,
-    input,
-    op: async (tx, parsed, session) => {
-      const plan = await planImport(tx, parse(parsed.csv), {
+    input: { csv },
+    op: async (tx, input, session) => {
+      const plan = await planImport(tx, parse(input.csv), {
         canPrice: can(session.role, 'catalog.price'),
         canSeeCost: can(session.role, 'catalog.cost.view'),
       });

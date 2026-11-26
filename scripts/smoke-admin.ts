@@ -924,24 +924,29 @@ export async function runAdminSmoke({
     importRows[49] = `IMP${suffix}-50,imp${suffix}-50,Brand,no-such-category,Товар,Product,199.00,80.00`;
     importRows[89] = `,imp${suffix}-90,Brand,${categorySlugOfTarget},Товар,Product,199.00,80.00`;
     const csv = [importHeader, ...importRows].join('\n');
-    const contentImport = await form(
-      'previewImportAction',
-      { csv },
-      cookie(contentToken),
-      '/admin/import-export',
-    );
+    /** The CSV goes to the import route (not a server action): the raw text as the body. */
+    const csvPost = async (mode: 'preview' | 'commit', token: string) => {
+      const response = await fetch(`${base}/admin/upload/products-csv?mode=${mode}`, {
+        method: 'POST',
+        redirect: 'manual',
+        headers: {
+          'X-Forwarded-For': nextClient(),
+          'Content-Type': 'text/csv',
+          ...origin(),
+          ...cookie(token),
+        },
+        body: csv,
+      });
+      return { status: response.status, body: await response.text() };
+    };
+    const contentImport = await csvPost('preview', contentToken);
     check(
       'import: a content role cannot import (FORBIDDEN)',
-      contentImport.body.includes('FORBIDDEN'),
+      contentImport.status === 403 && contentImport.body.includes('FORBIDDEN'),
     );
-    const preview = await form(
-      'previewImportAction',
-      { csv },
-      cookie(adminToken),
-      '/admin/import-export',
-    );
+    const preview = await csvPost('preview', adminToken);
     const previewBad = [
-      ...preview.body.matchAll(/"line":(\d+),"sku":"[^"]*","action":"error"/g),
+      ...preview.body.matchAll(/"line":(\d+),"row":\d+,"sku":"[^"]*","action":"error"/g),
     ].map((m) => Number(m[1]));
     const countBefore = (await db.select().from(products)).filter((p) =>
       p.sku.startsWith(`IMP${suffix}-`),
@@ -950,12 +955,7 @@ export async function runAdminSmoke({
       'import: the preview names the three broken lines (11, 51, 91) and writes nothing',
       JSON.stringify(previewBad) === JSON.stringify([11, 51, 91]) && countBefore === 0,
     );
-    const committed = await form(
-      'commitImportAction',
-      { csv },
-      cookie(adminToken),
-      '/admin/import-export',
-    );
+    const committed = await csvPost('commit', adminToken);
     const imported = (await db.select().from(products)).filter((p) =>
       p.sku.startsWith(`IMP${suffix}-`),
     );

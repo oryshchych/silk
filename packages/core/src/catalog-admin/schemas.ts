@@ -6,11 +6,17 @@
  */
 import { z } from 'zod';
 
+import { cleanText } from '@store/shared/content-text';
 import { parseHryvnias } from '@store/shared/money';
 
 /** Text without a NUL byte: Postgres refuses it (22021), so it is refused here with a clean error. */
 const noNul = (value: string): boolean => !value.includes('\u0000');
-const text = (max: number) => z.string().trim().max(max).refine(noNul, 'no NUL byte');
+/**
+ * A NUL byte is REFUSED (before cleaning); the other invisible and control characters are removed
+ * (`cleanText`), so what is stored is what a reader sees.
+ */
+const text = (max: number) =>
+  z.string().refine(noNul, 'no NUL byte').overwrite(cleanText).trim().max(max);
 const optionalText = (max: number) =>
   text(max)
     .transform((value) => (value === '' ? null : value))

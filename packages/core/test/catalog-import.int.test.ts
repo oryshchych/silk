@@ -117,7 +117,8 @@ describe('import: preview and commit', () => {
     const byLine = new Map(outcome.data.results.map((r) => [r.line, r]));
     expect(byLine.get(3)?.errors).toContain('sku_duplicate_in_file');
     expect(byLine.get(4)?.errors).toContain('row_too_short');
-    expect(byLine.get(5)?.errors).toEqual(['ADMIN_SLUG_TAKEN']);
+    // Reported by the PREVIEW now, not first at the commit.
+    expect(byLine.get(5)?.errors).toEqual(['slug_taken']);
     expect(byLine.get(2)?.action).toBe('create');
     expect(byLine.get(6)?.action).toBe('create');
     expect(await productBySku('IMP-601')).toBeDefined();

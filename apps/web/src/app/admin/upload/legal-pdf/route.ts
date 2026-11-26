@@ -11,7 +11,7 @@ import { getDb } from '@/lib/db';
 import { createInFlight } from '@/lib/in-flight';
 import { mediaConfig } from '@/lib/media';
 import { createRateLimiter } from '@/lib/rate-limit';
-import { readCapped } from '@/lib/read-capped';
+import { declaredTooLarge, readCapped } from '@/lib/read-capped';
 import { checkRequestLimit } from '@/lib/request-limits';
 
 /**
@@ -62,6 +62,8 @@ export async function POST(request: Request): Promise<Response> {
   const media = await mediaConfig();
   if (media === null) return reply(503, 'MEDIA_NOT_CONFIGURED', request);
 
+  // A body that declares itself too large is refused BEFORE it takes a slot or a byte is read.
+  if (declaredTooLarge(request, MAX_PDF_BYTES)) return reply(413, 'TOO_LARGE', request);
   const release = inFlight.acquire(resolved.session.userId);
   if (release === null) return reply(429, 'BUSY', request);
   try {
@@ -79,8 +81,9 @@ async function upload(
   const read = await readCapped(request, { limit: MAX_PDF_BYTES, idleMs: 15_000, totalMs: 60_000 });
   if (!read.ok)
     return reply(
-      read.reason === 'timeout' ? 408 : 413,
-      read.reason === 'timeout' ? 'TIMEOUT' : 'TOO_LARGE',
+      read.reason === 'timeout' ? 408 : read.reason === 'aborted' ? 400 : 413,
+      read.reason === 'timeout' ? 'TIMEOUT' : read.reason === 'aborted' ? 'ABORTED' : 'TOO_LARGE',
+      request,
     );
   const body = read.body;
   if (body.length === 0) return reply(400, 'INVALID_INPUT');

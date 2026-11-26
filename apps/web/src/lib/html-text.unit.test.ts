@@ -61,3 +61,11 @@ describe('htmlToSnippet', () => {
     expect(snippet).not.toContain('wor…');
   });
 });
+
+describe('htmlToParagraphs and invisible text', () => {
+  it('a text of only zero-width characters or blanks has no paragraph', () => {
+    expect(htmlToParagraphs('\u200b\u200b\u200c')).toEqual([]);
+    expect(htmlToParagraphs('<p>\u00a0</p><p>\u200b</p>')).toEqual([]);
+    expect(htmlToParagraphs('<p>Real</p><p>\u200b</p>')).toEqual(['Real']);
+  });
+});

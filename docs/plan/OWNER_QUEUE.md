@@ -15,6 +15,7 @@ Only what needs the owner's own hands (credentials, accounts, a setting in an ex
 
 | ID | Action for the owner |
 |---|---|
+| Q81 | Phase 9 hands: the CONTENT is yours (`docs/CONTENT_GUIDE.md`: forty products in uk and en, photos with alt text, a text for every category) and the tools are ready. Before launch run the gate against staging with the staging database URL, which the agent never holds: `DATABASE_URL=<staging url> pnpm content:check --gate --allow-remote` must print `GATE: PASS`. The photo upload needs the media bucket (Q45) first |
 | Q63 | Phase 7 hands: the worker is not described in `docker-compose.yml` yet, so no e-mail leaves the system today (order mails included). When it is added, give it `AUTH_SECRET` (the SAME value as the web service): the account links (address verification, password reset) are rebuilt by the worker from a token id with a key derived from it, and without it those jobs fail into the dead-letter queue (visible, nothing is sent). Then send one verification and one reset mail from staging to a test inbox |
 | Q62 | Phase 6 hands: (1) set `GA4_MEASUREMENT_ID`, `GTM_CONTAINER_ID`, `META_PIXEL_ID` in the PRODUCTION Dokploy env when the accounts exist (staging never loads trackers, by design); (2) add `https://<shop>/feed/google.xml` in Merchant Center and `/feed/facebook.csv` in Meta Commerce Manager and read their validators (they need the public URL); (3) with the public URL run the Rich Results Test on one product and add the sitemap in Search Console; (4) one real-browser pass on production-like settings: banner shows, nothing loads before Accept, scripts load after Accept, "Cookie settings" reopens and a refusal clears the cookies |
 | Q49 | Provide the Nova Poshta sandbox (or a production read-only test) API key (with Q2) and set `settings.np_sender` (`cityRef`, `senderRef`, `contactRef`, `addressRef`, `phone`: the shop's own refs at the carrier); then run the waybill adapter once against it. **The adapter (`packages/payments/src/shipping/nova-poshta.ts`) is verified only against the local fake**: confirm the required `InternetDocument/save` properties for a private-person recipient, the cash-on-delivery block (`BackwardDeliveryData`), the print URLs, and the `getDocumentList` lookup that would reconcile an unknown result |
@@ -28,6 +29,14 @@ Only what needs the owner's own hands (credentials, accounts, a setting in an ex
 | Q8 | Check the R2 backup bucket: `staging/` must hold a second file from the 2026-11-23 03:00 Kyiv run |
 | Q19 | Supply the brands' bra size charts when they exist (the standard table ships meanwhile) |
 | Q1 | Shop name, palette and fonts when decided (the placeholder and neutral tokens stay meanwhile) |
+
+## Deferred by phase 9 (default applied; the owner can overrule)
+
+| ID | Raised | Item | Default applied |
+|---|---|---|---|
+| Q82 | 2026-11-27 | Duplicate photo detection needs a content hash per image (a migration: `product_images.content_hash`, filled at upload) and an owner decision on what a duplicate means (the same photo on two products is sometimes right: one shoot, two colours) | Not built: the photo report covers alt text, width, proportions, missing renditions and unsafe addresses only. Add the hash column when the owner wants the check |
+| Q83 | 2026-11-27 | `pnpm content:check --gate` in CI would fail every pull request while staging is empty | A documented manual pre-launch command only (`docs/CONTENT_GUIDE.md` section 7). A nightly job against staging after launch is a separate decision |
+| Q84 | 2026-11-27 | Which findings block the launch gate: alt text, meta title and description (missing, out of bounds, copied between languages), stock, `noindex`, an empty indexable category are BLOCKERS because the plan's criteria name them, although the storefront has fallbacks for several; the meta title bound is 46 characters because the title carries the placeholder shop name (14 characters with the separator) | As implemented, listed in the guide. The owner may relax one (for example sold-out stock to advice) by editing `rules.ts`; when the shop name changes (Q1) update `TITLE_SUFFIX_RESERVE`: a test reminds |
 
 ## Deferred by phase 8 (default applied; the owner can overrule)
 
