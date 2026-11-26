@@ -1,19 +1,18 @@
 import type { MetadataRoute } from 'next';
 import { connection } from 'next/server';
 
+import { robotsRules } from '@/lib/robots-rules';
+
 /**
- * robots.txt. Поза production — Disallow усього (третій шар захисту
- * staging після basic auth і X-Robots-Tag, ENVIRONMENTS.md).
+ * robots.txt. Outside production: Disallow everything (the third layer that keeps staging out of
+ * search, after basic auth and X-Robots-Tag, ENVIRONMENTS.md). In production: the private and
+ * transactional routes are closed, the sitemap index is announced.
  *
- * APP_ENV читається під час ЗАПИТУ, а не збірки (ADR-10): один образ
- * обслуговує і staging, і production.
+ * APP_ENV and SITE_URL are read at REQUEST time, not build time (ADR-10): one image serves both.
  */
 export default async function robots(): Promise<MetadataRoute.Robots> {
   await connection();
   const { env } = await import('@store/shared/env');
-  if (env.APP_ENV !== 'production') {
-    return { rules: { userAgent: '*', disallow: '/' } };
-  }
-  // Sitemap і правила для фасетів — фаза 6 (SEO).
-  return { rules: { userAgent: '*', allow: '/' } };
+  const { getSiteUrl } = await import('@/lib/site-url');
+  return robotsRules(env.APP_ENV, await getSiteUrl());
 }

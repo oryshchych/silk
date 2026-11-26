@@ -491,3 +491,44 @@ describe('product input hardening', () => {
     expect(JSON.stringify(listing)).not.toMatch(/javascript:|data:text|evil\.example/);
   });
 });
+
+describe('sitemap rows', () => {
+  it('lists only visible, indexable products, with a UTC lastmod from updated_at', async () => {
+    const { countSitemapProducts, listSitemapProducts, sitemapFileStart } =
+      await import('../src/catalog/sitemap.ts');
+    const visible = await listVisibleProductSlugs(db);
+    const total = await countSitemapProducts(db);
+    expect(total).toBe(visible.length);
+    const first = await sitemapFileStart(db, 0, 25_000);
+    expect(first).toBe(visible[0]);
+    expect(await sitemapFileStart(db, 1, total)).toBeNull();
+    const rows = await listSitemapProducts(db, first ?? '', 1000);
+    expect(rows.map((r) => r.slug)).toEqual(visible);
+    for (const row of rows) expect(row.lastmod).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/);
+    // Draft, future-dated, inactive-category and gift-card products never appear.
+    const slugs = new Set(rows.map((r) => r.slug));
+    const all = await db.execute(sql`SELECT slug FROM products`);
+    const hiddenSlugs = all.rows.map((r) => String(r['slug'])).filter((s) => !visible.includes(s));
+    expect(hiddenSlugs.length).toBeGreaterThan(0);
+    for (const hidden of hiddenSlugs) expect(slugs.has(hidden)).toBe(false);
+  });
+
+  it('excludes a noindex product and a noindex or inactive-branch category', async () => {
+    const { countSitemapProducts, listSitemapCategories } =
+      await import('../src/catalog/sitemap.ts');
+    const before = await countSitemapProducts(db);
+    await db
+      .update(products)
+      .set({ noindex: true })
+      .where(sql`slug = 'aurora'`);
+    expect(await countSitemapProducts(db)).toBe(before - 1);
+    await db
+      .update(products)
+      .set({ noindex: false })
+      .where(sql`slug = 'aurora'`);
+    const categories = (await listSitemapCategories(db)).map((c) => c.slug);
+    expect(categories).toEqual(expect.arrayContaining(['lingerie', 'bras', 'push-up', 'homewear']));
+    expect(categories).not.toContain('archive');
+    expect(categories).not.toContain('archive-old');
+  });
+});

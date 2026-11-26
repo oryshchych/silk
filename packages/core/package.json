@@ -15,6 +15,7 @@
     "./refunds": "./src/payments/refunds.ts",
     "./refund-sweep": "./src/payments/refund-sweep.ts",
     "./catalog": "./src/catalog/index.ts",
+    "./sitemap": "./src/catalog/sitemap.ts",
     "./product-slug": "./src/catalog/slug.ts",
     "./bra-size": "./src/catalog/bra-size.ts",
     "./quote": "./src/orders/quote.ts",
