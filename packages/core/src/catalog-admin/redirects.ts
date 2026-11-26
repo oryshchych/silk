@@ -62,7 +62,9 @@ export async function recordSlugRedirects(
 /**
  * A page that is gone for good: both locale paths answer 410 (not 404), so a search engine drops
  * them at once. `to_path` is required by the schema and unused for a 410. A reused slug is
- * released by `releaseSlugPaths`, so a gone path never shadows a live page.
+ * released by `releaseSlugPaths`, so a gone path never shadows a live page. Nothing calls this
+ * yet (no admin screen deletes a product or category); whoever adds that must also call
+ * `releaseSlugPaths` when a page with a recorded 410 is restored, or the 410 keeps shadowing it.
  */
 export async function recordGone(
   tx: Tx,

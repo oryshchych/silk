@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { canHaveRedirect, createRedirectMap } from './redirect-map';
+import { canHaveRedirect, createRedirectMap, isSafeRedirectTarget } from './redirect-map';
 
 const rows = [
   { fromPath: '/product/old', toPath: '/product/new', statusCode: 301 as const },
@@ -152,5 +152,62 @@ describe('createRedirectMap: 410 and hit counting', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('redirect targets', () => {
+  it('accepts a site path and refuses anything that could leave the site or split a header', () => {
+    for (const ok of ['/', '/product/new', '/en/category/a-b', '/product/a%20b']) {
+      expect(isSafeRedirectTarget(ok), ok).toBe(true);
+    }
+    for (const bad of [
+      '//evil.example',
+      '\\\\evil.example',
+      '/\\evil.example',
+      'https://evil.example/x',
+      'product/new',
+      '/a\r\nSet-Cookie: x=1',
+      '/a\nb',
+      `/${'a'.repeat(500)}`,
+      '',
+    ]) {
+      expect(isSafeRedirectTarget(bad), JSON.stringify(bad)).toBe(false);
+    }
+  });
+
+  it('never serves a row with an unsafe target, and reports it', async () => {
+    const errors: unknown[] = [];
+    const map = createRedirectMap(
+      () =>
+        Promise.resolve([
+          { fromPath: '/product/a', toPath: '//evil.example', statusCode: 301 as const },
+          { fromPath: '/product/b', toPath: '/product/ok', statusCode: 301 as const },
+          { fromPath: '/product/c', toPath: 'https://evil.example/x', statusCode: 302 as const },
+        ]),
+      { onError: (error) => errors.push(error) },
+    );
+    expect(await map.lookup('/product/a')).toBeNull();
+    expect(await map.lookup('/product/c')).toBeNull();
+    expect(await map.lookup('/product/b')).toEqual({ to: '/product/ok', status: 301 });
+    expect(errors).toHaveLength(1);
+  });
+
+  it('with the default options a flush happens at the 100th pending hit, not before', async () => {
+    const flushHits = vi.fn<(hits: ReadonlyMap<string, number>) => Promise<void>>(() =>
+      Promise.resolve(),
+    );
+    const map = createRedirectMap(
+      () =>
+        Promise.resolve([
+          { fromPath: '/product/a', toPath: '/product/b', statusCode: 301 as const },
+        ]),
+      { flushHits },
+    );
+    await map.lookup('/product/a');
+    for (let i = 0; i < 99; i++) map.noteHit('/product/a');
+    expect(flushHits).not.toHaveBeenCalled();
+    map.noteHit('/product/a');
+    expect(flushHits).toHaveBeenCalledTimes(1);
+    expect(flushHits.mock.calls[0]?.[0].get('/product/a')).toBe(100);
   });
 });

@@ -204,7 +204,9 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   // (refreshed every minute, stale-on-error). If the set cannot be loaded at all,
   // the request passes and the page decides.
   const product = parseProductPath(pathname);
-  if (product !== null && (request.method === 'GET' || request.method === 'HEAD')) {
+  // Every method: a POST (a server action posts to the page URL) to an unknown slug would otherwise
+  // render, and cache, one 404 page per slug just like a GET.
+  if (product !== null && request.method !== 'OPTIONS') {
     const known = isProductSlug(product.slug) ? await knownProductSlugs.has(product.slug) : false;
     if (known === false) {
       const target = request.nextUrl.clone();

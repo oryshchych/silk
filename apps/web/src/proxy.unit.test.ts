@@ -38,16 +38,20 @@ async function loadProxy(appEnv: 'local' | 'production') {
   return (await import('./proxy')).proxy;
 }
 
+const lookup = vi.hoisted(() =>
+  vi.fn<(path: string) => Promise<{ to: string; status: 301 | 302 | 410 } | null>>(() =>
+    Promise.resolve(null),
+  ),
+);
+const noteHit = vi.hoisted(() => vi.fn<(path: string) => void>());
 vi.mock('./lib/redirect-map', () => ({
-  redirectMap: {
-    lookup: () => Promise.resolve(null),
-    invalidate: () => undefined,
-    noteHit: () => undefined,
-  },
+  redirectMap: { lookup, invalidate: () => undefined, noteHit },
 }));
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  lookup.mockReset();
+  lookup.mockResolvedValue(null);
 });
 
 describe('proxy: /uk redirect', () => {
@@ -111,11 +115,30 @@ describe('proxy: product URL gate', () => {
     expect(rewriteOf(response)).toBeNull();
   });
 
-  it('does not touch other pages or methods other than GET and HEAD', async () => {
+  it('does not touch other pages', async () => {
     const proxy = await loadProxy('local');
     has.mockReset();
     await proxy(new NextRequest('http://localhost:3000/category/bras'));
-    await proxy(new NextRequest('http://localhost:3000/product/nope-1', { method: 'POST' }));
+    expect(has).not.toHaveBeenCalled();
+  });
+
+  it('gates every method but OPTIONS: a POST to an unknown slug cannot fill the page cache', async () => {
+    const proxy = await loadProxy('local');
+    has.mockImplementation(async (slug) => await Promise.resolve(slug === 'aurora-1'));
+    for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
+      const unknown = await proxy(
+        new NextRequest('http://localhost:3000/product/nope-1', { method }),
+      );
+      expect(rewriteOf(unknown), method).toBe('http://localhost:3000/uk/__missing__/product');
+      expect(unknown.headers.get('cache-control'), method).toBe('no-store');
+      // A server action posts to the page of a KNOWN product and must get through.
+      const known = await proxy(
+        new NextRequest('http://localhost:3000/product/aurora-1', { method }),
+      );
+      expect(rewriteOf(known), method).toBeNull();
+    }
+    has.mockReset();
+    await proxy(new NextRequest('http://localhost:3000/product/nope-1', { method: 'OPTIONS' }));
     expect(has).not.toHaveBeenCalled();
   });
 });
@@ -252,5 +275,66 @@ describe('proxy: search rate limit', () => {
     // client, Cloudflare edge: the key is the client, whatever the edge address is.
     const blocked = await blockedOf(proxy, 35, (i) => search(`203.0.113.7, 172.70.1.${String(i)}`));
     expect(blocked).toBe(5);
+  });
+});
+
+describe('proxy: redirects and gone pages', () => {
+  const asGone = { to: '/', status: 410 as const };
+
+  it('answers 410 for a gone path, before the product gate, for GET and HEAD, and counts the hit', async () => {
+    const proxy = await loadProxy('production');
+    has.mockReset();
+    lookup.mockResolvedValue(asGone);
+    noteHit.mockClear();
+    for (const method of ['GET', 'HEAD']) {
+      const response = await proxy(
+        new NextRequest('https://shop.example/product/discontinued-1', { method }),
+      );
+      expect(response.status, method).toBe(410);
+      expect(response.headers.get('cache-control'), method).toBe('public, max-age=300');
+      expect(response.headers.get('x-robots-tag'), method).toBeNull();
+    }
+    expect(noteHit).toHaveBeenCalledTimes(2);
+    expect(has).not.toHaveBeenCalled();
+  });
+
+  it('marks a 410 noindex outside production and does not apply it to a POST', async () => {
+    const proxy = await loadProxy('local');
+    lookup.mockResolvedValue(asGone);
+    const get = await proxy(new NextRequest('http://localhost:3000/product/discontinued-1'));
+    expect(get.status).toBe(410);
+    expect(get.headers.get('x-robots-tag')).toBe('noindex, nofollow');
+    has.mockResolvedValue(false);
+    const post = await proxy(
+      new NextRequest('http://localhost:3000/product/discontinued-1', { method: 'POST' }),
+    );
+    expect(post.status).not.toBe(410);
+  });
+
+  it('serves a 301 with a short public cache and counts it; a redirect to a hidden product is not served', async () => {
+    const proxy = await loadProxy('production');
+    noteHit.mockClear();
+    lookup.mockResolvedValue({ to: '/product/new-1', status: 301 });
+    has.mockResolvedValue(true);
+    const moved = await proxy(new NextRequest('https://shop.example/product/old-1'));
+    expect(moved.status).toBe(301);
+    expect(moved.headers.get('location')).toBe('https://shop.example/product/new-1');
+    expect(moved.headers.get('cache-control')).toBe('public, max-age=300');
+    expect(noteHit).toHaveBeenCalledTimes(1);
+
+    noteHit.mockClear();
+    has.mockImplementation(async (slug) => await Promise.resolve(slug !== 'new-1'));
+    const hidden = await proxy(new NextRequest('https://shop.example/product/old-1'));
+    expect(hidden.status).not.toBe(301);
+    expect(noteHit).not.toHaveBeenCalled();
+  });
+
+  it('checks 410 before the target-visibility rule (a 410 row never consults the slug set)', async () => {
+    const proxy = await loadProxy('production');
+    has.mockReset();
+    lookup.mockResolvedValue({ to: '/product/whatever-1', status: 410 });
+    const response = await proxy(new NextRequest('https://shop.example/product/x-1'));
+    expect(response.status).toBe(410);
+    expect(has).not.toHaveBeenCalled();
   });
 });

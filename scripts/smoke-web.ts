@@ -24,7 +24,7 @@ import {
 import { runAdminSmoke } from './smoke-admin.ts';
 import { runCheckoutSmoke } from './smoke-checkout.ts';
 import { runPaymentSmoke } from './smoke-payments.ts';
-import { runSeoSmoke } from './smoke-seo.ts';
+import { runPostFloodSmoke, runSeoSmoke } from './smoke-seo.ts';
 
 const root = join(import.meta.dirname, '..');
 const port = 3917;
@@ -417,6 +417,7 @@ try {
     );
   }
   await runSeoSmoke({ base, site: SITE, check, storedFiles });
+  await runPostFloodSmoke({ base, site: SITE, check, storedFiles });
   await runCheckoutSmoke({ base, buildRoot: copy, check, storedFiles });
   await runAdminSmoke({
     base,

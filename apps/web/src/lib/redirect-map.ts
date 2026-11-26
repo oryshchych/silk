@@ -32,6 +32,14 @@ export interface RedirectMap {
   noteHit: (pathname: string) => void;
 }
 
+/**
+ * A redirect target is a site path: one leading slash, no second slash (that would be a
+ * protocol-relative URL), no backslash and no line break. The proxy puts it into a `Location`
+ * header, so a row that fails this is dropped when the table is loaded, never served.
+ */
+export const isSafeRedirectTarget = (to: string): boolean =>
+  to.length <= 500 && /^\/(?!\/)[^\\\r\n]*$/.test(to);
+
 const REDIRECTABLE = /^\/(?:en\/)?(?:product|category)\/[^/]+$/;
 
 export const canHaveRedirect = (pathname: string): boolean => REDIRECTABLE.test(pathname);
@@ -91,8 +99,14 @@ export function createRedirectMap(
   function refresh(): Promise<void> {
     inflight ??= load()
       .then((rows) => {
+        const safe = rows.filter((row) => isSafeRedirectTarget(row.toPath));
+        if (safe.length !== rows.length) {
+          options.onError?.(
+            new Error(`${String(rows.length - safe.length)} unsafe redirect target(s) dropped`),
+          );
+        }
         table = new Map(
-          rows.map((row) => [row.fromPath, { to: row.toPath, status: row.statusCode }]),
+          safe.map((row) => [row.fromPath, { to: row.toPath, status: row.statusCode }]),
         );
         staleAt = now() + ttlMs;
         failures = 0;

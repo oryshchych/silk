@@ -698,7 +698,17 @@ export async function runAdminSmoke({
         gone.cache.includes('max-age=300'),
     );
     // Hits are counted in memory and written in batches: 250 requests make at least one full batch.
-    for (let i = 0; i < 250; i++) await get(`/product/${newSlug}`);
+    // Fewer than the batch size (100 pending in all): nothing may be written yet, which an UPDATE per
+    // request would have done at once.
+    for (let i = 0; i < 90; i++) await get(`/product/${newSlug}`);
+    const early = await db
+      .select({ from: redirects.fromPath, n: redirects.hitCount })
+      .from(redirects);
+    check(
+      'redirects: below the batch size nothing is written yet (counted in memory, not per request)',
+      early.find((row) => row.from === `/product/${newSlug}`)?.n === 0,
+    );
+    for (let i = 0; i < 160; i++) await get(`/product/${newSlug}`);
     let counted = 0;
     for (let i = 0; i < 40 && counted < 100; i++) {
       const rows = await db
