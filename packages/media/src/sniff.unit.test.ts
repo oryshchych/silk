@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { sniffImage } from './sniff.ts';
+import { sniffImage, sniffPdf } from './sniff.ts';
 
 const bytes = (...values: number[]): Uint8Array => Uint8Array.from(values);
 const text = (value: string): Uint8Array => new TextEncoder().encode(value);
@@ -26,5 +26,23 @@ describe('sniffImage: what a file really is', () => {
     ]) {
       expect(sniffImage(bad)).toBeNull();
     }
+  });
+});
+
+describe('sniffPdf: a PDF is read from its bytes', () => {
+  const text = (value: string) => new TextEncoder().encode(value);
+
+  it('accepts %PDF- with a version at the very start', () => {
+    expect(sniffPdf(text('%PDF-1.7\n%\u00e2\u00e3'))).toBe(true);
+    expect(sniffPdf(text('%PDF-2.0\n'))).toBe(true);
+  });
+
+  it('refuses everything that only claims to be one', () => {
+    expect(sniffPdf(text('<html><script>alert(1)</script>'))).toBe(false);
+    expect(sniffPdf(text('  %PDF-1.7'))).toBe(false);
+    expect(sniffPdf(text('<!-- %PDF-1.7 -->'))).toBe(false);
+    expect(sniffPdf(text('%PDF-'))).toBe(false);
+    expect(sniffPdf(new Uint8Array(0))).toBe(false);
+    expect(sniffPdf(bytes(0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0))).toBe(false);
   });
 });

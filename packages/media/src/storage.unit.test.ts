@@ -26,6 +26,16 @@ const storage = (overrides: { secretAccessKey?: string; endpoint?: string } = {}
   });
 
 describe('storage over the S3 API', () => {
+  it('stores Content-Disposition with the object when asked (a signed header, so the fake verifies it)', async () => {
+    await storage().put('legal/a/b.pdf', Buffer.from('%PDF-1.7'), 'application/pdf', {
+      contentDisposition: 'attachment; filename="document.pdf"',
+    });
+    const stored = fake.objects.get('legal/a/b.pdf');
+    expect(stored?.contentType).toBe('application/pdf');
+    expect(stored?.contentDisposition).toBe('attachment; filename="document.pdf"');
+    expect(fake.rejected).toBe(0);
+  });
+
   it('puts and deletes an object with a signature the fake verifies, setting type and cache headers', async () => {
     const body = Buffer.from('image bytes');
     await storage().put('products/p1/i1/full.webp', body, 'image/webp');

@@ -97,8 +97,13 @@ export function signRequest(input: {
   };
 }
 
+/** `Content-Disposition` is stored with the object and served back with it (a download, never inline). */
+export interface PutOptions {
+  contentDisposition?: string;
+}
+
 export interface Storage {
-  put: (key: string, body: Buffer, contentType: string) => Promise<void>;
+  put: (key: string, body: Buffer, contentType: string, options?: PutOptions) => Promise<void>;
   remove: (key: string) => Promise<void>;
 }
 
@@ -123,6 +128,7 @@ export function createStorage(config: StorageConfig): Storage {
     key: string,
     body: Buffer | null,
     contentType: string | null,
+    options: PutOptions = {},
   ) {
     assertSafeKey(key);
     const path = `/${[config.bucket, ...key.split('/')].map(encodeSegment).join('/')}`;
@@ -131,6 +137,9 @@ export function createStorage(config: StorageConfig): Storage {
     if (contentType !== null) {
       extra['content-type'] = contentType;
       extra['cache-control'] = 'public, max-age=31536000, immutable';
+      if (options.contentDisposition !== undefined) {
+        extra['content-disposition'] = options.contentDisposition;
+      }
     }
     const { authorization, amzDate } = signRequest({
       method,
@@ -171,8 +180,8 @@ export function createStorage(config: StorageConfig): Storage {
   }
 
   return {
-    put: async (key, body, contentType) => {
-      await send('PUT', key, body, contentType);
+    put: async (key, body, contentType, options) => {
+      await send('PUT', key, body, contentType, options);
     },
     remove: async (key) => {
       await send('DELETE', key, null, null);

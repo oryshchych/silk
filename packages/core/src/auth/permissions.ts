@@ -37,6 +37,8 @@ export const PERMISSIONS = {
   'returns.manage': ['owner', 'admin', 'manager'],
   'reviews.moderate': ['owner', 'admin', 'content'],
   'orders.confirm_payment': ['owner', 'admin', 'manager'],
+  'legal.edit': ['owner', 'admin', 'content'],
+  'legal.publish': ['owner', 'admin'],
   'media.upload': ['owner', 'admin', 'content'],
   'catalog.import': ['owner', 'admin'],
   'catalog.export': ['owner', 'admin'],

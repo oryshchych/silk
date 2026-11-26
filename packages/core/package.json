@@ -76,7 +76,9 @@
     "./reviews-read": "./src/reviews/read.ts",
     "./reviews-moderation": "./src/reviews/moderation.ts",
     "./returns": "./src/returns/customer.ts",
-    "./returns-admin": "./src/returns/admin.ts"
+    "./returns-admin": "./src/returns/admin.ts",
+    "./legal": "./src/legal/admin.ts",
+    "./legal-read": "./src/legal/read.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"

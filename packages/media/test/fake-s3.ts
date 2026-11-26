@@ -15,7 +15,10 @@ export const FAKE_BUCKET = 'media-test';
 
 export interface FakeS3 {
   endpoint: string;
-  objects: Map<string, { body: Buffer; contentType: string; cacheControl: string }>;
+  objects: Map<
+    string,
+    { body: Buffer; contentType: string; cacheControl: string; contentDisposition: string }
+  >;
   rejected: number;
   /** Every request that reached the server, signed or not. */
   requests: number;
@@ -72,6 +75,7 @@ export async function startFakeS3(host = '127.0.0.1', listenOn = 0): Promise<Fak
           body,
           contentType: header('content-type'),
           cacheControl: header('cache-control'),
+          contentDisposition: header('content-disposition'),
         });
         res.writeHead(200).end();
       } else if (req.method === 'DELETE') {

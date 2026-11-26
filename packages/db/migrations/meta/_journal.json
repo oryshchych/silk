@@ -148,6 +148,13 @@
       "when": 1795704468996,
       "tag": "0020_return_invariants",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1795707031116,
+      "tag": "0021_legal_documents_versioning",
+      "breakpoints": true
     }
   ]
 }

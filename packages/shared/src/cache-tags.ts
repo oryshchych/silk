@@ -18,3 +18,10 @@ export const listingTag = (id: string): string => `listing:${id}`;
 
 /** The home page showcases (newest, bestsellers): any product change refreshes them. */
 export const SHOWCASE_TAG = 'showcase';
+
+/**
+ * Legal pages (ADR-8). `legal:{kind}` is read by that page; `legal-nav` by everything that lists the
+ * published pages (the footer on every storefront page, the sitemap). Publishing a version drops both.
+ */
+export const LEGAL_NAV_TAG = 'legal-nav';
+export const legalTag = (kind: string): string => `legal:${kind}`;
