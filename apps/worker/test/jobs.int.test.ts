@@ -230,7 +230,10 @@ describe('the message router', () => {
       expect(
         failing.has(topic)
           ? outcome !== 'handled'
-          : outcome === 'handled' || outcome === 'OrderEmailError',
+          : // A payload that is not the topic's own shape is a VISIBLE failure (a named error), never a silent drop.
+            ['handled', 'OrderEmailError', 'AccountEmailError', 'BackInStockEmailError'].includes(
+              outcome,
+            ),
         topic,
       ).toBe(true);
     }
