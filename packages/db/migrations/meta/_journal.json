@@ -120,6 +120,20 @@
       "when": 1795697491792,
       "tag": "0016_email_token_checks",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1795699435705,
+      "tag": "0017_review_moderation",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1795703083019,
+      "tag": "0018_review_indexes",
+      "breakpoints": true
     }
   ]
 }

@@ -14,6 +14,8 @@ const INVALID_CODES: readonly string[] = [
   'ALERT_AVAILABLE',
   'ALERT_LIMIT',
   'WISHLIST_FULL',
+  'REVIEW_EXISTS',
+  'REVIEW_RATE',
 ];
 
 /** Mutations of a signed-in customer: a person edits a few things a minute, a script hundreds. */

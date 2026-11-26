@@ -4,6 +4,8 @@
  */
 import { z } from 'zod';
 
+import { fitSummaryDto, publicReviewDto } from './review';
+
 import { moneyDto } from './money';
 
 export const productBadgeValues = ['none', 'new', 'sale', 'bestseller', 'last_units'] as const;
@@ -128,6 +130,10 @@ export const productDetailDto = z.object({
   badge: z.enum(productBadgeValues),
   ratingAvg: z.number().min(1).max(5).nullable(),
   reviewsCount: z.number().int().nonnegative(),
+  /** "68% say it fits", from approved reviews only; null without fit data. */
+  fit: fitSummaryDto.nullable(),
+  /** The newest APPROVED reviews: nothing pending or refused is ever read into a cached page. */
+  reviews: z.array(publicReviewDto),
   metaTitle: z.string().nullable(),
   metaDescription: z.string().nullable(),
   ogImageUrl: z.string().nullable(),

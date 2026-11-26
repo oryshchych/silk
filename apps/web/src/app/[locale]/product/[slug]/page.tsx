@@ -10,6 +10,7 @@ import { buildAlternates } from '@store/shared/seo';
 import { Breadcrumbs } from '@/components/breadcrumbs';
 import { JsonLd } from '@/components/json-ld';
 import { ProductBuyBox } from '@/components/product-buy-box';
+import { ProductReviews } from '@/components/product-reviews';
 import { TrackEvent } from '@/components/track-event';
 import { SiteShell } from '@/components/site-shell';
 import { SizeGuide } from '@/components/size-guide';
@@ -137,9 +138,12 @@ export default async function ProductPage({ params }: Props) {
             images: imageUrls,
             url,
             offers: uniqueOffers(product.variants, url),
-            // No aggregateRating: ratings are not shown on the page yet, and
-            // markup must match what the visitor sees.
-            rating: null,
+            // aggregateRating only from APPROVED reviews that the page also shows (same cached read):
+            // markup must match what the visitor sees, and no review means no markup.
+            rating:
+              product.reviewsCount > 0 && product.ratingAvg !== null
+                ? { value: Math.round(product.ratingAvg * 10) / 10, count: product.reviewsCount }
+                : null,
           })}
         />
       )}
@@ -210,6 +214,13 @@ export default async function ProductPage({ params }: Props) {
           </details>
         )}
       </div>
+      <ProductReviews
+        average={product.ratingAvg}
+        count={product.reviewsCount}
+        fit={product.fit}
+        reviews={product.reviews}
+        locale={locale}
+      />
     </SiteShell>
   );
 }

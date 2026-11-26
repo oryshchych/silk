@@ -1022,13 +1022,20 @@ export const reviews = pgTable('reviews', {
   fitFeedback: fitFeedbackEnum('fit_feedback'),
   photoUrls: text('photo_urls').array(),
   isApproved: boolean('is_approved').notNull().default(false),
+  /** A refused review stays (so the same buyer cannot resubmit it again and again) but is never shown. */
+  rejectedAt: timestamp('rejected_at', { withTimezone: true }),
   moderatedByUserId: uuid('moderated_by_user_id'),
   adminReply: text('admin_reply'),
   createdAt: createdAt(),
 }, (t) => [
+  check('reviews_not_both', sql`NOT (${t.isApproved} AND ${t.rejectedAt} IS NOT NULL)`),
+  check('reviews_text_length', sql`char_length(coalesce(${t.body}, '')) <= 2000 AND char_length(coalesce(${t.adminReply}, '')) <= 2000`),
   uniqueIndex('reviews_product_customer_uq').on(t.productId, t.customerId),
   index('reviews_product_approved_idx').on(t.productId).where(sql`${t.isApproved} = true`),
-  index('reviews_pending_idx').on(t.createdAt).where(sql`${t.isApproved} = false`),
+  // The moderation queue: not approved and not refused.
+  index('reviews_pending_idx').on(t.createdAt).where(sql`${t.isApproved} = false AND ${t.rejectedAt} IS NULL`),
+  // The per-customer daily cap counts a customer's recent reviews.
+  index('reviews_customer_created_idx').on(t.customerId, t.createdAt),
   check('reviews_rating_range', sql`${t.rating} BETWEEN 1 AND 5`),
 ]);
 

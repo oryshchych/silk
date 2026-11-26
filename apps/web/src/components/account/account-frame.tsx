@@ -14,6 +14,7 @@ import { href, paths } from '@/lib/paths';
 const SECTIONS = [
   { path: paths.accountOrders, key: 'orders' },
   { path: paths.accountWishlist, key: 'wishlist' },
+  { path: paths.accountReviews, key: 'reviews' },
   { path: paths.accountProfile, key: 'profile' },
   { path: paths.accountAddresses, key: 'addresses' },
 ] as const;

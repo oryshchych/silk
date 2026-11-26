@@ -63,6 +63,8 @@ describe('customerAction', () => {
       'ALERT_LIMIT',
       'WISHLIST_FULL',
       'ADDRESS_LIMIT',
+      'REVIEW_EXISTS',
+      'REVIEW_RATE',
       'CHECKOUT_X',
     ]) {
       expect(await codeOf(code), code).toBe('invalid');

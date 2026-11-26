@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 import { productCardDto, productDetailDto } from './catalog';
 import { customerOrderDto } from './order';
+import { publicReviewDto } from './review';
 import { serialize } from './serialize';
 
 const productRow = {
@@ -123,6 +124,8 @@ describe('productDetailDto', () => {
     badge: 'none',
     ratingAvg: null,
     reviewsCount: 0,
+    fit: null,
+    reviews: [],
     metaTitle: null,
     metaDescription: null,
     ogImageUrl: null,
@@ -169,6 +172,7 @@ describe('productDetailDto', () => {
       'compareAtPrice',
       'composition',
       'description',
+      'fit',
       'id',
       'images',
       'metaDescription',
@@ -178,6 +182,7 @@ describe('productDetailDto', () => {
       'ogImageUrl',
       'price',
       'ratingAvg',
+      'reviews',
       'reviewsCount',
       'shortDescription',
       'sku',
@@ -206,5 +211,35 @@ describe('productDetailDto', () => {
     expect(JSON.stringify(dto)).not.toMatch(
       /cost|stockQuantity|reservedQuantity|searchVector|adminNote|isActive/i,
     );
+  });
+});
+
+describe('review DTOs', () => {
+  it('the public review carries no customer id, e-mail, order id or moderation data, whatever the row holds', () => {
+    const dto = serialize(publicReviewDto, {
+      rating: 5,
+      title: 'Great',
+      body: 'Fits well',
+      author: 'Iryna K.',
+      createdAt: '2026-11-26T10:00:00.000Z',
+      sizeBought: '75B',
+      fit: 'true_to_size',
+      adminReply: null,
+      customerId: 'c1',
+      customerEmail: 'a@example.test',
+      orderId: 'o1',
+      moderatedByUserId: 'u1',
+      isApproved: true,
+    });
+    expect(Object.keys(dto).sort()).toEqual([
+      'adminReply',
+      'author',
+      'body',
+      'createdAt',
+      'fit',
+      'rating',
+      'sizeBought',
+      'title',
+    ]);
   });
 });

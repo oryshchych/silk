@@ -370,10 +370,15 @@ try {
     (await get(productPath)).cache === 'HIT',
   );
   check('an unknown product is a real 404', (await get('/product/nope')).status === 404);
+  // The rating markup exists exactly when the page shows approved reviews, with the same count.
+  const shownReviews = /data-review-count="(\d+)"/.exec(product.html)?.[1];
+  const ratingLd = productLd.find((j) => j.includes('aggregateRating'));
   check(
-    'product JSON-LD has an absolute image on the runtime host and no rating markup',
+    'product JSON-LD has an absolute image on the runtime host; AggregateRating only with visible reviews and the same count',
     productLd.some((j) => j.includes(`"image":["${SITE}/placeholder.svg"]`)) &&
-      !productLd.some((j) => j.includes('aggregateRating')),
+      (shownReviews === undefined
+        ? ratingLd === undefined
+        : ratingLd?.includes(`"reviewCount":${shownReviews}`) === true),
   );
 
   check(

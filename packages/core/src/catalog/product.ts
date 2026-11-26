@@ -12,6 +12,7 @@ import type { Reader } from '@store/db/types';
 import { productDetailDto, type ProductDetailDto } from '@store/shared/dto/catalog';
 import { serialize } from '@store/shared/dto/serialize';
 
+import { fitSummary, listApprovedReviews } from '../reviews/read.ts';
 import { getCategoryTrail } from './categories.ts';
 import { safeMediaUrl } from './media-url.ts';
 import { isProductSlug } from './slug.ts';
@@ -38,6 +39,8 @@ const productRow = z.object({
   badge,
   rating_avg: z.number().nullable(),
   reviews_count: z.number().int(),
+  fit_true_count: z.number().int(),
+  fit_total_count: z.number().int(),
   meta_title: z.string().nullable(),
   meta_description: z.string().nullable(),
   og_image_url: z.string().nullable(),
@@ -133,7 +136,7 @@ export async function getProductBySlug(
                ${localized('p', 'description', locale)} AS description,
                ${localized('p', 'composition', locale)} AS composition,
                ${localized('p', 'care', locale)} AS care,
-               p.base_price, p.compare_at_price, p.badge, p.rating_avg, p.reviews_count,
+               p.base_price, p.compare_at_price, p.badge, p.rating_avg, p.reviews_count, p.fit_true_count, p.fit_total_count,
                ${localized('p', 'meta_title', locale)} AS meta_title,
                ${localized('p', 'meta_description', locale)} AS meta_description,
                p.og_image_url, p.noindex
@@ -196,6 +199,8 @@ export async function getProductBySlug(
     badge: product.badge,
     ratingAvg: product.rating_avg,
     reviewsCount: product.reviews_count,
+    fit: fitSummary(product.fit_true_count, product.fit_total_count),
+    reviews: await listApprovedReviews(reader, product.id),
     metaTitle: product.meta_title,
     metaDescription: product.meta_description,
     ogImageUrl: safeMediaUrl(product.og_image_url),
