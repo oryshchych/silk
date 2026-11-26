@@ -81,6 +81,11 @@ export const envSchema = z
       .optional(),
 
     NOVA_POSHTA_API_KEY: secret,
+    // Carrier endpoints (defaults in the app: https://api.novaposhta.ua/v2.0/json/ and
+    // https://my.novaposhta.ua). A sandbox or a local fake overrides them; the adapter refuses
+    // plain http outside loopback.
+    NOVA_POSHTA_API_BASE_URL: z.url({ protocol: /^https?$/ }).optional(),
+    NOVA_POSHTA_PRINT_BASE_URL: z.url({ protocol: /^https?$/ }).optional(),
     UKRPOSHTA_API_KEY: secret,
 
     RESEND_API_KEY: secret,

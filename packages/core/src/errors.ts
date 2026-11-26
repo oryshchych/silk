@@ -277,3 +277,30 @@ export class OrderPaymentOpenError extends DomainError {
     );
   }
 }
+/** The order cannot get a waybill now (wrong delivery method or status), or already has one. */
+export class WaybillNotAllowedError extends DomainError {
+  constructor(reason: string) {
+    super('WAYBILL_NOT_ALLOWED', `A waybill cannot be made: ${reason}`);
+  }
+}
+
+/** A waybill call is running, or its result is not known: a second one could create a second parcel. */
+export class WaybillInProgressError extends DomainError {
+  constructor() {
+    super('WAYBILL_IN_PROGRESS', 'A waybill for this order is being made or needs to be checked');
+  }
+}
+
+/** The sender profile or the carrier key is missing: nothing is sent to the carrier. */
+export class WaybillNotConfiguredError extends DomainError {
+  constructor() {
+    super('WAYBILL_NOT_CONFIGURED', 'The carrier is not configured');
+  }
+}
+
+/** A waybill exists or is being made: cancelling or editing the order would leave the carrier with stale data. */
+export class OrderHasWaybillError extends DomainError {
+  constructor() {
+    super('ORDER_HAS_WAYBILL', 'The order has a waybill (or one is being made): resolve it first');
+  }
+}

@@ -42,6 +42,7 @@ async function wired() {
 vi.mock('@/lib/admin/bound-action', wired);
 vi.mock('../src/lib/admin/bound-action', wired);
 const providers = () => (state.mono === null ? {} : { mono: state.mono });
+vi.mock('@/lib/waybill-carrier', () => ({ getWaybillCarrier: () => Promise.resolve(null) }));
 vi.mock('@/lib/payment-providers', () => ({
   getPaymentProviders: () => Promise.resolve(providers()),
 }));

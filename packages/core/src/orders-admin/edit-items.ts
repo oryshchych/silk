@@ -22,6 +22,7 @@ import {
   orders,
   outbox,
   refundOperations,
+  shipmentOperations,
   stockReservations,
 } from '@store/db/schema';
 import type { Tx } from '@store/db/types';
@@ -30,6 +31,7 @@ import { money, prorate } from '@store/shared/money';
 import { AdminNotFoundError } from '../catalog-admin/errors.ts';
 import {
   InsufficientStockError,
+  OrderHasWaybillError,
   OrderPaymentOpenError,
   OrderTransitionError,
   StockDriftError,
@@ -80,6 +82,19 @@ export async function editOrderItems(
   if (order.fiscalStatus !== 'not_required') {
     throw new OrderTransitionError('a fiscal receipt exists or is queued for this order');
   }
+  // A waybill carries the declared value and the COD amount: after it exists (or while it is being
+  // made) an edit would leave the carrier with the old figures.
+  const [shipment] = await tx
+    .select({ id: shipmentOperations.id })
+    .from(shipmentOperations)
+    .where(
+      and(
+        eq(shipmentOperations.orderId, order.id),
+        inArray(shipmentOperations.state, ['pending', 'in_flight', 'unknown', 'succeeded']),
+      ),
+    )
+    .limit(1);
+  if (shipment !== undefined) throw new OrderHasWaybillError();
   // An unpaid online order has a payment attempt (and a provider invoice) at the OLD amount: a
   // customer could still pay it. Editing waits until it is settled or the order is cancelled.
   const [open] = await tx

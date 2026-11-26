@@ -106,6 +106,13 @@ export const adminRefundDto = z.object({
   settledAt: z.iso.datetime({ offset: true }).nullable(),
 });
 
+/** The latest waybill operation of the order: its state tells the manager what is safe to do. */
+export const adminShipmentDto = z.object({
+  state: z.enum(operationStateValues),
+  error: z.string().nullable(),
+  at: z.iso.datetime({ offset: true }),
+});
+
 /** The buttons the order may offer in its current state; the action re-checks every one. */
 export const orderActionValues = ['confirm', 'process', 'ship', 'deliver', 'cancel'] as const;
 
@@ -146,6 +153,7 @@ const adminOrderFields = {
   paymentEvents: z.array(adminPaymentEventDto),
   attempts: z.array(adminPaymentAttemptDto),
   refunds: z.array(adminRefundDto),
+  shipment: adminShipmentDto.nullable(),
   actions: z.array(z.enum(orderActionValues)),
 };
 

@@ -18,6 +18,7 @@ import {
   handleRefundIssued,
 } from './email/payment-emails.ts';
 import type { EmailSender } from './email/resend.ts';
+import { handleWaybillCreated } from './email/waybill-email.ts';
 
 /** An `alert.*` message has no channel yet: it is logged AND fails, so it lands in the dead-letter queue. */
 export class AlertUndeliveredError extends Error {
@@ -79,6 +80,10 @@ export function createMessageSender(deps: {
       }
       if (message.topic === 'email.refund-issued') {
         await handleRefundIssued(mail, envelope);
+        return;
+      }
+      if (message.topic === 'email.waybill-created') {
+        await handleWaybillCreated(mail, envelope);
         return;
       }
       if (message.topic === 'fiscal.issue-receipt') {

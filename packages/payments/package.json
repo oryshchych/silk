@@ -11,7 +11,10 @@
     "./test/fake-wayforpay": "./test/fake-wayforpay.ts",
     "./fiscal": "./src/fiscal/types.ts",
     "./checkbox": "./src/fiscal/checkbox.ts",
-    "./test/fake-checkbox": "./test/fake-checkbox.ts"
+    "./test/fake-checkbox": "./test/fake-checkbox.ts",
+    "./shipping": "./src/shipping/types.ts",
+    "./nova-poshta": "./src/shipping/nova-poshta.ts",
+    "./test/fake-nova-poshta": "./test/fake-nova-poshta.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"

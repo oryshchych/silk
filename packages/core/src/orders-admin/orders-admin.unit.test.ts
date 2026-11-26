@@ -109,6 +109,7 @@ describe('order DTO', () => {
     paymentEvents: [],
     attempts: [],
     refunds: [],
+    shipment: null,
     actions: [],
     shippingCostActual: 4242,
     ip: '198.51.100.7',

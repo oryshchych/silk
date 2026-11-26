@@ -1427,6 +1427,13 @@ export const shipmentOperations = pgTable('shipment_operations', {
   index('shipment_order_idx').on(t.orderId),
   index('shipment_open_idx').on(t.createdAt)
     .where(sql`${t.state} IN ('pending', 'in_flight', 'unknown')`),
+  /**
+   * One live operation per order: while a waybill is being made, its result is unknown, or it
+   * exists, a second `InternetDocument/save` cannot even be recorded. The invariant lives here
+   * (AGENTS.md 2.8), not only in the application's check under the order lock.
+   */
+  uniqueIndex('shipment_one_live_uq').on(t.orderId)
+    .where(sql`${t.state} IN ('pending', 'in_flight', 'unknown', 'succeeded')`),
 ]);
 
 /**

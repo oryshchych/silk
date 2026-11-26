@@ -46,3 +46,17 @@ export const refundSchema = z.object({
   requestId: z.uuid().optional(),
   reason: text(3, 200),
 });
+
+export const resolveWaybillSchema = z.object({
+  orderId: z.uuid(),
+  resolution: z.discriminatedUnion('kind', [
+    z.object({
+      kind: z.literal('attach'),
+      ttn: z
+        .string()
+        .trim()
+        .regex(/^\d{14}$/),
+    }),
+    z.object({ kind: z.literal('none') }),
+  ]),
+});

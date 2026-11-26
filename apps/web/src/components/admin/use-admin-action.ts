@@ -38,6 +38,10 @@ const KNOWN_CODES = [
   'REFUND_NOT_ALLOWED',
   'CHECKOUT_INSUFFICIENT_STOCK',
   'ORDER_PAYMENT_OPEN',
+  'WAYBILL_NOT_ALLOWED',
+  'WAYBILL_IN_PROGRESS',
+  'WAYBILL_NOT_CONFIGURED',
+  'ORDER_HAS_WAYBILL',
 ] as const;
 
 export type ActionOutcome = { ok: true; data?: unknown } | { ok: false; code: string };
