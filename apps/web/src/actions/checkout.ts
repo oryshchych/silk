@@ -1,5 +1,6 @@
 'use server';
 
+import { currentConsentRefs } from '@store/core/legal-read';
 import { redirect } from 'next/navigation';
 
 import { startCheckout } from '@store/core/cart';
@@ -152,6 +153,8 @@ export async function placeOrderAction(input: unknown): Promise<PlaceOrderResult
     created = await db.transaction(
       async (tx) =>
         await createOrder(tx, {
+          // Resolved INSIDE the order's transaction (database clock): the edition stored is the one in force at the commit.
+          consentRefs: await currentConsentRefs(tx, data.locale),
           intentId: intent.intentId,
           ownerToken: token,
           contact: { email: data.email, phone: data.phone, name: data.name },

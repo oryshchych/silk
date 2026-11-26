@@ -20,10 +20,15 @@ export interface CreateOrderInput {
   locale: 'uk' | 'en';
   /**
    * The buyer accepted the terms and the privacy policy. Required: an order without it is refused,
-   * and the acceptance is recorded in the order's audit entry (the texts themselves arrive with
-   * phase 8, so no version is stored yet).
+   * and the acceptance is recorded in the order's audit entry together with `consentRefs`.
    */
   termsAccepted: boolean;
+  /**
+   * The editions of the terms and the privacy policy in force when the buyer accepted
+   * (`kind/locale/version`, from `currentConsentRefs`). Not part of the idempotency fingerprint: a
+   * retry after a newer edition was published is still the same order. Absent (tests): the placeholder.
+   */
+  consentRefs?: { terms: string; privacy: string };
   /**
    * Q12: by default an order whose total was never quoted is refused. Only code that creates
    * orders without a buyer looking at a total (tests, a future admin tool) opts out.

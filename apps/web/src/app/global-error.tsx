@@ -24,6 +24,12 @@ export default function GlobalError({ reset }: { error: Error; reset: () => void
             {uk.errors.retry} / {en.errors.retry}
           </button>
         </main>
+        <p className="mx-auto max-w-2xl px-4 pb-6 text-center text-xs text-text-muted">
+          {uk.footer.trademark}
+          <span lang="en" className="block">
+            {en.footer.trademark}
+          </span>
+        </p>
       </body>
     </html>
   );

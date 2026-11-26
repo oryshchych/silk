@@ -4,7 +4,12 @@ import { preload } from 'react-dom';
 import { notFound } from 'next/navigation';
 
 import { formatMoney } from '@store/shared/money';
-import { buildBreadcrumbList, buildProduct } from '@store/shared/schema-org';
+import { isNonReturnableClass, RETURN_POLICY } from '@store/shared/return-policy';
+import {
+  buildBreadcrumbList,
+  buildMerchantReturnPolicy,
+  buildProduct,
+} from '@store/shared/schema-org';
 import { buildAlternates } from '@store/shared/seo';
 
 import { Breadcrumbs } from '@/components/breadcrumbs';
@@ -138,6 +143,16 @@ export default async function ProductPage({ params }: Props) {
             images: imageUrls,
             url,
             offers: uniqueOffers(product.variants, url),
+            // The same policy as the returns page and the return form; nothing here depends on the visitor.
+            // Only for the classes Resolution No. 172 names (underwear, hosiery); homewear carries no claim until
+            // the owner and a lawyer decide it (Q79). `merchantReturnLink` is the real returns page.
+            ...(isNonReturnableClass(product.breadcrumbs.map((crumb) => crumb.slug))
+              ? {
+                  returnPolicy: buildMerchantReturnPolicy(RETURN_POLICY, {
+                    link: absolute(paths.legal('returns')),
+                  }),
+                }
+              : {}),
             // aggregateRating only from APPROVED reviews that the page also shows (same cached read):
             // markup must match what the visitor sees, and no review means no markup.
             rating:

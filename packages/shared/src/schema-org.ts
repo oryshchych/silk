@@ -4,6 +4,7 @@
  * `serializeJsonLd`.
  */
 import type { Money } from './money';
+import type { ReturnPolicy } from './return-policy';
 
 export const SCHEMA_CONTEXT = 'https://schema.org';
 export const SHOP_CURRENCY = 'UAH';
@@ -65,6 +66,50 @@ export function buildItemList(items: readonly ListItemInput[], startPosition = 1
 
 export type Availability = 'InStock' | 'OutOfStock';
 
+export interface MerchantReturnPolicyLd {
+  '@type': 'MerchantReturnPolicy';
+  applicableCountry: string;
+  returnPolicyCategory:
+    | 'https://schema.org/MerchantReturnNotPermitted'
+    | 'https://schema.org/MerchantReturnFiniteReturnWindow';
+  /** Absolute URL of the returns page (the schema.org property is `merchantReturnLink`). */
+  merchantReturnLink?: string;
+  merchantReturnDays?: number;
+  returnMethod?: `https://schema.org/${ReturnPolicy['returnMethod']}`;
+  returnFees?: `https://schema.org/${ReturnPolicy['returnFees']}`;
+}
+
+/**
+ * `hasMerchantReturnPolicy` from the shared policy (`./return-policy`). Without voluntary returns the shop says
+ * returns are NOT permitted (the defect regime is explained on the returns page, it is a legal duty and not a
+ * return policy); with them, a finite window with the method and the fees. Pure, no request value: the markup on
+ * a shared (ISR) product page is identical for everybody.
+ */
+export function buildMerchantReturnPolicy(
+  policy: ReturnPolicy,
+  options: { windowDays?: number; link?: string } = {},
+): MerchantReturnPolicyLd {
+  const windowDays = options.windowDays ?? policy.defaultWindowDays;
+  const link = options.link === undefined ? {} : { merchantReturnLink: options.link };
+  if (!policy.voluntaryReturns) {
+    return {
+      '@type': 'MerchantReturnPolicy',
+      applicableCountry: policy.applicableCountry,
+      returnPolicyCategory: 'https://schema.org/MerchantReturnNotPermitted',
+      ...link,
+    };
+  }
+  return {
+    '@type': 'MerchantReturnPolicy',
+    applicableCountry: policy.applicableCountry,
+    ...link,
+    returnPolicyCategory: 'https://schema.org/MerchantReturnFiniteReturnWindow',
+    merchantReturnDays: windowDays,
+    returnMethod: `https://schema.org/${policy.returnMethod}`,
+    returnFees: `https://schema.org/${policy.returnFees}`,
+  };
+}
+
 export interface OfferInput {
   price: Money;
   availability: Availability;
@@ -83,6 +128,8 @@ export interface ProductInput {
   url: string;
   offers: readonly OfferInput[];
   rating?: { value: number; count: number } | null;
+  /** Added to every offer as `hasMerchantReturnPolicy`. */
+  returnPolicy?: MerchantReturnPolicyLd;
 }
 
 interface OfferLd {
@@ -92,6 +139,7 @@ interface OfferLd {
   priceCurrency: typeof SHOP_CURRENCY;
   availability: `https://schema.org/${Availability}`;
   sku?: string;
+  hasMerchantReturnPolicy?: MerchantReturnPolicyLd;
 }
 
 export interface ProductLd {
@@ -112,6 +160,7 @@ export interface ProductLd {
         priceCurrency: typeof SHOP_CURRENCY;
         offerCount: number;
         availability: `https://schema.org/${Availability}`;
+        hasMerchantReturnPolicy?: MerchantReturnPolicyLd;
         offers: OfferLd[];
       };
   aggregateRating?: {
@@ -129,7 +178,7 @@ export function priceToDecimal(price: Money): string {
   return `${price < 0 ? '-' : ''}${String(whole)}.${fraction}`;
 }
 
-function buildOffer(offer: OfferInput): OfferLd {
+function buildOffer(offer: OfferInput, returnPolicy?: MerchantReturnPolicyLd): OfferLd {
   return {
     '@type': 'Offer',
     url: offer.url,
@@ -137,6 +186,7 @@ function buildOffer(offer: OfferInput): OfferLd {
     priceCurrency: SHOP_CURRENCY,
     availability: `https://schema.org/${offer.availability}`,
     ...(offer.sku === undefined ? {} : { sku: offer.sku }),
+    ...(returnPolicy === undefined ? {} : { hasMerchantReturnPolicy: returnPolicy }),
   };
 }
 
@@ -149,13 +199,13 @@ export function buildProduct(input: ProductInput): ProductLd {
   const [first, ...rest] = input.offers;
   if (first === undefined) throw new RangeError('buildProduct needs at least one offer');
 
-  const offers = [first, ...rest].map(buildOffer);
+  const offers = [first, ...rest].map((offer) => buildOffer(offer, input.returnPolicy));
   const prices = [first, ...rest].map((offer) => offer.price);
   const inStock = [first, ...rest].some((offer) => offer.availability === 'InStock');
 
   const offersLd: ProductLd['offers'] =
     rest.length === 0
-      ? buildOffer(first)
+      ? buildOffer(first, input.returnPolicy)
       : {
           '@type': 'AggregateOffer',
           lowPrice: priceToDecimal(prices.reduce((a, b) => (a < b ? a : b))),
@@ -163,6 +213,9 @@ export function buildProduct(input: ProductInput): ProductLd {
           priceCurrency: SHOP_CURRENCY,
           offerCount: offers.length,
           availability: `https://schema.org/${inStock ? 'InStock' : 'OutOfStock'}`,
+          ...(input.returnPolicy === undefined
+            ? {}
+            : { hasMerchantReturnPolicy: input.returnPolicy }),
           offers,
         };
 
@@ -187,6 +240,31 @@ export function buildProduct(input: ProductInput): ProductLd {
             reviewCount: input.rating.count,
           },
         }),
+  };
+}
+
+export interface FaqPageLd {
+  '@context': typeof SCHEMA_CONTEXT;
+  '@type': 'FAQPage';
+  mainEntity: {
+    '@type': 'Question';
+    name: string;
+    acceptedAnswer: { '@type': 'Answer'; text: string };
+  }[];
+}
+
+/** FAQPage markup for the questions a page SHOWS (the caller passes exactly the visible entries). */
+export function buildFaqPage(
+  entries: readonly { question: string; answerText: string }[],
+): FaqPageLd {
+  return {
+    '@context': SCHEMA_CONTEXT,
+    '@type': 'FAQPage',
+    mainEntity: entries.map((entry) => ({
+      '@type': 'Question',
+      name: entry.question,
+      acceptedAnswer: { '@type': 'Answer', text: entry.answerText },
+    })),
   };
 }
 

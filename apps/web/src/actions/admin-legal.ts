@@ -14,6 +14,7 @@ import { LEGAL_NAV_TAG, legalTag } from '@store/shared/cache-tags';
 
 import { adminAction } from '@/lib/admin/bound-action';
 import { invalidateTags } from '@/lib/admin/invalidate';
+import { knownLegalPages } from '@/lib/legal-pages';
 import { mediaConfig } from '@/lib/media';
 
 /**
@@ -80,7 +81,11 @@ export async function publishLegalAction(input: unknown) {
       return done;
     },
   });
-  if (result.ok) invalidateTags([legalTag(result.data.kind), LEGAL_NAV_TAG]);
+  if (result.ok) {
+    invalidateTags([legalTag(result.data.kind), LEGAL_NAV_TAG]);
+    // The proxy's set of published pages reloads at once (a newly published page must not 404 for a minute).
+    knownLegalPages.invalidate();
+  }
   return result;
 }
 

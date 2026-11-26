@@ -16,6 +16,7 @@ import { adminLegalDto, adminLegalListDto } from '@store/shared/dto/legal';
 import type { AdminLegalDto, AdminLegalListDto } from '@store/shared/dto/legal';
 import { serialize } from '@store/shared/dto/serialize';
 import { LEGAL_KINDS, LEGAL_LOCALES, type LegalKind, type LegalLocale } from '@store/shared/legal';
+import { legalDraft } from '@store/shared/legal-drafts';
 import { markdownToHtml, MAX_RICH_TEXT_CHARS } from '@store/shared/rich-text';
 
 import { DomainError } from '../errors.ts';
@@ -81,6 +82,8 @@ export const legalCreateSchema = z.object({
   source: sourceSchema,
   /** When the version becomes public, if published. Defaults to the moment it is published. */
   effectiveFrom: startSchema.optional(),
+  /** Start from the neutral "Draft: needs a lawyer" template of this document and language (title and text are then taken from it). */
+  fromTemplate: z.boolean().optional(),
 });
 export const legalUpdateSchema = z.object({
   id: z.uuid(),
@@ -110,8 +113,12 @@ export function renderLegalSource(source: string | null): string {
 export async function createLegalDraft(
   tx: Tx,
   userId: string,
-  input: LegalCreateInput,
+  rawInput: LegalCreateInput,
 ): Promise<{ id: string; version: string }> {
+  const template =
+    rawInput.fromTemplate === true ? legalDraft(rawInput.kind, rawInput.locale) : null;
+  const input =
+    template === null ? rawInput : { ...rawInput, title: template.title, source: template.source };
   // One writer per document at a time, so two drafts cannot pick the same number.
   await tx.execute(
     sql`SELECT pg_advisory_xact_lock(hashtext(${`legal:${input.kind}:${input.locale}`}))`,

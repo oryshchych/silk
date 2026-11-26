@@ -14,6 +14,7 @@ import { serialize } from '@store/shared/dto/serialize';
 import { normalizeUaPhone } from '@store/shared/phone';
 
 import { writeAudit } from '../audit/write-audit.ts';
+import { currentPolicyRef } from '../legal/read.ts';
 
 const name = z
   .string()
@@ -182,7 +183,13 @@ export async function setNewsletter(
     action: input.subscribe ? 'customer.newsletter_subscribed' : 'customer.newsletter_unsubscribed',
     entity: 'customer',
     entityId: who.customerId,
-    diff: { source: 'account' },
+    // A subscription is a consent: the edition of the privacy policy in force is stored with it.
+    diff: input.subscribe
+      ? {
+          source: 'account',
+          privacyRef: await currentPolicyRef(tx, 'privacy', customer.locale === 'en' ? 'en' : 'uk'),
+        }
+      : { source: 'account' },
     ip: who.ip,
   });
   return true;

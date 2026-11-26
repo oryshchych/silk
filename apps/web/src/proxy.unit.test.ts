@@ -11,6 +11,8 @@ vi.mock('next-intl/middleware', async () => {
 // The visible-slug set comes from the database; here it is controlled by the test.
 const has = vi.hoisted(() => vi.fn<(slug: string) => Promise<boolean | null>>());
 vi.mock('./lib/product-slugs', () => ({ knownProductSlugs: { has } }));
+const hasLegal = vi.hoisted(() => vi.fn<(key: string) => Promise<boolean | null>>());
+vi.mock('./lib/legal-pages', () => ({ knownLegalPages: { has: hasLegal } }));
 
 async function loadProxy(appEnv: 'local' | 'production') {
   vi.resetModules();
@@ -91,6 +93,35 @@ describe('proxy: product URL gate', () => {
 
     const english = await proxy(new NextRequest('http://localhost:3000/en/product/nope-1?x=1'));
     expect(rewriteOf(english)).toBe('http://localhost:3000/en/__missing__/product');
+  });
+
+  it('answers an unknown legal page word with the 404 page and lets the seven fixed words through', async () => {
+    const proxy = await loadProxy('local');
+    hasLegal.mockImplementation((key) =>
+      Promise.resolve(key === 'uk:returns' || key === 'en:delivery_payment'),
+    );
+    const ok = await proxy(new NextRequest('http://localhost:3000/legal/returns'));
+    expect(rewriteOf(ok)).toBeNull();
+    const english = await proxy(new NextRequest('http://localhost:3000/en/legal/delivery-payment'));
+    expect(rewriteOf(english)).toBeNull();
+    const unknown = await proxy(new NextRequest('http://localhost:3000/legal/nope'));
+    expect(rewriteOf(unknown)).toBe('http://localhost:3000/uk/__missing__/product');
+    expect(unknown.headers.get('cache-control')).toBe('no-store');
+    const enUnknown = await proxy(new NextRequest('http://localhost:3000/en/legal/Terms?x=1'));
+    expect(rewriteOf(enUnknown)).toBe('http://localhost:3000/en/__missing__/product');
+  });
+
+  it('answers a legal page that is published in the other language only with the 404 page, and fails open when the set is unknown', async () => {
+    const proxy = await loadProxy('local');
+    hasLegal.mockImplementation((key) => Promise.resolve(key === 'uk:about'));
+    const published = await proxy(new NextRequest('http://localhost:3000/legal/about'));
+    expect(rewriteOf(published)).toBeNull();
+    const oneLanguage = await proxy(new NextRequest('http://localhost:3000/en/legal/about'));
+    expect(rewriteOf(oneLanguage)).toBe('http://localhost:3000/en/__missing__/product');
+    expect(oneLanguage.headers.get('cache-control')).toBe('no-store');
+    hasLegal.mockImplementation(() => Promise.resolve(null));
+    const unknown = await proxy(new NextRequest('http://localhost:3000/en/legal/about'));
+    expect(rewriteOf(unknown)).toBeNull();
   });
 
   it('rejects a malformed slug without asking the database', async () => {

@@ -14,6 +14,9 @@ vi.mock('@store/core/sitemap', () => ({
   listSitemapProducts: () => listSitemapProducts(),
   listSitemapCategories: () => listSitemapCategories(),
 }));
+vi.mock('@store/core/legal-read', () => ({
+  listLegalForSitemap: () => Promise.resolve([]),
+}));
 
 const { GET } = await import('./route');
 const call = (name: string): Promise<Response> =>

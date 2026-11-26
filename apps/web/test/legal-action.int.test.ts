@@ -12,11 +12,12 @@ import { createDb, type Db, type DbHandle } from '@store/db/client';
 import { createTestDatabase, type TestDatabase } from '@store/db/test/db';
 
 const USER = '00000000-0000-4000-8000-0000000000cc';
-const state: { role: AdminSession['role']; handle: Db | null; tags: string[] } = vi.hoisted(() => ({
-  role: 'content',
-  handle: null,
-  tags: [],
-}));
+const state: {
+  role: AdminSession['role'];
+  handle: Db | null;
+  tags: string[];
+  gateResets: number;
+} = vi.hoisted(() => ({ role: 'content', handle: null, tags: [], gateResets: 0 }));
 
 async function wired() {
   const { createAdminAction: create } = await import('../src/lib/admin/action');
@@ -45,6 +46,13 @@ vi.mock('@/lib/admin/invalidate', () => ({
     state.tags.push(...tags);
   },
 }));
+vi.mock('@/lib/legal-pages', () => ({
+  knownLegalPages: {
+    invalidate: () => {
+      state.gateResets += 1;
+    },
+  },
+}));
 vi.mock('@/lib/media', () => ({ mediaConfig: () => Promise.resolve(null) }));
 
 const actions = await import('../src/actions/admin-legal');
@@ -65,6 +73,7 @@ afterAll(async () => {
 beforeEach(() => {
   state.role = 'content';
   state.tags.length = 0;
+  state.gateResets = 0;
 });
 
 const draftInput = {
@@ -101,6 +110,7 @@ describe('role matrix', () => {
     );
     expect(row.rows[0]?.status).toBe('draft');
     expect(state.tags).toEqual([]);
+    expect(state.gateResets).toBe(0);
   });
 
   it('a manager (no legal permission) can do nothing, before the input is even parsed', async () => {
@@ -125,6 +135,8 @@ describe('role matrix', () => {
     const done = await actions.publishLegalAction({ id });
     expect(done).toMatchObject({ ok: true, data: { kind: 'terms', locale: 'uk' } });
     expect(state.tags).toEqual(['legal:terms', 'legal-nav']);
+    // The proxy's set of published pages reloads at once, so the new page does not 404 for a minute.
+    expect(state.gateResets).toBe(1);
   });
 
   it('refuses invalid input and an unknown kind', async () => {

@@ -720,7 +720,7 @@ export async function runAccountSmoke(ctx: Context): Promise<void> {
       const stockBefore = await stockOf();
       const body = {
         orderNumber: orderOfA.order_number,
-        reason: 'wrong_size',
+        reason: 'defect',
         comment: 'too small',
         items: [{ orderItemId: line.id, quantity: 1 }],
       };

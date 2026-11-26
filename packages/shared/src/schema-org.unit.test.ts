@@ -139,3 +139,16 @@ describe('serializeJsonLd', () => {
     expect(JSON.parse(json)).toEqual({ a: separators });
   });
 });
+
+describe('buildFaqPage', () => {
+  it('carries exactly the entries it is given', async () => {
+    const { buildFaqPage } = await import('./schema-org');
+    expect(buildFaqPage([{ question: 'Q?', answerText: 'A.' }])).toEqual({
+      '@context': 'https://schema.org',
+      '@type': 'FAQPage',
+      mainEntity: [
+        { '@type': 'Question', name: 'Q?', acceptedAnswer: { '@type': 'Answer', text: 'A.' } },
+      ],
+    });
+  });
+});

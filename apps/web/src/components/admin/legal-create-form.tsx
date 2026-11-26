@@ -7,11 +7,11 @@ import { createLegalDraftAction } from '@/actions/admin-legal';
 import { LEGAL_KINDS, LEGAL_LOCALES } from '@store/shared/legal';
 
 import { buttonClass } from './auth-card';
-import { SelectField, StatusLine, TextField } from './fields';
+import { CheckField, SelectField, StatusLine, TextField } from './fields';
 import { readForm, textOf, useAdminAction } from './use-admin-action';
 
 /** A new draft of a document in a language: the number of the version is assigned by the server. */
-const FIELD = { kind: 'kind', locale: 'locale', title: 'title' } as const;
+const FIELD = { kind: 'kind', locale: 'locale', title: 'title', template: 'template' } as const;
 
 export function LegalCreateForm() {
   const t = useTranslations('admin.legal');
@@ -30,6 +30,7 @@ export function LegalCreateForm() {
               locale: textOf(data, FIELD.locale),
               title: textOf(data, FIELD.title),
               source: '',
+              fromTemplate: data.get(FIELD.template) === 'on',
             }),
           t('created'),
           () => {
@@ -48,6 +49,7 @@ export function LegalCreateForm() {
         name={FIELD.locale}
         options={LEGAL_LOCALES.map((locale) => ({ value: locale, label: t(`locales.${locale}`) }))}
       />
+      <CheckField label={t('fromTemplate')} name={FIELD.template} />
       <TextField label={t('title')} name={FIELD.title} maxLength={200} required />
       <button type="submit" disabled={pending} className={`${buttonClass} w-fit`}>
         {t('create')}

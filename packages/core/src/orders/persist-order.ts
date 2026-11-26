@@ -3,6 +3,7 @@
  * caller's transaction (ADR-4: order, reservation, history and outbox commit
  * together or not at all).
  */
+import { NO_POLICY_REF } from '@store/shared/legal';
 import { createHash, randomBytes } from 'node:crypto';
 
 import { eq, sql } from 'drizzle-orm';
@@ -171,7 +172,15 @@ export async function persistOrder(
     action: 'create',
     entity: 'order',
     entityId: order.id,
-    diff: { source: 'checkout', actor: 'guest', total: pricing.total, termsAccepted: true },
+    diff: {
+      source: 'checkout',
+      actor: 'guest',
+      total: pricing.total,
+      termsAccepted: true,
+      // The editions the buyer accepted (`kind/locale/version`): the text is found by these and never changes.
+      termsRef: input.consentRefs?.terms ?? NO_POLICY_REF,
+      privacyRef: input.consentRefs?.privacy ?? NO_POLICY_REF,
+    },
   });
   // Mail goes through the outbox, never straight from the request (AGENTS.md 5b).
   await tx.insert(outbox).values({

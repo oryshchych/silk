@@ -14,17 +14,32 @@ export function pageMetadata(input: {
   description: string | null;
   locale: SiteLocale;
   siteName: string;
-  alternates: Alternates;
+  /** `languages` is left out for a page that exists in one language only: no hreflang without its counterpart. */
+  alternates: Pick<Alternates, 'canonical'> & { languages?: Alternates['languages'] };
   index: boolean;
   image?: string | null;
+  /** False for a page with no counterpart in the other language: no `og:locale:alternate`. */
+  hasCounterpart?: boolean;
 }): Metadata {
-  const { title, description, locale, siteName, alternates, index, image } = input;
+  const {
+    title,
+    description,
+    locale,
+    siteName,
+    alternates,
+    index,
+    image,
+    hasCounterpart = true,
+  } = input;
   const other = locale === 'uk' ? 'en' : 'uk';
   const images = image === undefined || image === null ? undefined : [image];
   return {
     title,
     ...(description === null ? {} : { description }),
-    alternates: { canonical: alternates.canonical, languages: alternates.languages },
+    alternates: {
+      canonical: alternates.canonical,
+      ...(alternates.languages === undefined ? {} : { languages: alternates.languages }),
+    },
     robots: index ? { index: true, follow: true } : { index: false, follow: true },
     openGraph: {
       type: 'website',
@@ -33,7 +48,7 @@ export function pageMetadata(input: {
       url: alternates.canonical,
       siteName,
       locale: OG_LOCALE[locale],
-      alternateLocale: [OG_LOCALE[other]],
+      ...(hasCounterpart ? { alternateLocale: [OG_LOCALE[other]] } : {}),
       ...(images === undefined ? {} : { images }),
     },
     twitter: {
