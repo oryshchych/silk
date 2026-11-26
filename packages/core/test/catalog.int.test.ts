@@ -491,3 +491,81 @@ describe('product input hardening', () => {
     expect(JSON.stringify(listing)).not.toMatch(/javascript:|data:text|evil\.example/);
   });
 });
+
+describe('sitemap rows', () => {
+  it('lists only visible, indexable products with servable slugs, with a UTC lastmod', async () => {
+    const { listSitemapProducts, sitemapFileStarts } = await import('../src/catalog/sitemap.ts');
+    const visible = await listVisibleProductSlugs(db);
+    const starts = await sitemapFileStarts(db, 25_000);
+    expect(starts).toEqual(visible.slice(0, 1));
+    const rows = await listSitemapProducts(db, { from: starts[0] ?? '', until: null }, 1000);
+    expect(rows.map((r) => r.slug)).toEqual(visible);
+    for (const row of rows) expect(row.lastmod).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/);
+    // Draft, future-dated, inactive-category and gift-card products never appear.
+    const slugs = new Set(rows.map((r) => r.slug));
+    const all = await db.execute(sql`SELECT slug FROM products`);
+    const hiddenSlugs = all.rows.map((r) => String(r['slug'])).filter((s) => !visible.includes(s));
+    expect(hiddenSlugs.length).toBeGreaterThan(0);
+    for (const hidden of hiddenSlugs) expect(slugs.has(hidden)).toBe(false);
+  });
+
+  it('splits into files by slug ranges that cover every product exactly once', async () => {
+    const { listSitemapProducts, sitemapFileStarts } = await import('../src/catalog/sitemap.ts');
+    const visible = await listVisibleProductSlugs(db);
+    const starts = await sitemapFileStarts(db, 2);
+    expect(starts.length).toBe(Math.ceil(visible.length / 2));
+    const seen: string[] = [];
+    for (const [i, from] of starts.entries()) {
+      const rows = await listSitemapProducts(db, { from, until: starts[i + 1] ?? null }, 100);
+      expect(rows.length).toBeLessThanOrEqual(2);
+      seen.push(...rows.map((r) => r.slug));
+    }
+    expect(seen).toEqual(visible);
+  });
+
+  it('never lists a slug the storefront would not serve (Cyrillic, quotes, ? # %)', async () => {
+    const { listSitemapProducts, sitemapFileStarts, listSitemapCategories } =
+      await import('../src/catalog/sitemap.ts');
+    const bad = ['бюстгальтер-мережка', "o'neil", 'a&b<c>"d', 'a?b#c%d/e', 'Upper-Case'];
+    for (const [i, slug] of bad.entries()) {
+      await db.execute(
+        sql`INSERT INTO products (sku, slug, brand, category_id, name_uk, name_en, base_price, is_active, published_at)
+            SELECT ${`BAD-${String(i)}`}, ${slug}, 'X', category_id, 'x', 'x', 1000, true, now() - interval '1 day'
+              FROM products WHERE slug = 'aurora'`,
+      );
+    }
+    const starts = await sitemapFileStarts(db, 25_000);
+    const rows = await listSitemapProducts(db, { from: starts[0] ?? '', until: null }, 1000);
+    for (const slug of bad) expect(rows.map((r) => r.slug)).not.toContain(slug);
+    expect(rows.length).toBeGreaterThan(0);
+    await db.execute(sql`DELETE FROM products WHERE sku LIKE 'BAD-%'`);
+    await db.execute(
+      sql`INSERT INTO categories (slug, name_uk, name_en, depth) VALUES ('Кат?', 'k', 'k', 0)`,
+    );
+    expect((await listSitemapCategories(db)).map((c) => c.slug)).not.toContain('Кат?');
+    await db.execute(sql`DELETE FROM categories WHERE slug = 'Кат?'`);
+  });
+
+  it('excludes a noindex product and a noindex or inactive-branch category', async () => {
+    const { sitemapFileStarts, listSitemapProducts, listSitemapCategories } =
+      await import('../src/catalog/sitemap.ts');
+    const count = async (): Promise<number> => {
+      const starts = await sitemapFileStarts(db, 25_000);
+      return (await listSitemapProducts(db, { from: starts[0] ?? '', until: null }, 1000)).length;
+    };
+    const before = await count();
+    await db
+      .update(products)
+      .set({ noindex: true })
+      .where(sql`slug = 'aurora'`);
+    expect(await count()).toBe(before - 1);
+    await db
+      .update(products)
+      .set({ noindex: false })
+      .where(sql`slug = 'aurora'`);
+    const categories = (await listSitemapCategories(db)).map((c) => c.slug);
+    expect(categories).toEqual(expect.arrayContaining(['lingerie', 'bras', 'push-up', 'homewear']));
+    expect(categories).not.toContain('archive');
+    expect(categories).not.toContain('archive-old');
+  });
+});
