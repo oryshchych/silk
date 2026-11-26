@@ -190,3 +190,33 @@ describe('parseEnv', () => {
     }
   });
 });
+
+describe('analytics identifiers', () => {
+  const base = {
+    APP_ENV: 'local',
+    DATABASE_URL: 'postgres://u:p@localhost:5432/d',
+    EMAIL_TO_OVERRIDE: 'dev@example.com',
+  };
+
+  it('accepts identifiers and ignores empty strings (compose passes them empty)', () => {
+    const env = parseEnv({
+      ...base,
+      GA4_MEASUREMENT_ID: 'G-ABCD1234',
+      META_PIXEL_ID: '123456789012',
+    });
+    expect(env.GA4_MEASUREMENT_ID).toBe('G-ABCD1234');
+    expect(
+      parseEnv({ ...base, GA4_MEASUREMENT_ID: '', GTM_CONTAINER_ID: '' }).GA4_MEASUREMENT_ID,
+    ).toBeUndefined();
+  });
+
+  it('a malformed identifier does NOT stop the process from booting (it is dropped later, with a log)', () => {
+    for (const bad of ['G-1&x=2', 'GTM-"><x', '12ab', 'x'.repeat(60), '1234567\n']) {
+      expect(() =>
+        parseEnv({ ...base, GA4_MEASUREMENT_ID: bad, META_PIXEL_ID: bad }),
+      ).not.toThrow();
+    }
+    // Only an absurd length is refused (it could not be an identifier and bloats the page).
+    expect(() => parseEnv({ ...base, GA4_MEASUREMENT_ID: 'x'.repeat(65) })).toThrow();
+  });
+});

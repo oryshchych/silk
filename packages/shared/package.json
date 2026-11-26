@@ -10,6 +10,7 @@
     "./seo": "./src/seo.ts",
     "./cache-tags": "./src/cache-tags.ts",
     "./schema-org": "./src/schema-org.ts",
+    "./analytics": "./src/analytics.ts",
     "./sitemap-xml": "./src/sitemap-xml.ts",
     "./product-feed": "./src/product-feed.ts",
     "./dto/serialize": "./src/dto/serialize.ts",

@@ -256,3 +256,32 @@ export async function runPostFloodSmoke({
     [...statuses].every((s) => s === 404 || s === 405),
   );
 }
+
+/**
+ * Trackers and consent, as the server sends them: the primary HTML of every public page names no
+ * tracker host and carries no script for one (the scripts are added by the browser only after the
+ * visitor accepts), while the identifiers do reach the page as runtime data.
+ */
+export async function runAnalyticsSmoke({
+  base,
+  check,
+}: Pick<SeoSmokeContext, 'base' | 'check'>): Promise<void> {
+  const HOSTS =
+    /googletagmanager\.com|google-analytics\.com|connect\.facebook\.net|fbevents|gtag\/js|gtm\.js/i;
+  const pages = ['/', '/en', '/category/bras', '/cart', '/checkout', '/order/success'];
+  let clean = true;
+  let identified = false;
+  for (const path of pages) {
+    const page = await text(`${base}${path}`);
+    if (HOSTS.test(page.body)) {
+      process.stderr.write(`tracker host in the HTML of ${path}\n`);
+      clean = false;
+    }
+    identified ||= page.body.includes('G-SMOKE1234');
+  }
+  check('analytics: no page names a tracker host or loads a tracker script before consent', clean);
+  check(
+    'analytics: the identifiers reach the page as runtime data (ADR-10), not baked into the build',
+    identified,
+  );
+}

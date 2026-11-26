@@ -125,6 +125,14 @@ export const envSchema = z
 
     SENTRY_DSN: z.url({ protocol: /^https$/ }).optional(),
 
+    // Analytics identifiers (public by nature, not secrets). Read at runtime and used ONLY when
+    // APP_ENV is production; trackers load after the visitor's consent (phase 6). Deliberately NOT
+    // checked here: a typo in an optional identifier must not take the shop down. `analyticsConfig`
+    // validates the shape, drops a bad value and the web app logs that it did.
+    GA4_MEASUREMENT_ID: z.string().max(64).optional(),
+    GTM_CONTAINER_ID: z.string().max(64).optional(),
+    META_PIXEL_ID: z.string().max(64).optional(),
+
     // Build-time (REVIEW_TRIAGE): значення вшивається в бандл, тому воно
     // не може відрізнятися між staging і production на одному образі.
     NEXT_PUBLIC_SITE_URL: z.url({ protocol: /^https?$/ }).optional(),

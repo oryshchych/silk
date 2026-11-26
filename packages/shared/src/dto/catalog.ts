@@ -96,6 +96,8 @@ export type FilterOptionsDto = z.output<typeof filterOptionsDto>;
  */
 export const variantDto = z.object({
   id: z.uuid(),
+  /** Public: it is the product feed `id` and the id analytics events carry. */
+  sku: z.string(),
   sizeLabel: z.string(),
   sizeSystem: z.enum(sizeSystemValues),
   band: z.number().int().nullable(),

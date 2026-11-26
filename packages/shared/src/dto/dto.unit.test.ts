@@ -46,6 +46,7 @@ const orderRow = {
   items: [
     {
       name: 'Бралет «Мрія»',
+      productId: '0190a1b2-0000-7000-8000-0000000000bb',
       sku: 'LS-BRA-003-BLACK-75B',
       sizeLabel: '75B',
       colorName: 'Чорний',
@@ -133,6 +134,7 @@ describe('productDetailDto', () => {
     variants: [
       {
         id: uuid(2),
+        sku: 'AUR-75B-BLK',
         sizeLabel: '75B',
         sizeSystem: 'bra',
         band: 75,
@@ -192,6 +194,7 @@ describe('productDetailDto', () => {
       'price',
       'sizeLabel',
       'sizeSystem',
+      'sku',
     ]);
     expect(Object.keys(dto.images[0] ?? {}).sort()).toEqual([
       'alt',

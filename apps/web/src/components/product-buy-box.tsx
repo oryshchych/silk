@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { useId, useState } from 'react';
 
 import { calculateBraSize } from '@store/core/bra-size';
+import type { AnalyticsItem } from '@store/shared/analytics';
 import type { ColorDto, ProductImageDto } from '@store/shared/dto/catalog';
 
 import { AddToCartButton } from '@/components/add-to-cart-button';
@@ -34,6 +35,8 @@ interface Props {
   prices: { base: string; compareAt: string | null; byVariant: Record<string, string> };
   /** Locale-prefixed cart path, for the "view cart" link. */
   cartHref: string;
+  /** What "add to cart" reports to analytics, per variant id (built on the server). */
+  trackItems: Record<string, AnalyticsItem>;
 }
 
 function Gallery({ images, name }: { images: ProductImageDto[]; name: string }) {
@@ -192,7 +195,15 @@ function SizeCalculator({
   );
 }
 
-export function ProductBuyBox({ name, images, colors, variants, prices, cartHref }: Props) {
+export function ProductBuyBox({
+  name,
+  images,
+  colors,
+  variants,
+  prices,
+  cartHref,
+  trackItems,
+}: Props) {
   const t = useTranslations('product');
   const [selection, setSelection] = useState(() => initialSelection(variants));
   const sizes = variantsOfColor(variants, selection.colorSlug);
@@ -289,6 +300,7 @@ export function ProductBuyBox({ name, images, colors, variants, prices, cartHref
         <AddToCartButton
           variantId={selected?.available === true ? selected.id : null}
           cartHref={cartHref}
+          trackItem={selected === undefined ? null : (trackItems[selected.id] ?? null)}
         />
 
         {hasBras ? (

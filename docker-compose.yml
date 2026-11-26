@@ -71,6 +71,9 @@ services:
       R2_ENDPOINT: ${R2_ENDPOINT:-}
       MEDIA_PUBLIC_BASE_URL: ${MEDIA_PUBLIC_BASE_URL:-}
       SENTRY_DSN: ${SENTRY_DSN:-}
+      GA4_MEASUREMENT_ID: ${GA4_MEASUREMENT_ID:-}
+      GTM_CONTAINER_ID: ${GTM_CONTAINER_ID:-}
+      META_PIXEL_ID: ${META_PIXEL_ID:-}
       # Runtime public origin. Defaults to the project's NEXT_PUBLIC_SITE_URL (the
       # build argument above is NOT visible to the running container), so the
       # Dokploy project needs no new variable.

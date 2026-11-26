@@ -3,7 +3,9 @@ import { NextIntlClientProvider } from 'next-intl';
 import { getMessages } from 'next-intl/server';
 import { getTranslations } from 'next-intl/server';
 
+import { ConsentBanner } from '@/components/consent-banner';
 import { resolveLocale } from '@/i18n/locale';
+import { getAnalyticsConfig } from '@/lib/analytics-config';
 import { getSiteUrl } from '@/lib/site-url';
 
 import '../globals.css';
@@ -28,6 +30,8 @@ export default async function LocaleLayout({ children, params }: LayoutProps<'/[
   // (`/nope`) is rejected by the page with notFound(); app/global-not-found.tsx renders it.
   const { locale } = resolveLocale((await params).locale);
   const messages = await getMessages();
+  // Identifiers only, and only in production (null elsewhere): no tracker can exist on staging.
+  const analytics = await getAnalyticsConfig();
 
   return (
     <html lang={locale}>
@@ -41,8 +45,11 @@ export default async function LocaleLayout({ children, params }: LayoutProps<'/[
             cart: messages.cart,
             checkout: messages.checkout,
             order: messages.order,
+            consent: messages.consent,
           }}
         >
+          {/* Before the page content, so its effect (the tracker) runs before the page's events. */}
+          {analytics === null ? null : <ConsentBanner config={analytics} />}
           {children}
         </NextIntlClientProvider>
       </body>

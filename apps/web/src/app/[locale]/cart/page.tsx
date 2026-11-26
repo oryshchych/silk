@@ -9,7 +9,9 @@ import { formatMoney } from '@store/shared/money';
 
 import { CartLineControls } from '@/components/cart-line-controls';
 import { SiteShell } from '@/components/site-shell';
+import { TrackEvent } from '@/components/track-event';
 import { resolveLocale } from '@/i18n/locale';
+import { cartLineItem } from '@/lib/analytics/items';
 import { readCartToken } from '@/lib/cart-cookie';
 import { getDb } from '@/lib/db';
 import { href, paths } from '@/lib/paths';
@@ -35,6 +37,9 @@ export default async function CartPage({ params }: Props) {
   return (
     <SiteShell locale={locale} path={paths.cart} degrade>
       <h1 className="font-display text-3xl">{t('title')}</h1>
+      {view === null || empty ? null : (
+        <TrackEvent event={{ name: 'view_cart', items: view.lines.map(cartLineItem) }} />
+      )}
       {empty ? (
         <div className="mt-6">
           <p>{t('empty')}</p>
@@ -84,6 +89,7 @@ export default async function CartPage({ params }: Props) {
                     variantId={line.variantId}
                     name={line.name}
                     quantity={line.quantity}
+                    item={cartLineItem(line)}
                   />
                 </div>
                 <p className="font-medium">{formatMoney(line.lineTotal, locale)}</p>

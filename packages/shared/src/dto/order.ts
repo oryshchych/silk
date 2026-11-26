@@ -30,6 +30,8 @@ export const paymentStatusValues = [
 
 export const customerOrderItemDto = z.object({
   name: z.string(),
+  /** The product (null once it was deleted): the id analytics events carry, as in the feed's `item_group_id`. */
+  productId: z.uuid().nullable(),
   sku: z.string(),
   sizeLabel: z.string(),
   colorName: z.string(),

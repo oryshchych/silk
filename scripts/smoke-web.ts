@@ -24,7 +24,7 @@ import {
 import { runAdminSmoke } from './smoke-admin.ts';
 import { runCheckoutSmoke } from './smoke-checkout.ts';
 import { runPaymentSmoke } from './smoke-payments.ts';
-import { runPostFloodSmoke, runSeoSmoke } from './smoke-seo.ts';
+import { runAnalyticsSmoke, runPostFloodSmoke, runSeoSmoke } from './smoke-seo.ts';
 
 const root = join(import.meta.dirname, '..');
 const port = 3917;
@@ -54,6 +54,10 @@ const server = spawn(process.execPath, [join(copy, 'apps/web/server.js')], {
     PORT: String(port),
     APP_ENV: 'production',
     SITE_URL: SITE,
+    // Analytics identifiers (fake): the pages carry them as data, and no tracker may load before consent.
+    GA4_MEASUREMENT_ID: 'G-SMOKE1234',
+    GTM_CONTAINER_ID: 'GTM-SMOKE12',
+    META_PIXEL_ID: '123456789012',
     DATABASE_URL: databaseUrl,
     // Production needs every secret; the values are never used by these pages.
     ...Object.fromEntries(
@@ -418,6 +422,7 @@ try {
   }
   await runSeoSmoke({ base, site: SITE, check, storedFiles });
   await runPostFloodSmoke({ base, site: SITE, check, storedFiles });
+  await runAnalyticsSmoke({ base, check });
   await runCheckoutSmoke({ base, buildRoot: copy, check, storedFiles });
   await runAdminSmoke({
     base,

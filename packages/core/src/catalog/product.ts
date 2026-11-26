@@ -54,6 +54,7 @@ const imageRow = z.object({
 
 const variantRow = z.object({
   id: z.uuid(),
+  sku: z.string(),
   size_label: z.string(),
   size_system: z.enum(['bra', 'panty', 'apparel', 'onesize']),
   band: z.number().int().nullable(),
@@ -153,7 +154,7 @@ export async function getProductBySlug(
   const variants = await queryRows(
     reader,
     variantRow,
-    sql`SELECT v.id, s.label AS size_label, s.system AS size_system, s.band, s.cup,
+    sql`SELECT v.id, v.sku, s.label AS size_label, s.system AS size_system, s.band, s.cup,
                c.slug AS color_slug, ${localized('c', 'name', locale)} AS color_name, c.hex AS color_hex,
                coalesce(v.price_override, ${product.base_price}) AS price,
                ${availableVariant} AS available,
@@ -218,6 +219,7 @@ export async function getProductBySlug(
     colors: distinctColors(variants),
     variants: variants.map((variant) => ({
       id: variant.id,
+      sku: variant.sku,
       sizeLabel: variant.size_label,
       sizeSystem: variant.size_system,
       band: variant.band,

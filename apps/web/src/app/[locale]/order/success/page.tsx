@@ -5,11 +5,14 @@ import { notFound } from 'next/navigation';
 
 import { getOrderByAccessToken } from '@store/core/order-lookup';
 import { loadShippingSettings } from '@store/core/shipping';
+import { subtract } from '@store/shared/money';
 
 import { OrderDetails } from '@/components/order-details';
 import { OrderPayment } from '@/components/order-payment';
 import { SiteShell } from '@/components/site-shell';
+import { TrackEvent } from '@/components/track-event';
 import { resolveLocale } from '@/i18n/locale';
+import { orderItems } from '@/lib/analytics/items';
 import { readOrderAccess } from '@/lib/cart-cookie';
 import { getDb } from '@/lib/db';
 import { getPaymentProviders } from '@/lib/payment-providers';
@@ -73,6 +76,17 @@ export default async function OrderSuccessPage({ params }: Props) {
           {order.paymentProvider === 'bank_transfer' ? (
             <p className="text-sm">{t('nextTransfer')}</p>
           ) : null}
+          {isPurchase(order.paymentProvider, order.paymentStatus, order.status) ? (
+            <TrackEvent
+              event={{
+                name: 'purchase',
+                items: orderItems(order),
+                reference: order.orderNumber,
+                value: subtract(order.subtotal, order.discountTotal),
+                shipping: order.shippingTotal,
+              }}
+            />
+          ) : null}
           <OrderDetails order={order} locale={locale} />
           <Link href={href(locale, paths.orderTrack)} className="underline">
             {t('trackLink')}
@@ -94,4 +108,15 @@ function cardState(
   if (status === 'cancelled') return 'expired';
   if (payment === 'failed' || payment === 'expired') return payment;
   return 'pending';
+}
+
+/**
+ * A purchase is reported once the shop can count it: a card order when the payment is confirmed
+ * (the server state, never the browser's redirect), a cash-on-delivery order once it is placed.
+ * A cancelled order and a bank transfer still waiting for the money are not conversions yet.
+ */
+function isPurchase(provider: string | null, payment: string, status: string): boolean {
+  if (status === 'cancelled') return false;
+  if (provider === 'cod') return true;
+  return payment === 'paid' || payment === 'partially_refunded';
 }

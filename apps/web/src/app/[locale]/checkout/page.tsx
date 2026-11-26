@@ -8,7 +8,9 @@ import { loadShippingSettings } from '@store/core/shipping';
 
 import { CheckoutForm } from '@/components/checkout/checkout-form';
 import { SiteShell } from '@/components/site-shell';
+import { TrackEvent } from '@/components/track-event';
 import { resolveLocale } from '@/i18n/locale';
+import { cartLineItem } from '@/lib/analytics/items';
 import { readCartToken } from '@/lib/cart-cookie';
 import { getDb } from '@/lib/db';
 import { getPaymentProviders } from '@/lib/payment-providers';
@@ -55,6 +57,7 @@ export default async function CheckoutPage({ params }: Props) {
         </div>
       ) : (
         <div className="mt-6">
+          <TrackEvent event={{ name: 'begin_checkout', items: view.lines.map(cartLineItem) }} />
           {view.hasProblems ? (
             <p role="status" className="mb-4 text-sm text-danger">
               {t('cartHasProblems')}{' '}
