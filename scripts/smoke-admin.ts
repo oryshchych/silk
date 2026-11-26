@@ -583,6 +583,22 @@ export async function runAdminSmoke({
         adminCustomersCsv.html.includes('smoke-buyer@example.test'),
     );
 
+    // The user screen is the owner's alone: every other role gets the not-found page, no account data.
+    for (const [role, token] of [
+      ['admin', adminToken],
+      ['manager', managerToken],
+      ['content', contentToken],
+    ] as const) {
+      const usersPage = await get('/admin/users', cookie(token));
+      check(
+        `users: a ${role} role gets the not-found page on /admin/users, with no account listed`,
+        !usersPage.html.includes(manager) &&
+          !usersPage.html.includes('Two-step') &&
+          !usersPage.html.includes('Двоетапний') &&
+          (usersPage.status === 404 || usersPage.html.includes('NEXT_HTTP_ERROR_FALLBACK;404')),
+      );
+    }
+
     // The waybill print route: its own auth, checked before the carrier or the order is touched.
     const printPath = `/admin/print/waybill/${order.id}?kind=document`;
     const anonymousPrint = await get(printPath);

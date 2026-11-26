@@ -339,7 +339,8 @@
       "importExport": "Import and export",
       "stock": "Stock",
       "orders": "Orders",
-      "customers": "Customers"
+      "customers": "Customers",
+      "users": "Users"
     },
     "dashboard": {
       "title": "Overview",
@@ -417,7 +418,11 @@
       "WAYBILL_NOT_ALLOWED": "A waybill cannot be made now (check the delivery method, the status, the recipient name and whether one already exists).",
       "WAYBILL_IN_PROGRESS": "A waybill is already being made or needs checking.",
       "WAYBILL_NOT_CONFIGURED": "The carrier or the sender profile is not configured.",
-      "ORDER_HAS_WAYBILL": "The order has a waybill (or one is being made). Resolve the waybill before cancelling or editing the order."
+      "ORDER_HAS_WAYBILL": "The order has a waybill (or one is being made). Resolve the waybill before cancelling or editing the order.",
+      "ADMIN_LAST_OWNER": "The last active owner cannot be demoted or deactivated.",
+      "ADMIN_SELF_CHANGE": "You cannot change your own account here.",
+      "ADMIN_EMAIL_TAKEN": "An account with this email already exists.",
+      "ADMIN_WEAK_PASSWORD": "The password must be at least 12 characters and must not contain the part of the email before the @."
     },
     "editor": {
       "newTitle": "New product",
@@ -844,6 +849,42 @@
         "returned": "Returned"
       },
       "exportHint": "A file holds at most 10 000 customers. If it was cut, its last line says where the next part starts."
+    },
+    "users": {
+      "title": "Users",
+      "intro": "Staff accounts. A role change, a deactivation and a password reset end all sessions of that person. You cannot change your own account here, and the last active owner cannot be demoted or deactivated.",
+      "newUser": "New account",
+      "create": "Create account",
+      "created": "Account created.",
+      "password": "First password",
+      "passwordHint": "At least 12 characters, not containing the part of the email before the @. Hand it over safely; it is never shown again.",
+      "col": {
+        "email": "Email",
+        "role": "Role",
+        "status": "Status",
+        "mfa": "Two-step sign-in",
+        "lastLogin": "Last sign-in",
+        "sessions": "Live sessions",
+        "actions": "Actions"
+      },
+      "role": {
+        "owner": "Owner",
+        "admin": "Administrator",
+        "manager": "Manager",
+        "content": "Content editor"
+      },
+      "active": "Active",
+      "inactive": "Deactivated",
+      "yes": "Set up",
+      "no": "Not yet",
+      "you": "This is you",
+      "changeRole": "Change role",
+      "deactivate": "Deactivate",
+      "activate": "Activate",
+      "newPassword": "New password",
+      "resetPassword": "Reset password",
+      "saved": "Saved.",
+      "passwordReset": "Password reset; the person was signed out everywhere."
     }
   }
 }

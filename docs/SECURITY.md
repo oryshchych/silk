@@ -77,6 +77,7 @@ confirmed TOTP before a session counts; so must anyone who enrolled one.
 | Download the product CSV | `catalog.export` | `GET /admin/export/products` (`app/admin/export/products/route.ts`): the cost column only for `catalog.cost.view`, every export audited |
 | Change a quantity or take a line off an unshipped order | `orders.edit` | `editOrderItemsAction`: refused while an online payment is open, after a fiscal receipt, and for a shipped or cancelled order; the audit row records the lines that really changed |
 | Refund (full or part) | `orders.refund` | `refundOrderAction`: the amount is reserved and audited in one transaction, the provider is called after the commit; a client request id makes a double submit of a partial refund one refund |
+| Create an account, change a role, deactivate or activate, reset a password | `users.manage` (owner only) | `createUserAction`, `changeUserRoleAction`, `setUserActiveAction`, `resetUserPasswordAction` (`actions/admin-users.ts`, rules in `core/auth/users-admin.ts`): nobody changes their OWN account here, the last active owner cannot be demoted or deactivated (one advisory lock serialises two owners demoting each other), a role change, a deactivation and a password reset end every session of that person, a password is never audited, returned or stored in clear |
 | Adjust the stock of a variant (receipt, write-off, stocktake) | `stock.adjust` | `adjustStockAction` (`actions/admin-stock.ts`): refuses a result below the reserved quantity (Q44), a request id makes a repeat harmless, the history row and the audit entry are written in the same transaction |
 
 The order card lists the email of the staff member behind each history row (note, status change, item edit) to every role that holds `orders.view`; like the stock history it never leaves the admin.
@@ -180,6 +181,5 @@ Both routes check the session, the permission and a per-user limit (a 429 carrie
 ## Known gaps (owner queue)
 
 - Mobile refresh-token rotation (the bearer token works, refresh rotation needs its own table).
-- Password reset by email, and TOTP re-enrolment or user management screens: not in phase 4's plan;
-  until then the owner resets an account with `pnpm admin:create`.
+- Password reset by email and TOTP re-enrolment: not built. The owner resets another person's password on the Users screen (phase 5, Q41); the owner's own password is reset with `pnpm admin:create`.
 - QR code for enrolment: the key and the `otpauth` link are shown as text.

@@ -42,6 +42,10 @@ const KNOWN_CODES = [
   'WAYBILL_IN_PROGRESS',
   'WAYBILL_NOT_CONFIGURED',
   'ORDER_HAS_WAYBILL',
+  'ADMIN_LAST_OWNER',
+  'ADMIN_SELF_CHANGE',
+  'ADMIN_EMAIL_TAKEN',
+  'ADMIN_WEAK_PASSWORD',
 ] as const;
 
 export type ActionOutcome = { ok: true; data?: unknown } | { ok: false; code: string };
