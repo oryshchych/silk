@@ -159,6 +159,25 @@ A customer is NOT an admin: `admin_users` has no row for them, and the two audie
   request; a customer who names another customer's order, address or review gets the same "not found" as
   for a record that does not exist.
 
+### Customer data and actions
+
+Every customer action goes through `customerAction` (`apps/web/src/lib/account/action.ts`), in this order:
+Origin (CSRF), the session read from the database, the per-customer limit (60 a minute), then the input is
+parsed; the body runs in a transaction with the account as the author. A request without a session is
+refused before its body is read.
+
+| Action | Checked in |
+|---|---|
+| Reorder an order | `reorderAction`: the order is looked up by number AND the session's customer id; another customer's number is "not found"; the price and stock are the cart's and checkout's, never the old order's |
+| Edit the profile (names, phone, language) | `updateProfileAction`; the audit row names the fields, never the values |
+| Save sizes | `saveSizesAction`; a size of the wrong system is refused; the browser gets only the labels in the readable `silk_sizes` cookie |
+| Newsletter on or off | `setNewsletterAction`; the consent row (`newsletter_subscribers`) records the time and the source `account`; a repeat records nothing; the history is in `audit_log` |
+| Add or delete an address | `addAddressAction`, `deleteAddressAction`; an id of another customer is "not found"; ten at most (a per-customer lock), one default |
+
+"Your size" on a product page never touches the cached HTML: the saved size travels in the `silk_sizes`
+cookie (a label, not a secret) and a client component reads it after hydration. A smoke check compares the
+product page byte for byte for an anonymous and a signed-in visitor.
+
 ## Catalog data and the cost
 
 `products.cost_price` is read for the admin only through `packages/core/src/catalog-admin/read.ts`,
