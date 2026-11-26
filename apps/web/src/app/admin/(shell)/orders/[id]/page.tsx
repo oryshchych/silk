@@ -7,6 +7,8 @@ import { notFound } from 'next/navigation';
 import { z } from 'zod';
 
 import { OrderActions } from '@/components/admin/order-actions';
+import { OrderItemsEditor } from '@/components/admin/order-items-editor';
+import { OrderRefundForm } from '@/components/admin/order-refund-form';
 import { LOCALE_COOKIE, parseAdminLocale } from '@/lib/admin/preferences';
 import { formatWhen } from '@/lib/admin/format';
 import { requirePermission } from '@/lib/admin/session';
@@ -141,6 +143,28 @@ export default async function AdminOrderPage({ params }: { params: Promise<{ id:
         }
       />
 
+      {can(session.role, 'orders.edit') && order.actions.includes('cancel') ? (
+        <OrderItemsEditor
+          orderId={order.id}
+          items={order.items.map((item) => ({
+            id: item.id,
+            label: `${item.name} (${item.sku} · ${item.colorName} / ${item.sizeLabel})`,
+            quantity: item.quantity,
+          }))}
+        />
+      ) : null}
+      {can(session.role, 'orders.refund') && order.capturedTotal > order.refundedTotal ? (
+        <OrderRefundForm
+          orderId={order.id}
+          attempts={order.attempts
+            .filter((attempt) => attempt.capturedAmount > 0)
+            .map((attempt) => ({
+              id: attempt.id,
+              label: `#${String(attempt.attemptNumber)} ${attempt.provider} ${price(attempt.capturedAmount)}`,
+            }))}
+        />
+      ) : null}
+
       <h2 className="mt-6 text-lg font-semibold">{t('payments')}</h2>
       {order.paymentEvents.length === 0 ? (
         <p>{t('noEvents')}</p>
@@ -155,6 +179,20 @@ export default async function AdminOrderPage({ params }: { params: Promise<{ id:
             </li>
           ))}
         </ul>
+      )}
+
+      {order.refunds.length === 0 ? null : (
+        <>
+          <h2 className="mt-6 text-lg font-semibold">{t('refunds')}</h2>
+          <ul className="mt-2 space-y-1">
+            {order.refunds.map((refund) => (
+              <li key={refund.id}>
+                {when(refund.at)} · {price(refund.amount)} · {t(`opState.${refund.state}`)}
+                {refund.reason === null ? '' : ` · ${refund.reason}`}
+              </li>
+            ))}
+          </ul>
+        </>
       )}
 
       <h2 className="mt-6 text-lg font-semibold">{t('history')}</h2>

@@ -62,6 +62,23 @@ export function percentOf(a: Money, percent: number, rounding: Rounding): Money 
 }
 
 /**
+ * `a × numerator / denominator`, rounded half-up once (ADR-1). For a share of an amount that
+ * follows a quantity: a line of 3 units with a discount of 1000 that shrinks to 2 units keeps
+ * `prorate(1000, 2, 3)` = 667. BigInt keeps the product exact on large amounts.
+ */
+export function prorate(a: Money, numerator: number, denominator: number): Money {
+  if (!Number.isSafeInteger(numerator) || !Number.isSafeInteger(denominator)) {
+    throw new RangeError('prorate takes whole numbers');
+  }
+  if (denominator <= 0 || numerator < 0 || a < 0) {
+    throw new RangeError('prorate needs a positive denominator and non-negative operands');
+  }
+  const exact = BigInt(a) * BigInt(numerator);
+  const d = BigInt(denominator);
+  return money(Number((exact * 2n + d) / (2n * d)));
+}
+
+/**
  * Розподіл суми пропорційно вагам методом найбільшого залишку (ADR-15).
  *
  *  1. Кожна частка — floor від ідеальної.

@@ -407,7 +407,12 @@
       "ORDER_NOT_CONFIRMABLE": "The order cannot be confirmed in this state.",
       "ORDER_TRANSITION_INVALID": "The order is not in a state that allows this step. Reload the page.",
       "TRANSFER_AMOUNT_MISMATCH": "The received amount must equal the order total.",
-      "STOCK_COUNTER_DRIFT": "Stock counters do not match the reservations. Do not repeat the action; tell the owner."
+      "STOCK_COUNTER_DRIFT": "Stock counters do not match the reservations. Do not repeat the action; tell the owner.",
+      "REFUND_BUDGET_EXCEEDED": "The amount is more than what is left to refund.",
+      "REFUND_NO_PROVIDER": "This payment cannot be refunded through a provider (cash on delivery, transfer or provider not configured).",
+      "REFUND_NOT_ALLOWED": "The refund is not allowed for this order or payment.",
+      "CHECKOUT_INSUFFICIENT_STOCK": "Not enough stock for that quantity.",
+      "ORDER_PAYMENT_OPEN": "The order has a payment in progress. Wait for it to finish or cancel the order before editing."
     },
     "editor": {
       "newTitle": "New product",
@@ -738,7 +743,29 @@
         "pickup": "Pickup"
       },
       "cancelledRefundDue": "The order is cancelled, but the money received is NOT returned. A refund is a separate step.",
-      "cancelRefundWarning": "Cancelling does not return the money received. Start a refund after cancelling."
+      "cancelRefundWarning": "Cancelling does not return the money received. Start a refund after cancelling.",
+      "editItems": "Edit items",
+      "editHint": "Set 0 to take a line off. Stock stays reserved; the totals are recalculated.",
+      "editReason": "Reason for the change (required)",
+      "saveItems": "Save items",
+      "refund": "Refund",
+      "refundAmount": "Amount, UAH (empty = everything left)",
+      "refundPayment": "Payment",
+      "refundReason": "Reason (required)",
+      "refundSubmit": "Refund through the provider",
+      "refundStarted": "The refund was sent. The status changes when the provider confirms.",
+      "refunds": "Refunds",
+      "opState": {
+        "pending": "Reserved",
+        "in_flight": "Sent, awaiting answer",
+        "succeeded": "Done",
+        "failed": "Failed",
+        "unknown": "Result unknown, needs checking"
+      },
+      "refundDone": "The provider confirmed the refund.",
+      "refundUnknown": "The provider did not answer. The refund MAY have gone through: do not repeat it, the status updates when it is checked.",
+      "refundFailed": "The provider refused the refund. Nothing was returned; you can try again.",
+      "refundNotSent": "The refund is recorded but was not sent. Reload the card and check its state."
     }
   }
 }

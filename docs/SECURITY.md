@@ -41,6 +41,8 @@ confirmed TOTP before a session counts; so must anyone who enrolled one.
 | `orders.view` | owner, admin, manager | Open the order list and an order card (no unit cost, no carrier cost without `catalog.cost.view`) |
 | `orders.manage` | owner, admin, manager | Move an order along (confirm, including cash on delivery, process, ship, deliver) and write an internal note |
 | `orders.cancel` | owner, admin, manager | Cancel an order (a comment is required) |
+| `orders.edit` | owner, admin, manager | Change a quantity or take a line off an order that has not shipped (totals recomputed, reservation adjusted, history row with the reason) |
+| `orders.refund` | owner, admin | Start a refund through the payment provider (full or part); money leaves only through the provider call |
 | `orders.confirm_payment` | owner, admin, manager | Record a received bank transfer (the confirmed source of a transfer payment, ADR-4) |
 | `media.upload` | owner, admin, content | Upload and edit product images |
 | `catalog.import` | owner, admin | CSV / XLSX import |
@@ -68,6 +70,8 @@ confirmed TOTP before a session counts; so must anyone who enrolled one.
 | Edit a photo's alt text, colour, order; delete it | `media.upload` | `updateProductImageAction`, `deleteProductImageAction` |
 | Preview and commit a CSV import | `catalog.import` | `previewImportAction` (writes nothing), `commitImportAction` (`actions/admin-import.ts`): a column the role may not write (price without `catalog.price`, cost without `catalog.cost.view`) turns the row into an error; each written row has its own audit row |
 | Download the product CSV | `catalog.export` | `GET /admin/export/products` (`app/admin/export/products/route.ts`): the cost column only for `catalog.cost.view`, every export audited |
+| Change a quantity or take a line off an unshipped order | `orders.edit` | `editOrderItemsAction`: refused while an online payment is open, after a fiscal receipt, and for a shipped or cancelled order; the audit row records the lines that really changed |
+| Refund (full or part) | `orders.refund` | `refundOrderAction`: the amount is reserved and audited in one transaction, the provider is called after the commit; a client request id makes a double submit of a partial refund one refund |
 | Adjust the stock of a variant (receipt, write-off, stocktake) | `stock.adjust` | `adjustStockAction` (`actions/admin-stock.ts`): refuses a result below the reserved quantity (Q44), a request id makes a repeat harmless, the history row and the audit entry are written in the same transaction |
 
 The order card lists the email of the staff member behind each history row (note, status change, item edit) to every role that holds `orders.view`; like the stock history it never leaves the admin.

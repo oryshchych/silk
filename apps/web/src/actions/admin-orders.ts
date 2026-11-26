@@ -2,15 +2,22 @@
 
 import { cancelOrder, shipOrder } from '@store/core/fulfilment';
 import { advanceOrder, addOrderNote, ADMIN_SOURCE } from '@store/core/orders-admin';
+import { editOrderItems } from '@store/core/orders-admin-edit';
+import { reserveAdminRefund } from '@store/core/orders-admin-refund';
+import { processRefund, type ProviderMap } from '@store/core/refunds';
 import {
   cancelOrderSchema,
   confirmTransferSchema,
+  editItemsSchema,
+  refundSchema,
   orderIdSchema,
   orderNoteSchema,
 } from '@store/core/orders-admin-schemas';
 import { confirmTransferReceived } from '@store/core/offline';
 
 import { adminAction } from '@/lib/admin/bound-action';
+import { getDb } from '@/lib/db';
+import { getPaymentProviders } from '@/lib/payment-providers';
 
 /**
  * Order mutations. Each one names ONE permission (`adminAction` checks it before the input is
@@ -164,4 +171,89 @@ export async function confirmTransferAction(input: unknown) {
       return { changed: true };
     },
   });
+}
+
+/** Change quantities or remove lines of an order that has not shipped; the reason is mandatory. */
+export async function editOrderItemsAction(input: unknown) {
+  return await adminAction({
+    permission: 'orders.edit',
+    schema: editItemsSchema,
+    input,
+    run: async ({ tx, input: parsed, session, audit, skipAudit }) => {
+      const done = await editOrderItems(tx, {
+        orderId: parsed.orderId,
+        changes: parsed.changes,
+        reason: parsed.reason,
+        actorUserId: session.userId,
+      });
+      if (!done.changed) {
+        skipAudit();
+        return { changed: false, refundDue: 0 };
+      }
+      await audit({
+        action: 'update',
+        entity: 'order_items',
+        entityId: parsed.orderId,
+        diff: {
+          changes: done.applied,
+          total: { from: done.totalFrom, to: done.totalTo },
+          reason: parsed.reason,
+        },
+      });
+      return { changed: true, refundDue: done.refundDue };
+    },
+  });
+}
+
+/**
+ * Refund in two steps that never share a transaction (ADR-4): the amount is reserved and audited
+ * in the action's transaction, and only after it COMMITTED is the provider called. The status of
+ * the order moves when the provider's answer settles the operation, never before.
+ */
+export async function refundOrderAction(input: unknown) {
+  // Built after the permission check (inside `run`), used again after the commit.
+  let providers: ProviderMap = {};
+  const reserved = await adminAction({
+    permission: 'orders.refund',
+    schema: refundSchema,
+    input,
+    run: async ({ tx, input: parsed, session, audit }) => {
+      providers = await getPaymentProviders();
+      const reservations = await reserveAdminRefund(tx, {
+        orderId: parsed.orderId,
+        amount: parsed.amount,
+        attemptId: parsed.attemptId,
+        requestId: parsed.requestId,
+        reason: parsed.reason,
+        actorUserId: session.userId,
+        providers,
+      });
+      await audit({
+        action: 'refund',
+        entity: 'order',
+        entityId: parsed.orderId,
+        diff: {
+          operations: reservations.map((r) => ({ operationId: r.operationId, amount: r.amount })),
+        },
+      });
+      return reservations.map((r) => r.operationId);
+    },
+  });
+  if (!reserved.ok) return reserved;
+  const db = await getDb();
+  // Each operation on its own: one that cannot be sent (routing, a settle error) must not skip the
+  // others or turn a committed reservation into a 500. Its state is reported as it is.
+  const states: string[] = [];
+  for (const operationId of reserved.data) {
+    try {
+      const outcome = await processRefund(
+        { providers, runInTransaction: async (fn) => await db.transaction(fn) },
+        operationId,
+      );
+      states.push(outcome.state);
+    } catch {
+      states.push('pending');
+    }
+  }
+  return { ok: true as const, data: { states } };
 }
