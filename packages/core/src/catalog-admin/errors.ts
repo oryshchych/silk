@@ -1,7 +1,7 @@
 import { DomainError } from '../errors.ts';
 
 export class AdminNotFoundError extends DomainError {
-  constructor(what: 'product' | 'variant' | 'category' | 'color' | 'size' | 'attribute') {
+  constructor(what: 'product' | 'variant' | 'category' | 'color' | 'size' | 'attribute' | 'order') {
     super('ADMIN_NOT_FOUND', `${what} not found`);
   }
 }

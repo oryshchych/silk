@@ -27,6 +27,12 @@ const KNOWN_CODES = [
   'STOCK_REQUEST_REUSED',
   'STOCK_VARIANT_NOT_FOUND',
   'STOCK_INVALID_CHANGE',
+  'ORDER_NOT_SHIPPABLE',
+  'ORDER_NOT_CANCELLABLE',
+  'ORDER_NOT_CONFIRMABLE',
+  'ORDER_TRANSITION_INVALID',
+  'TRANSFER_AMOUNT_MISMATCH',
+  'STOCK_COUNTER_DRIFT',
 ] as const;
 
 export type ActionOutcome = { ok: true } | { ok: false; code: string };

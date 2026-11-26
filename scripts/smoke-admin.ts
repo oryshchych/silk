@@ -20,6 +20,8 @@ import type { FakeS3 } from '../packages/media/test/fake-s3.ts';
 import {
   auditLog,
   categories,
+  orderItems,
+  orders,
   productImages,
   productVariants,
   products,
@@ -459,6 +461,88 @@ export async function runAdminSmoke({
         !costHeader.test(managerList.html) &&
         !managerList.html.includes('costPrice') &&
         !managerList.html.includes('123,45'),
+    );
+
+    // Orders: the same role rules on the real pages and the direct POSTs (phase 5).
+    const orderNumber = `LS-2026-${suffix.slice(-6)}`;
+    const [order] = await db
+      .insert(orders)
+      .values({
+        orderNumber,
+        customerEmail: 'smoke-buyer@example.test',
+        customerPhone: '+380501112299',
+        customerName: 'Smoke Buyer',
+        deliveryMethod: 'pickup',
+        subtotal: 100_000,
+        total: 100_000,
+        ip: '198.51.100.77',
+      })
+      .returning({ id: orders.id });
+    if (order === undefined) throw new Error('smoke order was not inserted');
+    await db.insert(orderItems).values({
+      orderId: order.id,
+      productUidSnapshot: target.id,
+      variantUidSnapshot: target.id,
+      nameSnapshot: 'Smoke item',
+      skuSnapshot: 'SMOKE-1',
+      sizeLabel: 'S',
+      colorName: 'Black',
+      unitPrice: 100_000,
+      quantity: 1,
+      lineTotal: 100_000,
+      unitCostSnapshot: 987_654,
+    });
+    const orderList = async (token: string) => await get('/admin/orders', cookie(token));
+    const orderCard = async (token: string) =>
+      await get(`/admin/orders/${order.id}`, cookie(token));
+    check(
+      'orders: a manager lists and opens an order; a content role gets 404 on both',
+      (await orderList(managerToken)).html.includes(orderNumber) &&
+        (await orderCard(managerToken)).status === 200 &&
+        (await orderList(contentToken)).status === 404 &&
+        (await orderCard(contentToken)).status === 404,
+    );
+    const costHeading = /<th[^>]*>Собівартість<\/th>/;
+    const managerOrder = await orderCard(managerToken);
+    const adminOrder = await orderCard(adminToken);
+    check(
+      'orders: the card shows the unit cost to an admin and neither the column, the value nor the buyer IP to a manager',
+      costHeading.test(adminOrder.html) &&
+        !costHeading.test(managerOrder.html) &&
+        !managerOrder.html.includes('987654') &&
+        !managerOrder.html.includes('9876,54') &&
+        !adminOrder.html.includes('198.51.100.77') &&
+        !managerOrder.html.includes('198.51.100.77'),
+    );
+    const contentCancel = await form(
+      'cancelOrderAction',
+      { orderId: order.id, reason: 'content tries it' },
+      cookie(contentToken),
+      '/admin/orders',
+    );
+    const noReason = await form(
+      'cancelOrderAction',
+      { orderId: order.id },
+      cookie(managerToken),
+      '/admin/orders',
+    );
+    const statusNow = async () =>
+      (await db.select().from(orders)).find((row) => row.id === order.id)?.status;
+    check(
+      'orders: a content POST is FORBIDDEN, a cancellation without a reason is refused, and the order is untouched',
+      contentCancel.body.includes('FORBIDDEN') &&
+        noReason.body.includes('INVALID_INPUT') &&
+        (await statusNow()) === 'pending',
+    );
+    const cancelled = await form(
+      'cancelOrderAction',
+      { orderId: order.id, reason: 'smoke test cancellation' },
+      cookie(managerToken),
+      '/admin/orders',
+    );
+    check(
+      'orders: a manager cancels with a reason; the order is cancelled',
+      cancelled.body.includes('"ok":true') && (await statusNow()) === 'cancelled',
     );
 
     // A changed slug answers 301 at the old address, for both locales.

@@ -337,7 +337,8 @@
       "categories": "Categories",
       "dictionaries": "Dictionaries",
       "importExport": "Import and export",
-      "stock": "Stock"
+      "stock": "Stock",
+      "orders": "Orders"
     },
     "dashboard": {
       "title": "Overview",
@@ -400,7 +401,13 @@
       "ADMIN_BARCODE_TAKEN": "This barcode is already used.",
       "ADMIN_TOO_MANY_IMAGES": "The product already has the maximum number of photos.",
       "ADMIN_CATEGORY_CYCLE": "A category cannot be moved into itself or its descendant.",
-      "ADMIN_CATEGORY_TOO_DEEP": "The category tree is at most 4 levels deep."
+      "ADMIN_CATEGORY_TOO_DEEP": "The category tree is at most 4 levels deep.",
+      "ORDER_NOT_SHIPPABLE": "The order cannot be shipped yet: check that it is paid (or confirmed for cash on delivery) and has no refund in progress.",
+      "ORDER_NOT_CANCELLABLE": "The order can no longer be cancelled.",
+      "ORDER_NOT_CONFIRMABLE": "The order cannot be confirmed in this state.",
+      "ORDER_TRANSITION_INVALID": "The order is not in a state that allows this step. Reload the page.",
+      "TRANSFER_AMOUNT_MISMATCH": "The received amount must equal the order total.",
+      "STOCK_COUNTER_DRIFT": "Stock counters do not match the reservations. Do not repeat the action; tell the owner."
     },
     "editor": {
       "newTitle": "New product",
@@ -626,6 +633,110 @@
       "before": "Before",
       "after": "After",
       "by": "By"
+    },
+    "orders": {
+      "title": "Orders",
+      "search": "Search (number, phone, email, waybill, name)",
+      "filter": {
+        "status": "Status",
+        "payment": "Payment",
+        "provider": "Payment method",
+        "delivery": "Delivery"
+      },
+      "from": "From",
+      "to": "To",
+      "submit": "Show",
+      "any": "Any",
+      "total": "Orders: {count}",
+      "empty": "No orders found.",
+      "pages": "Pages",
+      "previous": "Previous",
+      "next": "Next",
+      "pageOf": "Page {page} of {total}",
+      "col": {
+        "number": "Number",
+        "date": "Date",
+        "customer": "Customer",
+        "status": "Status",
+        "payment": "Payment",
+        "items": "Items",
+        "sum": "Total",
+        "ttn": "Waybill"
+      },
+      "back": "Back to orders",
+      "customer": "Customer",
+      "delivery": "Delivery",
+      "created": "Created",
+      "buyerComment": "Buyer's comment",
+      "items": "Items",
+      "item": {
+        "name": "Product",
+        "variant": "Variant",
+        "price": "Price",
+        "qty": "Qty",
+        "cost": "Cost",
+        "total": "Line total"
+      },
+      "sum": {
+        "subtotal": "Subtotal",
+        "discount": "Discount",
+        "shipping": "Shipping",
+        "adjustment": "Adjustment",
+        "total": "Total",
+        "captured": "Received",
+        "refunded": "Refunded"
+      },
+      "actions": "Actions",
+      "done": "Done.",
+      "step": {
+        "confirm": "Confirm",
+        "process": "Start processing",
+        "ship": "Ship",
+        "deliver": "Mark delivered",
+        "cancel": "Cancel order"
+      },
+      "cancelReason": "Cancellation reason (required)",
+      "noteLabel": "Internal note",
+      "addNote": "Add note",
+      "note": "Note",
+      "bankReference": "Bank reference",
+      "receivedAmount": "Received amount, UAH",
+      "confirmTransfer": "Transfer received",
+      "payments": "Payments",
+      "noEvents": "No payment events.",
+      "notApplied": "not applied",
+      "history": "History",
+      "status": {
+        "pending": "New",
+        "confirmed": "Confirmed",
+        "processing": "Processing",
+        "shipped": "Shipped",
+        "delivered": "Delivered",
+        "cancelled": "Cancelled",
+        "returned": "Returned"
+      },
+      "pay": {
+        "pending": "Awaiting payment",
+        "authorized": "Authorized",
+        "paid": "Paid",
+        "failed": "Failed",
+        "expired": "Expired",
+        "refunded": "Refunded",
+        "partially_refunded": "Partly refunded"
+      },
+      "provider": {
+        "mono": "Card (mono)",
+        "wayforpay": "Card (WayForPay)",
+        "cod": "Cash on delivery",
+        "bank_transfer": "Bank transfer",
+        "gift_card": "Gift card"
+      },
+      "method": {
+        "np_warehouse": "Nova Poshta branch",
+        "np_courier": "Nova Poshta courier",
+        "ukrposhta": "Ukrposhta",
+        "pickup": "Pickup"
+      }
     }
   }
 }

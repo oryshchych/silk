@@ -38,6 +38,10 @@ confirmed TOTP before a session counts; so must anyone who enrolled one.
 | `catalog.cost.view` | owner, admin | See `cost_price` / `unit_cost_snapshot` anywhere (screens, exports) |
 | `catalog.publish` | owner, admin, content | Publish or unpublish a product |
 | `stock.adjust` | owner, admin, manager | Change the stock of a variant (with history) |
+| `orders.view` | owner, admin, manager | Open the order list and an order card (no unit cost, no carrier cost without `catalog.cost.view`) |
+| `orders.manage` | owner, admin, manager | Move an order along (confirm, including cash on delivery, process, ship, deliver) and write an internal note |
+| `orders.cancel` | owner, admin, manager | Cancel an order (a comment is required) |
+| `orders.confirm_payment` | owner, admin, manager | Record a received bank transfer (the confirmed source of a transfer payment, ADR-4) |
 | `media.upload` | owner, admin, content | Upload and edit product images |
 | `catalog.import` | owner, admin | CSV / XLSX import |
 | `catalog.export` | owner, admin | CSV / XLSX export |

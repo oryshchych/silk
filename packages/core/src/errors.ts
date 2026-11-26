@@ -260,3 +260,10 @@ export class FiscalRetryError extends DomainError {
     super('FISCAL_RETRY', `The fiscal receipt is not done yet: ${reason}`);
   }
 }
+
+/** A status button the order's current state does not allow (an old page, a second tab, a replay of a stale form). */
+export class OrderTransitionError extends DomainError {
+  constructor(reason: string) {
+    super('ORDER_TRANSITION_INVALID', `The order cannot move there: ${reason}`);
+  }
+}

@@ -11,7 +11,7 @@ function documented(): Map<string, string[]> {
   const rows = new Map<string, string[]>();
   for (const line of block.split('\n')) {
     const cells = line.split('|').map((cell) => cell.trim());
-    const name = /^`([a-z.]+)`$/.exec(cells[1] ?? '')?.[1];
+    const name = /^`([a-z._]+)`$/.exec(cells[1] ?? '')?.[1];
     if (name !== undefined)
       rows.set(
         name,

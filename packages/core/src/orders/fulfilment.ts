@@ -85,22 +85,36 @@ async function closeReservation(tx: Tx, id: string, reason: 'shipped' | 'cancell
   return closed.rows[0]?.quantity ?? null;
 }
 
+/**
+ * Who did it. `actorUserId` goes into the history row (the author of an admin action);
+ * `auditByCaller` says the caller writes the audit row itself (the admin action does, so the row
+ * carries the author's address and there is one row, not two).
+ */
+export interface Actor {
+  actorUserId?: string | null;
+  auditByCaller?: boolean;
+}
+
 async function recordTransition(
   tx: Tx,
   order: Order,
   to: 'shipped' | 'cancelled',
   source: string,
   comment: string | null,
+  actor: Actor,
 ): Promise<void> {
   await tx.insert(orderStatusHistory).values({
     orderId: order.id,
     fromStatus: order.status,
     toStatus: to,
     field: 'status',
+    changedByUserId: actor.actorUserId ?? null,
     source,
     comment,
   });
+  if (actor.auditByCaller === true) return;
   await tx.insert(auditLog).values({
+    userId: actor.actorUserId ?? null,
     action: 'transition',
     entity: 'order',
     entityId: order.id,
@@ -115,7 +129,7 @@ async function recordTransition(
  */
 export async function shipOrder(
   tx: Tx,
-  input: { orderId: string; source: string },
+  input: { orderId: string; source: string } & Actor,
 ): Promise<FulfilmentResult> {
   const order = await lockedOrder(tx, input.orderId);
   if (order === undefined) throw new OrderNotShippableError('no such order');
@@ -184,7 +198,7 @@ export async function shipOrder(
     .update(orders)
     .set({ status: 'shipped', shippedAt: sql`now()` })
     .where(eq(orders.id, order.id));
-  await recordTransition(tx, order, 'shipped', input.source, null);
+  await recordTransition(tx, order, 'shipped', input.source, null, input);
   // Cash on delivery: the receipt for the goods is made when the parcel is handed to the post, as
   // a queue job (ADR-16): a fiscal failure never blocks or undoes the shipment.
   if (isCod) await enqueueSaleReceipt(tx, { orderId: order.id, paymentForm: 'cash_on_delivery' });
@@ -208,7 +222,7 @@ export async function cancelOrder(
      * manager's confirmation that landed since the scan makes this a no-op.
      */
     expiredOnly?: boolean;
-  },
+  } & Actor,
 ): Promise<FulfilmentResult> {
   const order = await lockedOrder(tx, input.orderId);
   if (order === undefined) throw new OrderNotCancellableError('no such order');
@@ -311,7 +325,7 @@ export async function cancelOrder(
       ...(input.expiredOnly === true ? { paymentStatus: 'expired' as const } : {}),
     })
     .where(eq(orders.id, order.id));
-  await recordTransition(tx, order, 'cancelled', input.source, input.reason);
+  await recordTransition(tx, order, 'cancelled', input.source, input.reason, input);
   if (input.expiredOnly === true) {
     await tx.insert(orderStatusHistory).values({
       orderId: order.id,

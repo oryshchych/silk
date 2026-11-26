@@ -1,6 +1,7 @@
 import { resolveSession, type AdminSession, type ResolvedSession } from '@store/core/auth';
+import { can, type Permission } from '@store/core/auth-permissions';
 import { cookies, headers } from 'next/headers';
-import { redirect } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 
 import { getDb } from '../db';
 import { authConfig } from './config';
@@ -39,4 +40,14 @@ export async function requirePendingStep(step: 'totp' | 'enroll'): Promise<Admin
   if (resolved.next !== step)
     redirect(resolved.next === 'totp' ? '/admin/verify' : '/admin/enroll');
   return resolved.session;
+}
+
+/**
+ * A page of the admin that needs one permission: the full session, then the permission. A role
+ * without it gets the same 404 as an address that does not exist (nothing says the page is there).
+ */
+export async function requirePermission(permission: Permission): Promise<AdminSession> {
+  const session = await requireFullSession();
+  if (!can(session.role, permission)) notFound();
+  return session;
 }
