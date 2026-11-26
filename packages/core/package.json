@@ -49,7 +49,10 @@
     "./admin-export": "./src/catalog-admin/export.ts",
     "./admin-csv": "./src/catalog-admin/csv.ts",
     "./admin-stock-read": "./src/catalog-admin/stock-read.ts",
-    "./admin-stock": "./src/catalog-admin/stock.ts"
+    "./admin-stock": "./src/catalog-admin/stock.ts",
+    "./orders-admin-read": "./src/orders-admin/read.ts",
+    "./orders-admin": "./src/orders-admin/workflow.ts",
+    "./orders-admin-schemas": "./src/orders-admin/schemas.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"

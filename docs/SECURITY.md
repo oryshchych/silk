@@ -38,6 +38,10 @@ confirmed TOTP before a session counts; so must anyone who enrolled one.
 | `catalog.cost.view` | owner, admin | See `cost_price` / `unit_cost_snapshot` anywhere (screens, exports) |
 | `catalog.publish` | owner, admin, content | Publish or unpublish a product |
 | `stock.adjust` | owner, admin, manager | Change the stock of a variant (with history) |
+| `orders.view` | owner, admin, manager | Open the order list and an order card (no unit cost, no carrier cost without `catalog.cost.view`) |
+| `orders.manage` | owner, admin, manager | Move an order along (confirm, including cash on delivery, process, ship, deliver) and write an internal note |
+| `orders.cancel` | owner, admin, manager | Cancel an order (a comment is required) |
+| `orders.confirm_payment` | owner, admin, manager | Record a received bank transfer (the confirmed source of a transfer payment, ADR-4) |
 | `media.upload` | owner, admin, content | Upload and edit product images |
 | `catalog.import` | owner, admin | CSV / XLSX import |
 | `catalog.export` | owner, admin | CSV / XLSX export |
@@ -65,6 +69,8 @@ confirmed TOTP before a session counts; so must anyone who enrolled one.
 | Preview and commit a CSV import | `catalog.import` | `previewImportAction` (writes nothing), `commitImportAction` (`actions/admin-import.ts`): a column the role may not write (price without `catalog.price`, cost without `catalog.cost.view`) turns the row into an error; each written row has its own audit row |
 | Download the product CSV | `catalog.export` | `GET /admin/export/products` (`app/admin/export/products/route.ts`): the cost column only for `catalog.cost.view`, every export audited |
 | Adjust the stock of a variant (receipt, write-off, stocktake) | `stock.adjust` | `adjustStockAction` (`actions/admin-stock.ts`): refuses a result below the reserved quantity (Q44), a request id makes a repeat harmless, the history row and the audit entry are written in the same transaction |
+
+The order card lists the email of the staff member behind each history row (note, status change, item edit) to every role that holds `orders.view`; like the stock history it never leaves the admin.
 
 The stock history lists the author's email next to every change, to every role that can open the admin (`admin.view`, content included): staff see who counted or wrote off stock. It is not exposed outside the admin. A replayed request id or a stocktake to the current quantity writes no second audit row: the audit log records a change once.
 

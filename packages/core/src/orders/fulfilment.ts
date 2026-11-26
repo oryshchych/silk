@@ -39,6 +39,12 @@ export interface FulfilmentResult {
   orderId: string;
   /** False when an earlier call already did it: nothing changed. */
   changed: boolean;
+  /** The status the order had before this call: what an audit row records as `from`. */
+  from: string;
+  /** Cancel only: money received that nobody has refunded yet (a human starts the refund). */
+  refundable?: number;
+  /** Cancel only: a card hold is still open at the provider and must be released. */
+  heldAuthorization?: boolean;
 }
 
 type Order = typeof orders.$inferSelect;
@@ -85,22 +91,36 @@ async function closeReservation(tx: Tx, id: string, reason: 'shipped' | 'cancell
   return closed.rows[0]?.quantity ?? null;
 }
 
+/**
+ * Who did it. `actorUserId` goes into the history row (the author of an admin action);
+ * `auditByCaller` says the caller writes the audit row itself (the admin action does, so the row
+ * carries the author's address and there is one row, not two).
+ */
+export interface Actor {
+  actorUserId?: string | null;
+  auditByCaller?: boolean;
+}
+
 async function recordTransition(
   tx: Tx,
   order: Order,
   to: 'shipped' | 'cancelled',
   source: string,
   comment: string | null,
+  actor: Actor,
 ): Promise<void> {
   await tx.insert(orderStatusHistory).values({
     orderId: order.id,
     fromStatus: order.status,
     toStatus: to,
     field: 'status',
+    changedByUserId: actor.actorUserId ?? null,
     source,
     comment,
   });
+  if (actor.auditByCaller === true) return;
   await tx.insert(auditLog).values({
+    userId: actor.actorUserId ?? null,
     action: 'transition',
     entity: 'order',
     entityId: order.id,
@@ -115,15 +135,27 @@ async function recordTransition(
  */
 export async function shipOrder(
   tx: Tx,
-  input: { orderId: string; source: string },
+  input: {
+    orderId: string;
+    source: string;
+    /**
+     * The admin workflow: only a confirmed or processing order ships (confirm and process are not
+     * skipped). Off by default: the skeleton jump from pending stays for the webhook and worker
+     * paths and their tests (see `transitions.ts`).
+     */
+    requireConfirmed?: boolean;
+  } & Actor,
 ): Promise<FulfilmentResult> {
   const order = await lockedOrder(tx, input.orderId);
   if (order === undefined) throw new OrderNotShippableError('no such order');
   if (order.status === 'shipped' || order.status === 'delivered') {
-    return { orderId: order.id, changed: false };
+    return { orderId: order.id, changed: false, from: order.status };
   }
   if (!canTransition(order.status, 'shipped')) {
     throw new OrderNotShippableError(`the order is ${order.status}`);
+  }
+  if (input.requireConfirmed === true && order.status === 'pending') {
+    throw new OrderNotShippableError('confirm the order first');
   }
   // What lets an order ship (owner queue Q16): a settled payment (card, or a bank transfer the
   // manager confirmed with a bank reference), or, for cash on delivery, the manager's
@@ -184,11 +216,11 @@ export async function shipOrder(
     .update(orders)
     .set({ status: 'shipped', shippedAt: sql`now()` })
     .where(eq(orders.id, order.id));
-  await recordTransition(tx, order, 'shipped', input.source, null);
+  await recordTransition(tx, order, 'shipped', input.source, null, input);
   // Cash on delivery: the receipt for the goods is made when the parcel is handed to the post, as
   // a queue job (ADR-16): a fiscal failure never blocks or undoes the shipment.
   if (isCod) await enqueueSaleReceipt(tx, { orderId: order.id, paymentForm: 'cash_on_delivery' });
-  return { orderId: order.id, changed: true };
+  return { orderId: order.id, changed: true, from: order.status };
 }
 
 /**
@@ -208,28 +240,30 @@ export async function cancelOrder(
      * manager's confirmation that landed since the scan makes this a no-op.
      */
     expiredOnly?: boolean;
-  },
+  } & Actor,
 ): Promise<FulfilmentResult> {
   const order = await lockedOrder(tx, input.orderId);
   if (order === undefined) throw new OrderNotCancellableError('no such order');
-  if (order.status === 'cancelled') return { orderId: order.id, changed: false };
+  if (order.status === 'cancelled')
+    return { orderId: order.id, changed: false, from: order.status };
   if (input.expiredOnly === true) {
     if (order.status !== 'pending' || order.paymentStatus !== 'pending') {
-      return { orderId: order.id, changed: false };
+      return { orderId: order.id, changed: false, from: order.status };
     }
     const due = await tx.execute<{ due: boolean }>(
       sql`SELECT count(*) > 0 AND bool_and(expires_at IS NOT NULL AND expires_at <= now()) AS due
             FROM stock_reservations
            WHERE order_id = ${order.id} AND released_at IS NULL`,
     );
-    if (due.rows[0]?.due !== true) return { orderId: order.id, changed: false };
+    if (due.rows[0]?.due !== true) return { orderId: order.id, changed: false, from: order.status };
     // A card attempt whose result is not known (lost or late webhook) must be reconciled with the
     // provider first (AGENTS.md 2.5, owner queue Q27): cancelling now could cancel a paid order.
     const open = await tx.execute<{ n: number }>(
       sql`SELECT count(*)::int AS n FROM payment_attempts
            WHERE order_id = ${order.id} AND state IN ('pending', 'in_flight', 'unknown')`,
     );
-    if ((open.rows[0]?.n ?? 0) > 0) return { orderId: order.id, changed: false };
+    if ((open.rows[0]?.n ?? 0) > 0)
+      return { orderId: order.id, changed: false, from: order.status };
   }
   if (!canTransition(order.status, 'cancelled')) {
     throw new OrderNotCancellableError(`the order is ${order.status}`);
@@ -311,7 +345,7 @@ export async function cancelOrder(
       ...(input.expiredOnly === true ? { paymentStatus: 'expired' as const } : {}),
     })
     .where(eq(orders.id, order.id));
-  await recordTransition(tx, order, 'cancelled', input.source, input.reason);
+  await recordTransition(tx, order, 'cancelled', input.source, input.reason, input);
   if (input.expiredOnly === true) {
     await tx.insert(orderStatusHistory).values({
       orderId: order.id,
@@ -338,5 +372,5 @@ export async function cancelOrder(
       })
       .onConflictDoNothing();
   }
-  return { orderId: order.id, changed: true };
+  return { orderId: order.id, changed: true, from: order.status, refundable, heldAuthorization };
 }

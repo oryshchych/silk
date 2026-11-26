@@ -27,9 +27,15 @@ const KNOWN_CODES = [
   'STOCK_REQUEST_REUSED',
   'STOCK_VARIANT_NOT_FOUND',
   'STOCK_INVALID_CHANGE',
+  'ORDER_NOT_SHIPPABLE',
+  'ORDER_NOT_CANCELLABLE',
+  'ORDER_NOT_CONFIRMABLE',
+  'ORDER_TRANSITION_INVALID',
+  'TRANSFER_AMOUNT_MISMATCH',
+  'STOCK_COUNTER_DRIFT',
 ] as const;
 
-export type ActionOutcome = { ok: true } | { ok: false; code: string };
+export type ActionOutcome = { ok: true; data?: unknown } | { ok: false; code: string };
 export interface FormMessage {
   kind: 'ok' | 'error';
   text: string;
@@ -44,11 +50,15 @@ export function useAdminAction() {
   const [message, setMessage] = useState<FormMessage | null>(null);
   const [pending, startTransition] = useTransition();
 
-  function run(action: () => Promise<ActionOutcome>, okText: string, onOk?: () => void): void {
+  function run(
+    action: () => Promise<ActionOutcome>,
+    okText: string | ((data: unknown) => string),
+    onOk?: () => void,
+  ): void {
     startTransition(async () => {
       const result = await action();
       if (result.ok) {
-        setMessage({ kind: 'ok', text: okText });
+        setMessage({ kind: 'ok', text: typeof okText === 'string' ? okText : okText(result.data) });
         onOk?.();
       } else {
         const known = KNOWN_CODES.find((code) => code === result.code) ?? 'GENERIC';
@@ -68,3 +78,10 @@ export const textOf = (data: FormData, name: string): string => {
   const value = data.get(name);
   return typeof value === 'string' ? value : '';
 };
+
+/** `data[key]` when `data` is an object that has it, else undefined (an action's data arrives as unknown). */
+export function dataField(data: unknown, key: string): unknown {
+  return typeof data === 'object' && data !== null
+    ? Object.entries(data).find(([name]) => name === key)?.[1]
+    : undefined;
+}

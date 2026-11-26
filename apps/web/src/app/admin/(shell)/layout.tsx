@@ -36,6 +36,11 @@ export default async function AdminShellLayout({ children }: { children: React.R
           >
             {t('dashboard')}
           </a>
+          {session.permissions.includes('orders.view') ? (
+            <a href="/admin/orders" className="ml-4 inline-flex min-h-11 items-center underline">
+              {t('orders')}
+            </a>
+          ) : null}
           <a href="/admin/products" className="ml-4 inline-flex min-h-11 items-center underline">
             {t('products')}
           </a>

@@ -34,6 +34,10 @@ export interface ConfirmResult {
   orderId: string;
   /** False when an earlier call already did it. */
   changed: boolean;
+  /** A transfer receipt: the payment status before it (what an audit row records as `from`). */
+  paymentFrom?: string;
+  /** A transfer receipt that also confirmed the order: the status change it made. */
+  statusChange?: { from: string; to: string };
 }
 
 async function lockedOrder(tx: Tx, orderId: string): Promise<Order> {
@@ -55,6 +59,12 @@ async function liftReservationExpiry(tx: Tx, orderId: string): Promise<boolean> 
   return lifted.length > 0;
 }
 
+/** Who did it; see `Actor` in `orders/fulfilment.ts` (the same two switches). */
+interface ActorInput {
+  actorUserId?: string | null;
+  auditByCaller?: boolean;
+}
+
 async function recordStatusChange(
   tx: Tx,
   order: Order,
@@ -62,16 +72,20 @@ async function recordStatusChange(
   to: string,
   source: string,
   comment: string | null,
+  actor: ActorInput = {},
 ): Promise<void> {
   await tx.insert(orderStatusHistory).values({
     orderId: order.id,
     fromStatus: field === 'status' ? order.status : order.paymentStatus,
     toStatus: to,
     field,
+    changedByUserId: actor.actorUserId ?? null,
     source,
     comment,
   });
+  if (actor.auditByCaller === true) return;
   await tx.insert(auditLog).values({
+    userId: actor.actorUserId ?? null,
     action: 'transition',
     entity: 'order',
     entityId: order.id,
@@ -81,7 +95,7 @@ async function recordStatusChange(
 
 export async function confirmCodOrder(
   tx: Tx,
-  input: { orderId: string; actor: string },
+  input: { orderId: string; actor: string } & ActorInput,
 ): Promise<ConfirmResult> {
   const order = await lockedOrder(tx, input.orderId);
   if (order.paymentProvider !== 'cod') throw new OrderNotConfirmableError('not a COD order');
@@ -101,13 +115,19 @@ export async function confirmCodOrder(
     'confirmed',
     `manager:${input.actor}`,
     'COD confirmed',
+    input,
   );
   return { orderId: order.id, changed: true };
 }
 
 export async function confirmTransferReceived(
   tx: Tx,
-  input: { orderId: string; actor: string; bankReference: string; receivedAmount: Money },
+  input: {
+    orderId: string;
+    actor: string;
+    bankReference: string;
+    receivedAmount: Money;
+  } & ActorInput,
 ): Promise<ConfirmResult> {
   if (input.bankReference.trim() === '' || input.bankReference.length > 128) {
     throw new OrderNotConfirmableError('a bank reference is required');
@@ -190,9 +210,25 @@ export async function confirmTransferReceived(
     })
     .where(eq(orders.id, order.id));
   const source = `manager:${input.actor}`;
-  await recordStatusChange(tx, order, 'payment_status', 'paid', source, 'bank transfer received');
+  await recordStatusChange(
+    tx,
+    order,
+    'payment_status',
+    'paid',
+    source,
+    'bank transfer received',
+    input,
+  );
   if (reserved && order.status === 'pending') {
-    await recordStatusChange(tx, order, 'status', 'confirmed', source, 'bank transfer received');
+    await recordStatusChange(
+      tx,
+      order,
+      'status',
+      'confirmed',
+      source,
+      'bank transfer received',
+      input,
+    );
   }
   // No live reservation: the money is a fact, the goods may be gone. A human decides.
   await tx
@@ -203,5 +239,12 @@ export async function confirmTransferReceived(
       dedupKey: `${reserved ? 'payment-received' : 'late-payment'}:${order.id}`,
     })
     .onConflictDoNothing();
-  return { orderId: order.id, changed: true };
+  return {
+    orderId: order.id,
+    changed: true,
+    paymentFrom: order.paymentStatus,
+    ...(reserved && order.status === 'pending'
+      ? { statusChange: { from: 'pending', to: 'confirmed' } }
+      : {}),
+  };
 }
