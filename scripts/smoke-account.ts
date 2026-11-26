@@ -528,13 +528,15 @@ export async function runAccountSmoke(ctx: Context): Promise<void> {
       `SELECT id, slug FROM products WHERE is_active AND published_at <= now() ORDER BY created_at LIMIT 1`,
     );
     const product = products[0];
+    // Next only accepts an action id on a page whose bundle holds it: the product page has the buttons.
+    const actionPath = product === undefined ? '/' : `/product/${product.slug}`;
     if (product !== undefined) {
       const added2 = await act(
         'addToWishlistAction',
         { productId: product.id },
         jarA,
         newClient(),
-        '/account/wishlist',
+        actionPath,
       );
       check('wishlist: A adds a product', added2.body.includes('"ok":true'), brief(added2));
       const wishA = await page('/account/wishlist', jarA);
@@ -548,7 +550,7 @@ export async function runAccountSmoke(ctx: Context): Promise<void> {
         { productId: '00000000-0000-4000-8000-000000000000' },
         jarA,
         newClient(),
-        '/account/wishlist',
+        actionPath,
       );
       check(
         'wishlist: an unknown product is "not found"',
@@ -560,7 +562,7 @@ export async function runAccountSmoke(ctx: Context): Promise<void> {
         { productId: product.id },
         new Map(),
         newClient(),
-        '/account/wishlist',
+        actionPath,
       );
       check(
         'wishlist: no session gives "unauthorized"',
@@ -579,7 +581,7 @@ export async function runAccountSmoke(ctx: Context): Promise<void> {
         { variantId: soldOutId },
         jarA,
         newClient(),
-        '/account/wishlist',
+        actionPath,
       );
       const alertId = /"value":"([0-9a-f-]{36})"/.exec(sub.body)?.[1] ?? '';
       check(
