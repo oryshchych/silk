@@ -213,6 +213,8 @@ describe('the message router', () => {
       'alert.double-payment',
       'alert.payment-mismatch',
       'alert.refund-due',
+      'alert.refund-unresolved',
+      'alert.waybill-for-cancelled-order',
     ]);
     for (const topic of OUTBOX_TOPICS) {
       const outcome = await sender
