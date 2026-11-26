@@ -10,7 +10,7 @@ import { createTestDatabase, type TestDatabase } from '@store/db/test/db';
 import { updateCategory } from '../src/catalog-admin/categories.ts';
 import { categoryTextToHtml } from '../src/catalog-admin/category-text.ts';
 import { getAdminCategoryContent } from '../src/catalog-admin/read.ts';
-import { readContentReadiness } from '../src/content-readiness/read.ts';
+import { readContentReadiness } from '../src/content-readiness/report.ts';
 import { seedDictionaries } from './content-fixture.ts';
 
 let testDb: TestDatabase;

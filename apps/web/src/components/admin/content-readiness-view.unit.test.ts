@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
@@ -16,7 +18,7 @@ import en from '../../../messages/en.json';
 import uk from '../../../messages/uk.json';
 import { makeTranslator } from '../../lib/admin/message-lookup';
 
-import { ContentReadinessView, visibleProducts } from './content-readiness-view';
+import { ContentReadinessView } from './content-readiness-view';
 
 const ID = '0193f0a4-7c3e-7000-8000-000000000001';
 const HOSTILE = '<script>alert(1)</script>"><img src=x onerror=alert(1)>';
@@ -42,6 +44,11 @@ const report = (): ContentReadinessDto => ({
   },
   acceptance: [{ id: 'active_products', ok: false, actual: 1, expected: 40 }],
   gatePassed: false,
+  show: 'todo',
+  page: 1,
+  pageSize: 100,
+  pages: 3,
+  matchingProducts: 250,
   products: [
     {
       id: ID,
@@ -88,9 +95,9 @@ const report = (): ContentReadinessDto => ({
   photoProblemsTruncated: false,
 });
 
-const html = (mode: 'todo' | 'all' | 'drafts' = 'todo'): string =>
+const html = (over: Partial<ContentReadinessDto> = {}): string =>
   renderToStaticMarkup(
-    createElement(ContentReadinessView, { report: report(), mode, t, productLimit: 2000 }),
+    createElement(ContentReadinessView, { report: { ...report(), ...over }, t }),
   );
 
 describe('ContentReadinessView', () => {
@@ -103,18 +110,24 @@ describe('ContentReadinessView', () => {
   it('links the editor by the product id only', () => {
     const links = [...html().matchAll(/href="([^"]+)"/g)].map((m) => m[1]);
     expect(links).toContain(`/admin/products/${ID}`);
-    for (const link of links) expect(link).toMatch(/^\/admin\/[a-z0-9/?=-]+$/);
+    for (const link of links) expect(link).toMatch(/^\/admin\/[a-z0-9/?=&;-]+$/);
   });
   it('shows the verdict and states blockers as text, not by colour alone', () => {
     const out = html();
     expect(out).toContain('gateFail');
     expect(out).toContain('severity.blocker');
   });
-  it('filters: needs work, drafts, all', () => {
-    const rows = report().products;
-    expect(visibleProducts(rows, 'todo')).toHaveLength(1);
-    expect(visibleProducts(rows, 'drafts')).toHaveLength(0);
-    expect(visibleProducts(rows, 'all')).toHaveLength(1);
+  it('shows how many products the filter matches and pages through them', () => {
+    const out = html({ page: 2 });
+    expect(out).toContain('matching{&quot;count&quot;:250}');
+    expect(out).toContain('/admin/content-readiness?show=todo&amp;page=1');
+    expect(out).toContain('/admin/content-readiness?show=todo&amp;page=3');
+    expect(html({ pages: 1 })).not.toContain('pageOf');
+  });
+  it('offers a refresh and says when the count was made', () => {
+    const out = html();
+    expect(out).toContain('/admin/content-readiness?refresh=1');
+    expect(out).toContain('2026-11-27T10:00:00.000Z');
   });
   it('carries no cost or price wording', () => {
     expect(html()).not.toMatch(/cost|price/i);
@@ -148,4 +161,17 @@ describe('every label the screen can ask for exists in both languages', () => {
       expect(missing).toEqual([]);
     });
   }
+});
+
+describe('the screen asks for the permission itself', () => {
+  it("the page calls requirePermission('admin.view') before it reads anything", () => {
+    const page = readFileSync(
+      new URL('../../app/admin/(shell)/content-readiness/page.tsx', import.meta.url),
+      'utf8',
+    );
+    expect(page.indexOf("requirePermission('admin.view')")).toBeGreaterThan(-1);
+    expect(page.indexOf("requirePermission('admin.view')")).toBeLessThan(
+      page.indexOf('shared.get('),
+    );
+  });
 });

@@ -53,7 +53,7 @@
     "./admin-import": "./src/catalog-admin/import.ts",
     "./admin-export": "./src/catalog-admin/export.ts",
     "./admin-csv": "./src/catalog-admin/csv.ts",
-    "./content-readiness": "./src/content-readiness/read.ts",
+    "./content-readiness": "./src/content-readiness/report.ts",
     "./admin-stock-read": "./src/catalog-admin/stock-read.ts",
     "./admin-stock": "./src/catalog-admin/stock.ts",
     "./orders-admin-read": "./src/orders-admin/read.ts",

@@ -15,8 +15,6 @@ import type { Translate } from '@/lib/admin/message-lookup';
  * URL (the editor link is built from the product UUID only).
  */
 export type { Translate };
-export type ShowMode = 'todo' | 'all' | 'drafts';
-
 const header = 'px-3 py-2 text-left font-medium';
 const cell = 'px-3 py-2 align-top';
 
@@ -49,15 +47,6 @@ function Findings({ findings, t }: { findings: readonly FindingDto[]; t: Transla
 
 const stateKey = (row: ProductReadinessDto): string =>
   !row.isActive ? 'stateDraft' : row.live ? 'stateLive' : 'stateNotLive';
-
-export function visibleProducts(
-  products: readonly ProductReadinessDto[],
-  mode: ShowMode,
-): ProductReadinessDto[] {
-  if (mode === 'all') return [...products];
-  if (mode === 'drafts') return products.filter((row) => !row.isActive);
-  return products.filter((row) => row.isActive && (!row.ready || !row.live));
-}
 
 function ProductsTable({ rows, t }: { rows: readonly ProductReadinessDto[]; t: Translate }) {
   if (rows.length === 0) return <p>{t('empty')}</p>;
@@ -236,19 +225,13 @@ function PhotosTable({ rows, t }: { rows: readonly PhotoProblemDto[]; t: Transla
   );
 }
 
-export function ContentReadinessView({
-  report,
-  mode,
-  t,
-  productLimit,
-}: {
-  report: ContentReadinessDto;
-  mode: ShowMode;
-  t: Translate;
-  productLimit: number;
-}) {
-  const rows = visibleProducts(report.products, mode);
-  const modes: ShowMode[] = ['todo', 'all', 'drafts'];
+const SHOW_MODES = ['todo', 'all', 'drafts'] as const;
+const link = (show: string, page: number): string =>
+  `/admin/content-readiness?show=${show}&page=${String(page)}`;
+
+export function ContentReadinessView({ report, t }: { report: ContentReadinessDto; t: Translate }) {
+  const rows = report.products;
+  const mode = report.show;
   return (
     <div className="space-y-10">
       <header className="space-y-2">
@@ -256,6 +239,15 @@ export function ContentReadinessView({
         <p className="max-w-3xl text-text-muted">{t('intro')}</p>
         <p role="status" aria-live="polite" className="text-lg font-semibold">
           {t('readyOfTarget', { ready: report.totals.liveReady, target: report.expectedActive })}
+        </p>
+        <p className="text-sm text-text-muted">
+          {t('generated', { at: report.generatedAt })}{' '}
+          <a
+            href="/admin/content-readiness?refresh=1"
+            className="inline-flex min-h-11 min-w-11 items-center underline"
+          >
+            {t('refresh')}
+          </a>
         </p>
         <p>
           {t('liveLine', {
@@ -290,10 +282,10 @@ export function ContentReadinessView({
         </h2>
         <nav aria-label={t('filter')}>
           <ul className="flex flex-wrap gap-3">
-            {modes.map((entry) => (
+            {SHOW_MODES.map((entry) => (
               <li key={entry}>
                 <a
-                  href={`/admin/content-readiness?show=${entry}`}
+                  href={link(entry, 1)}
                   aria-current={entry === mode ? 'true' : undefined}
                   className={`inline-flex min-h-11 min-w-11 items-center underline ${entry === mode ? 'font-semibold' : ''}`}
                 >
@@ -303,9 +295,36 @@ export function ContentReadinessView({
             ))}
           </ul>
         </nav>
+        <p role="status" aria-live="polite">
+          {t('matching', { count: report.matchingProducts })}
+        </p>
         <ProductsTable rows={rows} t={t} />
-        {report.productsTruncated ? (
-          <p role="note">{t('truncated', { limit: productLimit })}</p>
+        {report.pages > 1 ? (
+          <nav aria-label={t('pages')}>
+            <ul className="flex flex-wrap items-center gap-3">
+              {report.page > 1 ? (
+                <li>
+                  <a
+                    href={link(mode, report.page - 1)}
+                    className="inline-flex min-h-11 min-w-11 items-center underline"
+                  >
+                    {t('previous')}
+                  </a>
+                </li>
+              ) : null}
+              <li>{t('pageOf', { page: report.page, pages: report.pages })}</li>
+              {report.page < report.pages ? (
+                <li>
+                  <a
+                    href={link(mode, report.page + 1)}
+                    className="inline-flex min-h-11 min-w-11 items-center underline"
+                  >
+                    {t('next')}
+                  </a>
+                </li>
+              ) : null}
+            </ul>
+          </nav>
         ) : null}
       </section>
 

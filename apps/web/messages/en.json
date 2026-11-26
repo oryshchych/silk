@@ -1093,7 +1093,6 @@
       "ready": "ready",
       "noIssues": "Nothing missing",
       "empty": "Nothing to show here.",
-      "truncated": "The list is cut at {limit} products. The totals above cover all of them.",
       "categoriesTitle": "Categories",
       "categoriesLine": "{ready} of {total} active categories are ready.",
       "category": "Category",
@@ -1158,7 +1157,14 @@
         "url_unsafe": "The stored address is unsafe",
         "alt_too_short": "Alt text too short to be real",
         "alt_too_long": "Alt text longer than the guide allows"
-      }
+      },
+      "matching": "{count} products match this view.",
+      "pages": "Pages",
+      "previous": "Previous page",
+      "next": "Next page",
+      "pageOf": "Page {page} of {pages}",
+      "generated": "Counted at {at}. The count is kept for a minute.",
+      "refresh": "Count again"
     },
     "categoryEditor": {
       "title": "Texts of the category: {name}",

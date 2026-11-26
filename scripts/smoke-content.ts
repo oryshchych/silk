@@ -8,8 +8,14 @@
  * content read it (private, no-store, noindex) and see no cost, and a hostile product name is
  * shown as text.
  */
-import { beginLogin, createAdminUser } from '../packages/core/src/auth/service.ts';
-import { readContentReadiness } from '../packages/core/src/content-readiness/read.ts';
+import {
+  beginLogin,
+  confirmTotpEnrolment,
+  createAdminUser,
+  startTotpEnrolment,
+} from '../packages/core/src/auth/service.ts';
+import { codeAt, stepOf } from '../packages/core/src/auth/totp.ts';
+import { readContentReadiness } from '../packages/core/src/content-readiness/report.ts';
 import { createDb } from '../packages/db/src/client.ts';
 import { categories } from '../packages/db/src/schema.ts';
 import { actionIds } from './smoke-http.ts';
@@ -30,7 +36,7 @@ interface Context {
 }
 
 const PASSWORD = 'smoke-content-password-0123456789';
-const HOSTILE = '<script>alert("smoke")</script>';
+const HOSTILE = '<script>alert("smoke")</script>"><svg onload=alert(1)>';
 const COST = '4242424';
 
 export async function runContentSmoke({
@@ -251,10 +257,69 @@ export async function runContentSmoke({
             page.html.includes(`/admin/products/${bad}`) &&
             page.html.includes('&lt;script&gt;alert(&quot;smoke&quot;)') &&
             !page.html.includes(HOSTILE) &&
+            !page.html.includes('<svg onload') &&
             !page.html.includes(COST),
         );
       }
     }
+
+    // The owner (second factor), a forged cookie, a pending sign-in and a POST.
+    const ownerEmail = `owner-content-${suffix}@example.test`;
+    await db.transaction(async (tx) => {
+      await createAdminUser(tx, { email: ownerEmail, password: PASSWORD, role: 'owner' });
+    });
+    const pendingOwner = await db.transaction(
+      async (tx) => await beginLogin(tx, config, { email: ownerEmail, password: PASSWORD, client }),
+    );
+    if (!pendingOwner.ok) throw new Error('smoke owner could not sign in');
+    const enrol = await db.transaction(
+      async (tx) => await startTotpEnrolment(tx, config, { token: pendingOwner.token }),
+    );
+    if (enrol === null) throw new Error('smoke owner enrolment failed');
+    const ownerFull = await db.transaction(
+      async (tx) =>
+        await confirmTotpEnrolment(tx, config, {
+          token: pendingOwner.token,
+          code: codeAt(enrol.secret, stepOf(Date.now())),
+          client,
+        }),
+    );
+    if (!ownerFull.ok) throw new Error('smoke owner could not finish enrolment');
+    const ownerPage = await get('/admin/content-readiness', {
+      Cookie: `admin_session=${ownerFull.token}`,
+    });
+    check(
+      'content: the owner reads the screen too (200, private no-store, noindex)',
+      ownerPage.status === 200 &&
+        ownerPage.cache.includes('no-store') &&
+        ownerPage.robots.includes('noindex') &&
+        !ownerPage.html.includes(COST),
+    );
+    const forged = await get('/admin/content-readiness', { Cookie: 'admin_session=forged-token' });
+    const pending = await get('/admin/content-readiness', {
+      Cookie: `admin_session=${pendingOwner.token}`,
+    });
+    check(
+      'content: a forged cookie and a sign-in that is not finished get no report',
+      forged.status === 307 &&
+        !forged.html.includes('/admin/products/') &&
+        !pending.html.includes('/admin/products/'),
+    );
+    const posted = await fetch(`${base}/admin/content-readiness`, {
+      method: 'POST',
+      redirect: 'manual',
+      headers: {
+        'X-Forwarded-For': nextClient(),
+        Cookie: `admin_session=${tokens['content'] ?? ''}`,
+        Origin: siteOrigin,
+        'X-Forwarded-Host': new URL(siteOrigin).host,
+      },
+      body: 'x',
+    });
+    check(
+      'content: a POST to the screen costs no more than a GET (the shared computation) and is no error',
+      posted.status !== 500 && !(await posted.text()).includes(COST),
+    );
   } finally {
     await close();
   }

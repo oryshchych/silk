@@ -16,27 +16,12 @@ import {
   FEED_MAX_ID_LENGTH,
   PHOTO_BOUNDS,
 } from '@store/shared/content-bounds';
-import {
-  contentReadinessDto,
-  type AcceptanceCheck,
-  type ContentReadinessDto,
-  type PhotoProblemDto,
-} from '@store/shared/dto/content-readiness';
-import { serialize } from '@store/shared/dto/serialize';
+import type { PhotoProblemDto } from '@store/shared/dto/content-readiness';
 
 import { IMAGE_FORMATS, IMAGE_SIZES } from '../catalog-admin/images.ts';
 import { queryRows, visibleProduct } from '../catalog/sql.ts';
-import {
-  TEXT_FIELDS,
-  toCategoryReadiness,
-  toProductReadiness,
-  type CategoryFacts,
-  type ProductFacts,
-} from './rules.ts';
+import { TEXT_FIELDS, type CategoryFacts, type ProductFacts } from './rules.ts';
 
-export const DEFAULT_EXPECTED_ACTIVE = 40;
-/** Products listed in one report (totals always cover all of them). */
-export const REPORT_PRODUCT_LIMIT = 2_000;
 export const REPORT_PHOTO_LIMIT = 500;
 
 const LOCALES = ['uk', 'en'] as const;
@@ -154,7 +139,7 @@ const productRow = z.object({
   attributes: z.number().int(),
 });
 
-async function readProductFacts(db: Reader): Promise<ProductFacts[]> {
+export async function readProductFacts(db: Reader): Promise<ProductFacts[]> {
   const rows = await queryRows(
     db,
     productRow,
@@ -283,7 +268,7 @@ const categoryRow = z.object({
   md_en: z.number().int(),
 });
 
-async function readCategoryFacts(db: Reader): Promise<CategoryFacts[]> {
+export async function readCategoryFacts(db: Reader): Promise<CategoryFacts[]> {
   const rows = await queryRows(
     db,
     categoryRow,
@@ -337,7 +322,7 @@ const photoRow = z.object({
 const ANY_PROBLEM = sql`(alt_missing_uk OR alt_missing_en OR alt_too_short OR alt_too_long OR too_narrow OR aspect
   OR renditions_missing OR url_unsafe)`;
 
-async function readPhotos(
+export async function readPhotos(
   db: Reader,
 ): Promise<{ total: number; problems: number; list: PhotoProblemDto[]; truncated: boolean }> {
   const [totals] = await queryRows(
@@ -381,104 +366,4 @@ async function readPhotos(
     list,
     truncated: rows.length > REPORT_PHOTO_LIMIT,
   };
-}
-
-export interface ReadinessOptions {
-  /** How many live products the launch needs (the plan says 40). */
-  expectedActive?: number;
-  now?: Date;
-  productLimit?: number;
-}
-
-export async function readContentReadiness(
-  db: Reader,
-  options: ReadinessOptions = {},
-): Promise<ContentReadinessDto> {
-  const expectedActive = options.expectedActive ?? DEFAULT_EXPECTED_ACTIVE;
-  // One after another: a `Reader` may be a single transaction connection, which runs one query at a time.
-  const facts = await readProductFacts(db);
-  const categoryFacts = await readCategoryFacts(db);
-  const photos = await readPhotos(db);
-  const all = facts.map(toProductReadiness);
-  const categories = categoryFacts.map(toCategoryReadiness);
-  const active = all.filter((row) => row.isActive);
-  const activeCategories = categories.filter((row) => row.isActive);
-  const drafts = all.filter((row) => !row.isActive);
-  const live = all.filter((row) => row.live);
-
-  const has = (row: (typeof all)[number], codes: readonly string[]): boolean =>
-    row.findings.some((entry) => entry.severity === 'blocker' && codes.includes(entry.code));
-  const violations = (count: number, id: AcceptanceCheck['id']): AcceptanceCheck => ({
-    id,
-    actual: count,
-    expected: 0,
-    ok: count === 0,
-  });
-  const missingMeta = (row: (typeof all)[number]): boolean =>
-    row.findings.some((entry) => entry.code === 'missing' && entry.field === 'meta_description');
-  const acceptance: AcceptanceCheck[] = [
-    // Ready, not merely shown: a live product with a blocker is not one of the forty.
-    {
-      id: 'active_products',
-      ok: live.filter((row) => row.ready).length >= expectedActive,
-      actual: live.filter((row) => row.ready).length,
-      expected: expectedActive,
-    },
-    violations(
-      active.filter((row) => has(row, ['no_active_variant', 'no_stock', 'no_photo'])).length,
-      'variants_stock_photos',
-    ),
-    // The plan's wording: no product without a photo, an alt text or a meta description.
-    violations(
-      active.filter(
-        (row) =>
-          has(row, ['no_photo', 'photo_alt_missing', 'photo_alt_too_short']) || missingMeta(row),
-      ).length,
-      'alt_meta_photo',
-    ),
-    violations(
-      activeCategories.filter((row) =>
-        row.findings.some(
-          (entry) =>
-            entry.field === 'seo_text' && entry.code === 'missing' && entry.severity === 'blocker',
-        ),
-      ).length,
-      'category_seo_text',
-    ),
-    // Everything else the rules call a blocker (bounds, copied snippets, renditions, hidden state ...).
-    violations(
-      active.filter((row) => !row.ready).length +
-        activeCategories.filter((row) => !row.ready).length,
-      'no_blockers',
-    ),
-  ];
-
-  const gatePassed = acceptance.every((check) => check.ok);
-
-  const limit = options.productLimit ?? REPORT_PRODUCT_LIMIT;
-  const ordered = [...all.filter((row) => !row.ready), ...all.filter((row) => row.ready)];
-  return serialize(contentReadinessDto, {
-    generatedAt: (options.now ?? new Date()).toISOString(),
-    expectedActive,
-    totals: {
-      products: all.length,
-      live: live.length,
-      liveReady: live.filter((row) => row.ready).length,
-      active: active.length,
-      activeReady: active.filter((row) => row.ready).length,
-      drafts: drafts.length,
-      draftsReady: drafts.filter((row) => row.ready).length,
-      categories: activeCategories.length,
-      categoriesReady: activeCategories.filter((row) => row.ready).length,
-      photos: photos.total,
-      photosWithProblems: photos.problems,
-    },
-    acceptance,
-    gatePassed,
-    products: ordered.slice(0, limit),
-    productsTruncated: ordered.length > limit,
-    categories,
-    photoProblems: photos.list,
-    photoProblemsTruncated: photos.truncated,
-  });
 }
