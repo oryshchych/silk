@@ -14,3 +14,17 @@ export function visibleText(value: string): string {
 
 /** Length in code points (what Postgres `char_length` counts), of the visible text. */
 export const visibleLength = (value: string): number => Array.from(visibleText(value)).length;
+
+/**
+ * Text as it may be STORED: line breaks are `\n`, zero-width characters, bidirectional controls
+ * (U+202A to U+202E, U+2066 to U+2069: they can reorder what a reader sees) and control characters
+ * other than the tab and the line feed are removed. Applied to every admin text input and to every
+ * imported cell, so the report's "visible text" and the stored text cannot differ by invisible
+ * characters.
+ */
+export function cleanText(value: string): string {
+  return value
+    .replace(/\r\n?/g, '\n')
+    .replace(/[\u200b-\u200d\u2060\ufeff\u202a-\u202e\u2066-\u2069]/g, '')
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/g, '');
+}

@@ -946,7 +946,7 @@ export async function runAdminSmoke({
     );
     const preview = await csvPost('preview', adminToken);
     const previewBad = [
-      ...preview.body.matchAll(/"line":(\d+),"sku":"[^"]*","action":"error"/g),
+      ...preview.body.matchAll(/"line":(\d+),"row":\d+,"sku":"[^"]*","action":"error"/g),
     ].map((m) => Number(m[1]));
     const countBefore = (await db.select().from(products)).filter((p) =>
       p.sku.startsWith(`IMP${suffix}-`),

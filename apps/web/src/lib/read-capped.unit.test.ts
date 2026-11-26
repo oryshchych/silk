@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { readCapped } from './read-capped';
+import { declaredTooLarge, readCapped } from './read-capped';
 
 const streamOf = (chunks: number, size: number, onCancel?: () => void) => {
   let sent = 0;
@@ -141,5 +141,35 @@ describe('readCapped', () => {
     expect(empty.ok && empty.body.length).toBe(0);
     const none = await readCapped(requestOf(streamOf(0, 1)), { limit: 100 });
     expect(none.ok && none.body.length).toBe(0);
+  });
+});
+
+describe('a client that vanishes mid-body, and a declared length over the cap', () => {
+  it('a read that rejects is "aborted", not an unhandled error', async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array([1, 2, 3]));
+      },
+      pull(controller) {
+        controller.error(new Error('aborted'));
+      },
+    });
+    const request = new Request('https://shop.example/x', {
+      method: 'POST',
+      body: stream,
+      duplex: 'half',
+    } as RequestInit);
+    expect(await readCapped(request, { limit: 1024 })).toEqual({ ok: false, reason: 'aborted' });
+  });
+
+  it('declaredTooLarge reads the header only', () => {
+    const make = (length: string | null): Request =>
+      new Request('https://shop.example/x', {
+        method: 'POST',
+        headers: length === null ? {} : { 'Content-Length': length },
+        body: 'x',
+      });
+    expect(declaredTooLarge(make('2000'), 1000)).toBe(true);
+    expect(declaredTooLarge(make('1000'), 1000)).toBe(false);
   });
 });

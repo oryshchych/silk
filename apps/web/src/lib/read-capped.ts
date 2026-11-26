@@ -10,7 +10,18 @@
  *    caller's slot for longer than the deadline.
  */
 export type ReadResult =
-  { ok: true; body: Buffer } | { ok: false; reason: 'too_large' | 'timeout' };
+  { ok: true; body: Buffer } | { ok: false; reason: 'too_large' | 'timeout' | 'aborted' };
+
+/**
+ * A declared length over the cap, known from the headers alone: the caller refuses it BEFORE it takes
+ * an in-flight slot or reads a byte.
+ */
+export function declaredTooLarge(request: Request, limit: number): boolean {
+  const header = request.headers.get('content-length');
+  if (header === null || header.trim() === '') return false;
+  const declared = Number(header);
+  return Number.isInteger(declared) && declared > limit;
+}
 
 export interface ReadLimits {
   limit: number;
@@ -36,7 +47,7 @@ export async function readCapped(request: Request, limits: ReadLimits): Promise<
 
   // `cancel()` is NOT awaited: on a real server a stalled client never lets it settle, and waiting
   // for it would defeat the very deadline that called it. The answer goes out at once.
-  const stop = (reason: 'too_large' | 'timeout'): ReadResult => {
+  const stop = (reason: 'too_large' | 'timeout' | 'aborted'): ReadResult => {
     void reader.cancel().catch(() => undefined);
     return { ok: false, reason };
   };
@@ -53,8 +64,15 @@ export async function readCapped(request: Request, limits: ReadLimits): Promise<
         Math.min(idleMs, left),
       );
     });
-    const next = await Promise.race([reader.read(), timedOut]);
-    clearTimeout(timer);
+    let next: Awaited<ReturnType<typeof reader.read>> | 'timeout';
+    try {
+      next = await Promise.race([reader.read(), timedOut]);
+    } catch {
+      // The client went away mid-body (a reset or an abort): not a server fault, and the slot is freed by the caller.
+      return stop('aborted');
+    } finally {
+      clearTimeout(timer);
+    }
     if (next === 'timeout') return stop('timeout');
     if (next.done) break;
     const { value } = next;

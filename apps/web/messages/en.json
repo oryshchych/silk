@@ -556,7 +556,7 @@
       "exportHint": "A CSV of all products. The cost column is only included for those who may see it.",
       "exportCsv": "Download CSV",
       "importTitle": "Import products",
-      "importHint": "A CSV with a header row. Basics: sku, slug, brand, category (the category slug), name_uk, name_en, price, compare_at_price, cost_price, weight_grams. Content: short_description, description, composition, care, meta_title and meta_description, each with _uk and _en. A product is matched by sku: it is updated if it exists (an empty cell changes nothing) and created as a draft if not. Up to 2 MB and 1000 rows. Download the template for the exact header.",
+      "importHint": "A CSV with a header row. Basics: sku, slug, brand, category (the category slug), name_uk, name_en, price, compare_at_price, cost_price, weight_grams. Content: short_description, description, composition, care, meta_title and meta_description, each with _uk and _en. A product is matched by sku: it is updated if it exists (an empty cell changes nothing and never deletes a text: use the product card to clear one) and created as a draft if not. Text is plain text: a line break starts a paragraph and anything in angle brackets is dropped. Photos, their alt text, sizes, colours and stock are added in the product card afterwards; a CSV product stays a draft until then. Up to 2 MB and 1000 rows. Download the template for the exact header; in Excel use Data, From Text/CSV, UTF-8.",
       "file": "CSV file",
       "tooBig": "The file is too large: up to 2 MB and 1000 rows. Split it into parts.",
       "failed": "Could not process the file.",
@@ -574,7 +574,7 @@
         "sku_required": "No SKU.",
         "sku_invalid": "Invalid SKU.",
         "sku_duplicate_in_file": "SKU repeated in the file.",
-        "slug_invalid": "Invalid slug.",
+        "slug_invalid": "Invalid slug (lowercase Latin words joined by hyphens).",
         "name_required": "Both names are required.",
         "brand_required": "A brand is required.",
         "category_required": "A category is required.",
@@ -584,7 +584,7 @@
         "compare_price_invalid": "Invalid old price.",
         "cost_invalid": "Invalid cost.",
         "weight_invalid": "Invalid weight.",
-        "text_too_long": "Text too long.",
+        "text_too_long": "Text too long (the limit is the database's, much more than the guide advises).",
         "price_forbidden": "You may not change prices.",
         "cost_forbidden": "You may not change the cost.",
         "row_too_short": "The row has fewer cells than the header.",
@@ -592,7 +592,9 @@
         "ADMIN_SLUG_TAKEN": "This slug is already used.",
         "ADMIN_SKU_TAKEN": "This SKU is already used.",
         "ADMIN_INVALID_PRICE": "The old price must be higher than the price.",
-        "example_row": "This is the template's example row: it is never imported."
+        "example_row": "This is the template's example row: it is never imported.",
+        "slug_taken": "A product with this slug already exists: give this row its own value in the slug column.",
+        "slug_duplicate_in_file": "Another row of this file ends up with the same slug: give each its own value in the slug column."
       },
       "fileErrors": {
         "CSV_TOO_LARGE": "The file is too large.",
@@ -615,15 +617,19 @@
       "exportParts": "There are too many products for one file. Download in parts: {count}.",
       "exportPart": "Part {number}",
       "templateTitle": "Content template",
-      "templateHint": "The header the import understands and one example row. The example row is refused by the import, so the file can be uploaded as it is without loading anything.",
+      "templateHint": "The header the import understands and one example row. The example row is refused by the import, so the file can be uploaded as it is without loading anything: delete it. Open it in Excel with Data, From Text/CSV, UTF-8 (it uses commas; a file saved with semicolons is read too).",
       "templateCsv": "Download the template",
       "absent": "These content columns are not in the file (the texts stay as they are): {columns}",
       "notes": {
         "missing": "will still be empty",
         "too_short": "shorter than the guide asks",
         "too_long": "longer than the guide allows",
-        "same_in_both_languages": "the same text in both languages"
-      }
+        "same_in_both_languages": "the same text in both languages",
+        "looks_like_tag": "contains something in angle brackets: it will not be shown (write plain text)",
+        "needs_photos_and_variants": "will be a draft: add photos with alt text, sizes, colours and stock in the product card"
+      },
+      "working": "Working on the file...",
+      "rowOfLine": "Row {row} (line {line})"
     },
     "media": {
       "title": "Photos",

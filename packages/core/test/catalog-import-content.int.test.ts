@@ -133,7 +133,8 @@ describe('the preview names what will still be empty', () => {
         { column: 'meta_description_en', code: 'missing' },
       ]),
     );
-    expect(first?.notes.length).toBe(2);
+    // The two empty columns, and the one note every created product gets.
+    expect(first?.notes.length).toBe(3);
     expect(second?.errors).toContain('price_invalid');
     expect(second?.notes).toEqual([]);
   });
@@ -209,6 +210,8 @@ describe('export and import round trip', () => {
     const { outcome } = await importCsv(exported.csv);
     expect(outcome.data.failed).toBe(0);
     expect(outcome.data.created).toBe(0);
+    // A row that changed nothing is not an update.
+    expect(outcome.data.updated).toBe(0);
     const after = await handle.db.select().from(products);
     expect(after.map((p) => [p.id, p.updatedAt.getTime()])).toEqual(
       before.map((p) => [p.id, p.updatedAt.getTime()]),
@@ -238,5 +241,150 @@ describe('the preview and the readiness report measure alike', () => {
       );
       expect([value, Number(result.rows[0]?.['n'])]).toEqual([value, visibleLength(value)]);
     }
+  });
+});
+
+describe('the example row cannot be turned into a live product', () => {
+  const bypass = async (cells: Record<string, string>) => {
+    const before = (await handle.db.select({ id: products.id }).from(products)).length;
+    const { plan, outcome } = await importCsv(csvOf([fullRow('EX-X', cells)]));
+    expect(plan.results[0]?.errors).toContain('example_row');
+    expect(outcome.data.created).toBe(0);
+    expect((await handle.db.select({ id: products.id }).from(products)).length).toBe(before);
+  };
+  it('a lower-case or mixed-case SKU prefix', async () => {
+    await bypass({ sku: 'example-do-not-import' });
+    await bypass({ sku: 'Example-1' });
+  });
+  it('a marker word in ANY cell, in either language, whatever the SKU', async () => {
+    await bypass({ name_en: '[EXAMPLE] Name in English' });
+    await bypass({ meta_title_uk: '[ПРИКЛАД] Заголовок для прикладу двадцять' });
+    await bypass({ care_en: 'x [example] y' });
+  });
+  it("the template's example slug", async () => {
+    await bypass({ slug: 'example-latin-words-with-hyphens' });
+  });
+  it('the template with only sku, price and category edited still loads nothing', async () => {
+    const parsed = parseCsv(contentTemplateCsv());
+    const row = parsed.rows[0]?.cells ?? [];
+    const cells = [...row];
+    cells[parsed.header.indexOf('sku')] = 'MY-1';
+    cells[parsed.header.indexOf('price')] = '499.00';
+    cells[parsed.header.indexOf('category')] = category;
+    const text = `${parsed.header.join(',')}\n${cells.map((c) => `"${c.replace(/"/g, '""')}"`).join(',')}`;
+    const { plan, outcome } = await importCsv(text);
+    expect(plan.results[0]?.errors).toContain('example_row');
+    expect(outcome.data.created).toBe(0);
+    expect(await bySku('MY-1')).toBeUndefined();
+  });
+});
+
+describe('preview and commit agree on slugs', () => {
+  it('a new row whose English name makes an existing slug is refused IN THE PREVIEW', async () => {
+    await importCsv(csvOf([fullRow('SL-1', { name_en: 'Slug Bra One', slug: '' })]));
+    const first = await bySku('SL-1');
+    expect(first?.slug).toBe('slug-bra-one');
+    const plan = await planImport(
+      handle.db,
+      parseCsv(csvOf([fullRow('SL-2', { name_en: 'Slug Bra One', slug: '' })])),
+      ALL,
+    );
+    expect(plan.results[0]?.errors).toEqual(['slug_taken']);
+    expect(plan.results[0]?.errorColumns).toEqual({ slug_taken: 'slug' });
+  });
+  it('an explicit slug of another product, and two rows of one file with one slug', async () => {
+    const plan = await planImport(
+      handle.db,
+      parseCsv(
+        csvOf([
+          fullRow('SL-3', { slug: 'slug-bra-one' }),
+          fullRow('SL-4', { slug: 'fresh-slug' }),
+          fullRow('SL-5', { slug: 'fresh-slug' }),
+          fullRow('SL-6', { name_en: 'Same Generated', slug: '' }),
+          fullRow('SL-7', { name_en: 'Same Generated', slug: '' }),
+        ]),
+      ),
+      ALL,
+    );
+    expect(plan.results.map((r) => r.errors)).toEqual([
+      ['slug_taken'],
+      [],
+      ['slug_duplicate_in_file'],
+      [],
+      ['slug_duplicate_in_file'],
+    ]);
+  });
+  it('an update that keeps its own slug is not a collision', async () => {
+    const plan = await planImport(
+      handle.db,
+      parseCsv(csvOf([{ sku: 'SL-1', slug: 'slug-bra-one' }], ['sku', 'slug'])),
+      ALL,
+    );
+    expect(plan.results[0]?.errors).toEqual([]);
+  });
+});
+
+describe('notes and numbering of the preview', () => {
+  it('a created row says it needs photos and variants; something in angle brackets is flagged', async () => {
+    const plan = await planImport(
+      handle.db,
+      parseCsv(
+        csvOf([
+          fullRow('NT-1', {
+            description_uk: 'Розмір <S> кінець опису, достатньо довгий текст для перевірки',
+          }),
+        ]),
+      ),
+      ALL,
+    );
+    const notes = plan.results[0]?.notes ?? [];
+    expect(notes).toContainEqual({ column: 'photos', code: 'needs_photos_and_variants' });
+    expect(notes).toContainEqual({ column: 'description_uk', code: 'looks_like_tag' });
+  });
+  it('shows the spreadsheet row next to the file line when a text has line breaks, and names the column of an error', async () => {
+    const rows = [
+      fullRow('NT-2', {
+        description_uk: `${filler('Перший', 100)}\n${filler('Другий', 100)}\n${filler('Третій', 100)}`,
+      }),
+      fullRow('NT-3', { meta_title_uk: 'x'.repeat(201) }),
+    ];
+    const plan = await planImport(handle.db, parseCsv(csvOf(rows)), ALL);
+    expect(plan.results.map((r) => r.row)).toEqual([1, 2]);
+    expect(plan.results[1]?.line).toBeGreaterThan(plan.results[1]?.row ?? 0 + 1);
+    expect(plan.results[1]?.errorColumns).toEqual({ text_too_long: 'meta_title_uk' });
+  });
+});
+
+describe('what is stored and what is audited', () => {
+  const HIDDEN_TEXT = `Опис\u200b з \u202eприхованим\u202c текстом\u0007 і\r\nрозривом; ${filler('довгий хвіст', 400)}`;
+  it('invisible characters, bidi controls and control characters never reach the database; line breaks are \\n', async () => {
+    await importCsv(csvOf([fullRow('CL-1', { description_uk: HIDDEN_TEXT })]));
+    const stored = (await bySku('CL-1'))?.descriptionUk ?? '';
+    for (const bad of ['\u200b', '\u202e', '\u202c', '\u0007', '\r'])
+      expect(stored).not.toContain(bad);
+    expect(stored).toContain('Опис з приховани');
+    expect(stored).toContain('і\nрозривом');
+  });
+  it('the audit rows of an import say which text changed and how long it is, never the text', async () => {
+    const long = filler('нова довга версія', 600);
+    const { outcome } = await importCsv(
+      csvOf([{ sku: 'CL-1', description_uk: long }], ['sku', 'description_uk']),
+    );
+    const audit = JSON.stringify(outcome.extraAudits);
+    expect(audit).not.toContain('нова довга версія');
+    expect(audit).toContain('"length":600');
+  });
+  it('the editor schema cleans the same way and still refuses a NUL byte', () => {
+    const ok = productContentSchema.parse({
+      productId: '0193f0a4-7c3e-7000-8000-000000000001',
+      nameUk: 'Назва\u202e\u200b',
+    });
+    expect(ok.nameUk).toBe('Назва');
+    expect(
+      productContentSchema.safeParse({
+        productId: '0193f0a4-7c3e-7000-8000-000000000001',
+        nameUk: 'a\u0000b',
+      }).success,
+    ).toBe(false);
   });
 });

@@ -4,6 +4,8 @@ import { z } from 'zod';
 const note = z.object({ column: z.string(), code: z.string() });
 const importRow = z.object({
   line: z.number().int(),
+  row: z.number().int(),
+  errorColumns: z.record(z.string(), z.string()),
   sku: z.string(),
   action: z.enum(['create', 'update', 'error']),
   errors: z.array(z.string()),

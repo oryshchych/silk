@@ -21,7 +21,7 @@ import {
   EXAMPLE_SKU_PREFIX,
   NAME_COLUMNS,
 } from '@store/shared/content-columns';
-import { visibleLength, visibleText } from '@store/shared/content-text';
+import { cleanText, visibleLength, visibleText } from '@store/shared/content-text';
 import { money } from '@store/shared/money';
 
 import { DomainError } from '../errors.ts';
@@ -49,6 +49,8 @@ export type ImportErrorCode =
   | 'cost_forbidden'
   | 'row_too_short'
   | 'example_row'
+  | 'slug_taken'
+  | 'slug_duplicate_in_file'
   | 'row_failed'
   | 'ADMIN_SLUG_TAKEN'
   | 'ADMIN_SKU_TAKEN'
@@ -57,11 +59,22 @@ export type ImportErrorCode =
 /** What the row will leave EMPTY or outside the guide after the import (advice, never an error). */
 export interface ContentNote {
   column: string;
-  code: 'missing' | 'too_short' | 'too_long' | 'same_in_both_languages';
+  code:
+    | 'missing'
+    | 'too_short'
+    | 'too_long'
+    | 'same_in_both_languages'
+    | 'looks_like_tag'
+    | 'needs_photos_and_variants';
 }
 
 export interface ImportRowResult {
+  /** The line in the file (the header is line 1; a quoted text with line breaks spans several). */
   line: number;
+  /** The data row, the way a spreadsheet numbers it below the header (first data row = 1). */
+  row: number;
+  /** For the errors that name a column: which one (`text_too_long`, `slug_invalid`). */
+  errorColumns: Partial<Record<ImportErrorCode, string>>;
   sku: string;
   action: 'create' | 'update' | 'error';
   errors: ImportErrorCode[];
@@ -158,6 +171,11 @@ function contentNotes(
   return notes;
 }
 
+/** Anything the template's example row carries: its SKU (any case), its marker words, its slug. */
+const EXAMPLE_MARKER = /\[(?:EXAMPLE|ПРИКЛАД)\]/i;
+const EXAMPLE_SLUG = 'example-latin-words-with-hyphens';
+const looksLikeTag = (value: string): boolean => /<\/?[a-zA-Z][^>]*>/.test(value);
+
 export async function planImport(
   db: Reader,
   parsed: ParsedCsv,
@@ -171,7 +189,9 @@ export async function planImport(
   const cell = (cells: readonly string[], name: string): string | undefined => {
     const position = index.get(name);
     // A cell this shop exported with a leading apostrophe (formula neutralising) is read back as it was.
-    return position === undefined ? undefined : unsafeCell((cells[position] ?? '').trim());
+    return position === undefined
+      ? undefined
+      : cleanText(unsafeCell((cells[position] ?? '').trim())).trim();
   };
 
   const skus = [
@@ -213,6 +233,27 @@ export async function planImport(
           .select({ id: categories.id, slug: categories.slug })
           .from(categories)
           .where(inArray(categories.slug, slugs));
+  // Slugs this file will use: an explicit one, or the one a new row's English name generates.
+  const wantedSlugs = [
+    ...new Set(
+      parsed.rows.flatMap((row) => {
+        const sku = cell(row.cells, 'sku') ?? '';
+        const slug = cell(row.cells, 'slug') ?? '';
+        if (slug !== '') return [slug];
+        if (existing.some((e) => e.sku === sku) || sku === '') return [];
+        return [slugify(cell(row.cells, 'name_en') ?? '', sku)];
+      }),
+    ),
+  ];
+  const slugOwners =
+    wantedSlugs.length === 0
+      ? []
+      : await db
+          .select({ slug: products.slug, sku: products.sku })
+          .from(products)
+          .where(inArray(products.slug, wantedSlugs));
+  const ownerOfSlug = new Map(slugOwners.map((row) => [row.slug, row.sku]));
+  const slugUsedInFile = new Map<string, string>();
   const byId = new Map(existing.map((row) => [row.sku, row.id]));
   const current = new Map(existing.map((row) => [row.sku, row]));
   const byCategory = new Map(cats.map((row) => [row.slug, row.id]));
@@ -221,11 +262,19 @@ export async function planImport(
   const planned: Planned[] = [];
   const seen = new Set<string>();
 
+  let rowNumber = 0;
   for (const row of parsed.rows) {
+    rowNumber += 1;
     const errors: ImportErrorCode[] = [];
     const sku = cell(row.cells, 'sku') ?? '';
     if (row.cells.length < parsed.header.length) errors.push('row_too_short');
-    if (sku.startsWith(EXAMPLE_SKU_PREFIX)) errors.push('example_row');
+    const errorColumns: Partial<Record<ImportErrorCode, string>> = {};
+    if (
+      sku.toUpperCase().startsWith(EXAMPLE_SKU_PREFIX) ||
+      cell(row.cells, 'slug') === EXAMPLE_SLUG ||
+      row.cells.some((value) => EXAMPLE_MARKER.test(value))
+    )
+      errors.push('example_row');
     else if (sku === '') errors.push('sku_required');
     else if (!skuField.safeParse(sku).success) errors.push('sku_invalid');
     else if (seen.has(sku)) errors.push('sku_duplicate_in_file');
@@ -236,11 +285,17 @@ export async function planImport(
     const text = (name: string, max: number): string | null => {
       const value = cell(row.cells, name);
       if (value === undefined || value === '') return null;
-      if (value.length > max) errors.push('text_too_long');
+      if (Array.from(value).length > max) {
+        errors.push('text_too_long');
+        errorColumns.text_too_long ??= name;
+      }
       return value;
     };
     const slug = cell(row.cells, 'slug');
-    if (!empty(slug) && !slugField.safeParse(slug).success) errors.push('slug_invalid');
+    if (!empty(slug) && !slugField.safeParse(slug).success) {
+      errors.push('slug_invalid');
+      errorColumns.slug_invalid = 'slug';
+    }
     const brand = text('brand', 120);
     const nameUk = text('name_uk', 300);
     const nameEn = text('name_en', 300);
@@ -278,8 +333,10 @@ export async function planImport(
     for (const column of CONTENT_COLUMNS) {
       const value = cell(row.cells, column.column);
       if (value === undefined || value === '') continue;
-      if (value.length > column.dbMax) errors.push('text_too_long');
-      else content[column.key] = value;
+      if (Array.from(value).length > column.dbMax) {
+        errors.push('text_too_long');
+        errorColumns.text_too_long ??= column.column;
+      } else content[column.key] = value;
     }
 
     if (action === 'create') {
@@ -289,13 +346,52 @@ export async function planImport(
       if (price === undefined || price === null) errors.push('price_required');
     }
 
+    // The slug this row will end up with (explicit, or generated for a new product): a collision is
+    // reported NOW, in the preview, never first at the commit.
+    const finalSlug = !empty(slug)
+      ? (slug ?? '')
+      : action === 'create' && sku !== ''
+        ? slugify(nameEn ?? '', sku)
+        : null;
+    if (finalSlug !== null && slugField.safeParse(finalSlug).success) {
+      const owner = ownerOfSlug.get(finalSlug);
+      if (owner !== undefined && owner !== sku) {
+        errors.push('slug_taken');
+        errorColumns.slug_taken = 'slug';
+      } else if (slugUsedInFile.has(finalSlug) && slugUsedInFile.get(finalSlug) !== sku) {
+        errors.push('slug_duplicate_in_file');
+        errorColumns.slug_duplicate_in_file = 'slug';
+      } else slugUsedInFile.set(finalSlug, sku);
+    }
+
     const unique = [...new Set(errors)];
     if (unique.length > 0) {
-      results.push({ line: row.line, sku, action: 'error', errors: unique, notes: [] });
+      results.push({
+        line: row.line,
+        row: rowNumber,
+        sku,
+        action: 'error',
+        errors: unique,
+        errorColumns,
+        notes: [],
+      });
       continue;
     }
     const notes = contentNotes((name) => cell(row.cells, name) ?? '', current.get(sku));
-    results.push({ line: row.line, sku, action, errors: [], notes });
+    for (const column of CONTENT_COLUMNS)
+      if (looksLikeTag(cell(row.cells, column.column) ?? ''))
+        notes.push({ column: column.column, code: 'looks_like_tag' });
+    // A product made from a CSV is a draft without variants or photos until the card is filled in.
+    if (action === 'create') notes.push({ column: 'photos', code: 'needs_photos_and_variants' });
+    results.push({
+      line: row.line,
+      row: rowNumber,
+      sku,
+      action,
+      errors: [],
+      errorColumns: {},
+      notes,
+    });
     planned.push({
       line: row.line,
       sku,
@@ -314,6 +410,22 @@ export async function planImport(
     });
   }
   return { results, planned, ignoredColumns, absentColumns };
+}
+
+/**
+ * An import writes up to 1000 rows of up to 12 long texts: the audit row says WHICH text changed and
+ * how long it is now, never the text itself (one upload could otherwise write tens of MB to the log).
+ */
+function slimDiff(diff: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(diff).map(([key, value]) => {
+      const to =
+        typeof value === 'object' && value !== null && 'to' in value ? value.to : undefined;
+      return typeof to === 'string' && to.length > 200
+        ? [key, { changed: true, length: to.length }]
+        : [key, value];
+    }),
+  );
 }
 
 export interface ImportOutcome {
@@ -339,6 +451,7 @@ export async function applyImport(
   const ordered = [...plan.planned].sort((a, b) => (a.sku < b.sku ? -1 : a.sku > b.sku ? 1 : 0));
   for (const row of ordered) {
     try {
+      const state = { changed: false };
       await tx.transaction(async (inner) => {
         const outcomes: AdminOutcome<unknown>[] = [];
         let productId = row.existingId;
@@ -398,14 +511,16 @@ export async function applyImport(
           if (outcome.audit.action !== 'update' || Object.keys(outcome.audit.diff).length > 0) {
             audits.push({
               ...outcome.audit,
-              diff: { ...outcome.audit.diff, importLine: row.line },
+              diff: { ...slimDiff(outcome.audit.diff), importLine: row.line },
             });
+            state.changed = true;
           }
           for (const tag of outcome.tags) tags.add(tag);
         }
       });
       if (row.action === 'create') created += 1;
-      else updated += 1;
+      // A row that changed nothing (an unchanged export imported back) is not an update.
+      else if (state.changed) updated += 1;
     } catch (error) {
       const code: ImportErrorCode =
         error instanceof DomainError &&
@@ -414,11 +529,14 @@ export async function applyImport(
           error.code === 'ADMIN_INVALID_PRICE')
           ? error.code
           : 'row_failed';
+      const previous = results.get(row.line);
       results.set(row.line, {
         line: row.line,
+        row: previous?.row ?? 0,
         sku: row.sku,
         action: 'error',
         errors: [code],
+        errorColumns: code === 'ADMIN_SLUG_TAKEN' ? { ADMIN_SLUG_TAKEN: 'slug' } : {},
         notes: [],
       });
     }

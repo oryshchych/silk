@@ -31,12 +31,21 @@ const ROW_ERRORS = [
   'cost_forbidden',
   'row_too_short',
   'example_row',
+  'slug_taken',
+  'slug_duplicate_in_file',
   'row_failed',
   'ADMIN_SLUG_TAKEN',
   'ADMIN_SKU_TAKEN',
   'ADMIN_INVALID_PRICE',
 ] as const;
-const NOTE_CODES = ['missing', 'too_short', 'too_long', 'same_in_both_languages'] as const;
+const NOTE_CODES = [
+  'missing',
+  'too_short',
+  'too_long',
+  'same_in_both_languages',
+  'looks_like_tag',
+  'needs_photos_and_variants',
+] as const;
 const FILE_ERRORS = [
   'CSV_TOO_LARGE',
   'CSV_INVALID_CHARACTERS',
@@ -78,9 +87,12 @@ export function ImportPanel() {
     const known = NOTE_CODES.find((candidate) => candidate === note.code);
     return `${note.column}: ${known === undefined ? note.code : noteLabels(known)}`;
   };
-  const rowMessage = (code: string): string => {
+  const rowMessage = (row: Row, code: string): string => {
     const known = ROW_ERRORS.find((candidate) => candidate === code);
-    return known === undefined ? code : rowErrors(known);
+    const text = known === undefined ? code : rowErrors(known);
+    const column = row.errorColumns[code];
+    // Which column the error is about, when the importer knows.
+    return column === undefined ? text : `${column}: ${text}`;
   };
 
   function onFile(file: File | undefined): void {
@@ -157,6 +169,11 @@ export function ImportPanel() {
         />
       </label>
       <StatusLine message={message} />
+      {pending ? (
+        <p role="status" aria-live="polite" className="text-text-muted">
+          {t('working')}
+        </p>
+      ) : null}
       {phase.kind === 'preview' ? (
         <div className="space-y-3">
           <p role="status">{t('previewSummary', { good, bad })}</p>
@@ -207,11 +224,13 @@ export function ImportPanel() {
             <tbody>
               {rows.map((row) => (
                 <tr key={row.line} className="border-b border-border">
-                  <td className={cell}>{row.line}</td>
+                  <td className={cell}>{t('rowOfLine', { row: row.row, line: row.line })}</td>
                   <td className={cell}>{row.sku}</td>
                   <td className={cell}>
                     {row.action === 'error' ? (
-                      <span className="text-danger">{row.errors.map(rowMessage).join('; ')}</span>
+                      <span className="text-danger">
+                        {row.errors.map((code) => rowMessage(row, code)).join('; ')}
+                      </span>
                     ) : (
                       <>
                         {row.action === 'create' ? t('willCreate') : t('willUpdate')}

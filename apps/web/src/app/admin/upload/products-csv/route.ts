@@ -7,7 +7,7 @@ import { commitImport, previewImport } from '@/lib/admin/csv-import';
 import { currentSession } from '@/lib/admin/session';
 import { createInFlight } from '@/lib/in-flight';
 import { createRateLimiter } from '@/lib/rate-limit';
-import { readCapped } from '@/lib/read-capped';
+import { declaredTooLarge, readCapped } from '@/lib/read-capped';
 import { checkRequestLimit } from '@/lib/request-limits';
 
 /**
@@ -76,6 +76,8 @@ export async function POST(request: Request): Promise<Response> {
   const query = querySchema.safeParse(Object.fromEntries(new URL(request.url).searchParams));
   if (!query.success) return reply(400, 'INVALID_INPUT', request);
 
+  // A body that declares itself too large is refused BEFORE it takes the slot or a byte is read.
+  if (declaredTooLarge(request, CSV_LIMITS.maxBytes)) return reply(413, 'CSV_TOO_LARGE', request);
   const release = inFlight.acquire(resolved.session.userId);
   if (release === null) return reply(429, 'BUSY', request);
   try {
@@ -86,8 +88,13 @@ export async function POST(request: Request): Promise<Response> {
     });
     if (!read.ok)
       return reply(
-        read.reason === 'timeout' ? 408 : 413,
-        read.reason === 'timeout' ? 'TIMEOUT' : 'CSV_TOO_LARGE',
+        read.reason === 'timeout' ? 408 : read.reason === 'aborted' ? 400 : 413,
+        read.reason === 'timeout'
+          ? 'TIMEOUT'
+          : read.reason === 'aborted'
+            ? 'ABORTED'
+            : 'CSV_TOO_LARGE',
+        request,
       );
     let csv: string;
     try {
