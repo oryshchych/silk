@@ -4,13 +4,13 @@ import { describe, expect, it, vi } from 'vitest';
 
 const permissions: string[] = [];
 let droppedOf: ((data: unknown) => unknown) | undefined;
-vi.mock('@/lib/admin/bound-action', () => ({
+vi.mock('./bound-action', () => ({
   adminAction: (spec: { permission: string }) => {
     permissions.push(spec.permission);
     return Promise.resolve({ ok: false, code: 'TEST' });
   },
 }));
-vi.mock('@/lib/admin/catalog-action', () => ({
+vi.mock('./catalog-action', () => ({
   catalogAction: (spec: { permission: string; dropped?: (data: unknown) => unknown }) => {
     permissions.push(spec.permission);
     droppedOf = spec.dropped;
@@ -18,12 +18,12 @@ vi.mock('@/lib/admin/catalog-action', () => ({
   },
 }));
 
-const { commitImportAction, previewImportAction } = await import('./admin-import');
+const { commitImport, previewImport } = await import('./csv-import');
 
-describe('import actions', () => {
+describe('import', () => {
   it('both require catalog.import (owner and admin only)', async () => {
-    await previewImportAction({});
-    await commitImportAction({});
+    await previewImport('sku\n');
+    await commitImport('sku\n');
     expect(permissions).toEqual(['catalog.import', 'catalog.import']);
   });
 
@@ -39,10 +39,12 @@ describe('import actions', () => {
     expect(droppedOf?.({ created: 0, updated: 0, failed: 3 })).toEqual({});
   });
 
-  it('docs/SECURITY.md documents both actions under catalog.import', () => {
-    const doc = readFileSync(new URL('../../../../docs/SECURITY.md', import.meta.url), 'utf8');
-    const row = doc.split('\n').find((line) => line.includes('`previewImportAction`')) ?? '';
+  it('docs/SECURITY.md documents the route and both operations under catalog.import', () => {
+    const doc = readFileSync(new URL('../../../../../docs/SECURITY.md', import.meta.url), 'utf8');
+    const row =
+      doc.split('\n').find((line) => line.includes('POST /admin/upload/products-csv')) ?? '';
     expect(row).toContain('`catalog.import`');
-    expect(row).toContain('`commitImportAction`');
+    expect(row).toContain('`previewImport`');
+    expect(row).toContain('`commitImport`');
   });
 });

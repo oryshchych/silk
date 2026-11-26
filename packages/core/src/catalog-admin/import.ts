@@ -14,6 +14,14 @@ import { inArray } from 'drizzle-orm';
 
 import { categories, products } from '@store/db/schema';
 import type { Reader, Tx } from '@store/db/types';
+import { CONTENT_BOUNDS } from '@store/shared/content-bounds';
+import {
+  BASIC_COLUMNS,
+  CONTENT_COLUMNS,
+  EXAMPLE_SKU_PREFIX,
+  NAME_COLUMNS,
+} from '@store/shared/content-columns';
+import { visibleLength, visibleText } from '@store/shared/content-text';
 import { money } from '@store/shared/money';
 
 import { DomainError } from '../errors.ts';
@@ -40,16 +48,24 @@ export type ImportErrorCode =
   | 'price_forbidden'
   | 'cost_forbidden'
   | 'row_too_short'
+  | 'example_row'
   | 'row_failed'
   | 'ADMIN_SLUG_TAKEN'
   | 'ADMIN_SKU_TAKEN'
   | 'ADMIN_INVALID_PRICE';
+
+/** What the row will leave EMPTY or outside the guide after the import (advice, never an error). */
+export interface ContentNote {
+  column: string;
+  code: 'missing' | 'too_short' | 'too_long' | 'same_in_both_languages';
+}
 
 export interface ImportRowResult {
   line: number;
   sku: string;
   action: 'create' | 'update' | 'error';
   errors: ImportErrorCode[];
+  notes: ContentNote[];
 }
 
 export interface ImportCaps {
@@ -71,26 +87,22 @@ interface Planned {
   compareAt: number | null | undefined;
   cost: number | null | undefined;
   weight: number | null;
+  /** Content cells present in the file, by the key of `productContentSchema`. */
+  content: Record<string, string>;
 }
 
-const KNOWN_COLUMNS = [
-  'sku',
-  'slug',
-  'brand',
-  'category',
-  'name_uk',
-  'name_en',
-  'price',
-  'compare_at_price',
-  'cost_price',
-  'weight_grams',
-] as const;
+const KNOWN_COLUMNS: readonly string[] = [
+  ...BASIC_COLUMNS,
+  ...CONTENT_COLUMNS.map((c) => c.column),
+];
 
 export interface ImportPlan {
   results: ImportRowResult[];
   planned: Planned[];
   /** Header names that are not importable columns: reported, never silently used. */
   ignoredColumns: string[];
+  /** Content columns the file does not have at all (every row's text there stays as it is, or empty). */
+  absentColumns: string[];
 }
 
 /** An ASCII slug from a name, or from the SKU when the name has nothing to keep. */
@@ -106,6 +118,46 @@ export function slugify(name: string, fallback: string): string {
 
 const empty = (value: string | undefined): boolean => (value ?? '').trim() === '';
 
+const NOTE_COLUMNS = [
+  ...NAME_COLUMNS.map((column) => ({ column, bound: 'name' as const })),
+  ...CONTENT_COLUMNS.map((c) => ({ column: c.column, bound: c.bound })),
+];
+const COPY_PAIRS = CONTENT_COLUMNS.filter((c) => c.column.endsWith('_uk')).map((c) => ({
+  uk: c.column,
+  en: c.column.replace(/_uk$/, '_en'),
+}));
+
+/**
+ * What the product will have after this row, against the guide's bounds: a cell left empty keeps
+ * the stored text (an update), so the stored text counts. Advice for the preview, never an error
+ * (a draft with gaps is a normal state); the same bounds and the same visible-text rule as the
+ * readiness report.
+ */
+function contentNotes(
+  fileCell: (column: string) => string,
+  stored: Readonly<Record<string, string | null>> | undefined,
+): ContentNote[] {
+  const text = (column: string): string => {
+    const fromFile = fileCell(column);
+    if (fromFile !== '') return fromFile;
+    return stored?.[column] ?? '';
+  };
+  const notes: ContentNote[] = [];
+  for (const { column, bound } of NOTE_COLUMNS) {
+    const length = visibleLength(text(column));
+    const limits = CONTENT_BOUNDS[bound];
+    if (length === 0) notes.push({ column, code: 'missing' });
+    else if (length < limits.min) notes.push({ column, code: 'too_short' });
+    else if (length > limits.max) notes.push({ column, code: 'too_long' });
+  }
+  for (const pair of COPY_PAIRS) {
+    const uk = visibleText(text(pair.uk)).toLowerCase();
+    if (uk !== '' && uk === visibleText(text(pair.en)).toLowerCase())
+      notes.push({ column: pair.uk.replace(/_uk$/, ''), code: 'same_in_both_languages' });
+  }
+  return notes;
+}
+
 export async function planImport(
   db: Reader,
   parsed: ParsedCsv,
@@ -113,8 +165,9 @@ export async function planImport(
 ): Promise<ImportPlan> {
   const index = new Map(parsed.header.map((name, position) => [name, position]));
   const ignoredColumns = parsed.header.filter(
-    (name) => name !== '' && !(KNOWN_COLUMNS as readonly string[]).includes(name),
+    (name) => name !== '' && !KNOWN_COLUMNS.includes(name),
   );
+  const absentColumns = CONTENT_COLUMNS.map((c) => c.column).filter((name) => !index.has(name));
   const cell = (cells: readonly string[], name: string): string | undefined => {
     const position = index.get(name);
     // A cell this shop exported with a leading apostrophe (formula neutralising) is read back as it was.
@@ -131,7 +184,26 @@ export async function planImport(
     skus.length === 0
       ? []
       : await db
-          .select({ id: products.id, sku: products.sku })
+          .select({
+            id: products.id,
+            sku: products.sku,
+            // The text the product has now: an update that leaves a cell empty keeps it, so a
+            // note about a "missing" text must look here too.
+            name_uk: products.nameUk,
+            name_en: products.nameEn,
+            short_description_uk: products.shortDescriptionUk,
+            short_description_en: products.shortDescriptionEn,
+            description_uk: products.descriptionUk,
+            description_en: products.descriptionEn,
+            composition_uk: products.compositionUk,
+            composition_en: products.compositionEn,
+            care_uk: products.careUk,
+            care_en: products.careEn,
+            meta_title_uk: products.metaTitleUk,
+            meta_title_en: products.metaTitleEn,
+            meta_description_uk: products.metaDescriptionUk,
+            meta_description_en: products.metaDescriptionEn,
+          })
           .from(products)
           .where(inArray(products.sku, skus));
   const cats =
@@ -142,6 +214,7 @@ export async function planImport(
           .from(categories)
           .where(inArray(categories.slug, slugs));
   const byId = new Map(existing.map((row) => [row.sku, row.id]));
+  const current = new Map(existing.map((row) => [row.sku, row]));
   const byCategory = new Map(cats.map((row) => [row.slug, row.id]));
 
   const results: ImportRowResult[] = [];
@@ -152,7 +225,8 @@ export async function planImport(
     const errors: ImportErrorCode[] = [];
     const sku = cell(row.cells, 'sku') ?? '';
     if (row.cells.length < parsed.header.length) errors.push('row_too_short');
-    if (sku === '') errors.push('sku_required');
+    if (sku.startsWith(EXAMPLE_SKU_PREFIX)) errors.push('example_row');
+    else if (sku === '') errors.push('sku_required');
     else if (!skuField.safeParse(sku).success) errors.push('sku_invalid');
     else if (seen.has(sku)) errors.push('sku_duplicate_in_file');
     seen.add(sku);
@@ -200,6 +274,14 @@ export async function planImport(
       else weight = value;
     }
 
+    const content: Record<string, string> = {};
+    for (const column of CONTENT_COLUMNS) {
+      const value = cell(row.cells, column.column);
+      if (value === undefined || value === '') continue;
+      if (value.length > column.dbMax) errors.push('text_too_long');
+      else content[column.key] = value;
+    }
+
     if (action === 'create') {
       if (nameUk === null || nameEn === null) errors.push('name_required');
       if (brand === null) errors.push('brand_required');
@@ -209,10 +291,11 @@ export async function planImport(
 
     const unique = [...new Set(errors)];
     if (unique.length > 0) {
-      results.push({ line: row.line, sku, action: 'error', errors: unique });
+      results.push({ line: row.line, sku, action: 'error', errors: unique, notes: [] });
       continue;
     }
-    results.push({ line: row.line, sku, action, errors: [] });
+    const notes = contentNotes((name) => cell(row.cells, name) ?? '', current.get(sku));
+    results.push({ line: row.line, sku, action, errors: [], notes });
     planned.push({
       line: row.line,
       sku,
@@ -227,9 +310,10 @@ export async function planImport(
       compareAt: compareAt === undefined ? undefined : compareAt,
       cost: cost === undefined ? undefined : cost,
       weight,
+      content,
     });
   }
-  return { results, planned, ignoredColumns };
+  return { results, planned, ignoredColumns, absentColumns };
 }
 
 export interface ImportOutcome {
@@ -272,6 +356,8 @@ export async function applyImport(
           });
           productId = made.data.productId;
           outcomes.push(made);
+          if (Object.keys(row.content).length > 0)
+            outcomes.push(await updateProductContent(inner, { productId, ...row.content }));
           if (row.compareAt !== undefined && row.compareAt !== null) {
             outcomes.push(
               await updateProductPricing(inner, {
@@ -290,6 +376,7 @@ export async function applyImport(
               ...(row.nameUk === null ? {} : { nameUk: row.nameUk }),
               ...(row.nameEn === null ? {} : { nameEn: row.nameEn }),
               ...(row.weight === null ? {} : { weightGrams: row.weight }),
+              ...row.content,
             }),
           );
           if (row.price !== null || row.compareAt !== undefined || row.cost !== undefined) {
@@ -327,7 +414,13 @@ export async function applyImport(
           error.code === 'ADMIN_INVALID_PRICE')
           ? error.code
           : 'row_failed';
-      results.set(row.line, { line: row.line, sku: row.sku, action: 'error', errors: [code] });
+      results.set(row.line, {
+        line: row.line,
+        sku: row.sku,
+        action: 'error',
+        errors: [code],
+        notes: [],
+      });
     }
   }
 

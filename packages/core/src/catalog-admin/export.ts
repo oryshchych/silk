@@ -7,11 +7,13 @@ import { asc, count, eq, gt, sql } from 'drizzle-orm';
 
 import { categories, products } from '@store/db/schema';
 import type { Reader } from '@store/db/types';
+import { CONTENT_COLUMNS } from '@store/shared/content-columns';
 import { money, toHryvniasText } from '@store/shared/money';
 
 import { writeCsv } from './csv.ts';
 
-export const EXPORT_LIMIT = 10_000;
+/** A file holds at most this many products: with the text columns a row can be tens of KB. */
+export const EXPORT_LIMIT = 2_000;
 
 const BASE_HEADER = [
   'sku',
@@ -41,6 +43,18 @@ export async function exportProductsCsv(
       // Read only for a role that may see it: otherwise the value never enters this process.
       cost: options.canSeeCost ? products.costPrice : sql<number | null>`NULL::integer`,
       weight: products.weightGrams,
+      shortDescriptionUk: products.shortDescriptionUk,
+      shortDescriptionEn: products.shortDescriptionEn,
+      descriptionUk: products.descriptionUk,
+      descriptionEn: products.descriptionEn,
+      compositionUk: products.compositionUk,
+      compositionEn: products.compositionEn,
+      careUk: products.careUk,
+      careEn: products.careEn,
+      metaTitleUk: products.metaTitleUk,
+      metaTitleEn: products.metaTitleEn,
+      metaDescriptionUk: products.metaDescriptionUk,
+      metaDescriptionEn: products.metaDescriptionEn,
     })
     .from(products)
     .innerJoin(categories, eq(categories.id, products.categoryId))
@@ -49,7 +63,13 @@ export async function exportProductsCsv(
     .limit(EXPORT_LIMIT + 1);
   const truncated = rows.length > EXPORT_LIMIT;
   const kept = rows.slice(0, EXPORT_LIMIT);
-  const header = [...BASE_HEADER, ...(options.canSeeCost ? ['cost_price'] : []), 'weight_grams'];
+  // The content columns are the import's own (`CONTENT_COLUMNS`): export, fill the gaps, import back.
+  const header = [
+    ...BASE_HEADER,
+    ...(options.canSeeCost ? ['cost_price'] : []),
+    'weight_grams',
+    ...CONTENT_COLUMNS.map((c) => c.column),
+  ];
   const lines = kept.map((row) => [
     row.sku,
     row.slug,
@@ -61,6 +81,18 @@ export async function exportProductsCsv(
     row.compareAt === null ? '' : toHryvniasText(money(row.compareAt)),
     ...(options.canSeeCost ? [row.cost === null ? '' : toHryvniasText(money(row.cost))] : []),
     String(row.weight),
+    row.shortDescriptionUk ?? '',
+    row.shortDescriptionEn ?? '',
+    row.descriptionUk ?? '',
+    row.descriptionEn ?? '',
+    row.compositionUk ?? '',
+    row.compositionEn ?? '',
+    row.careUk ?? '',
+    row.careEn ?? '',
+    row.metaTitleUk ?? '',
+    row.metaTitleEn ?? '',
+    row.metaDescriptionUk ?? '',
+    row.metaDescriptionEn ?? '',
   ]);
   return {
     csv: writeCsv(header, lines),

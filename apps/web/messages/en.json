@@ -554,9 +554,9 @@
       "exportHint": "A CSV of all products. The cost column is only included for those who may see it.",
       "exportCsv": "Download CSV",
       "importTitle": "Import products",
-      "importHint": "A CSV with the columns sku, slug, brand, category (category slug), name_uk, name_en, price, compare_at_price, cost_price, weight_grams. A product is matched by sku: it is updated if it exists (an empty cell changes nothing) and created as a draft if not. Files up to 56 KB (about 250 rows).",
+      "importHint": "A CSV with a header row. Basics: sku, slug, brand, category (the category slug), name_uk, name_en, price, compare_at_price, cost_price, weight_grams. Content: short_description, description, composition, care, meta_title and meta_description, each with _uk and _en. A product is matched by sku: it is updated if it exists (an empty cell changes nothing) and created as a draft if not. Up to 2 MB and 1000 rows. Download the template for the exact header.",
       "file": "CSV file",
-      "tooBig": "The file is too large: up to 56 KB (about 250 rows). Split it into parts.",
+      "tooBig": "The file is too large: up to 2 MB and 1000 rows. Split it into parts.",
       "failed": "Could not process the file.",
       "previewSummary": "Ready to import: {good}, with errors: {bad}",
       "ignored": "These columns are not imported: {columns}",
@@ -589,7 +589,8 @@
         "row_failed": "The row could not be saved.",
         "ADMIN_SLUG_TAKEN": "This slug is already used.",
         "ADMIN_SKU_TAKEN": "This SKU is already used.",
-        "ADMIN_INVALID_PRICE": "The old price must be higher than the price."
+        "ADMIN_INVALID_PRICE": "The old price must be higher than the price.",
+        "example_row": "This is the template's example row: it is never imported."
       },
       "fileErrors": {
         "CSV_TOO_LARGE": "The file is too large.",
@@ -603,10 +604,24 @@
         "RATE_LIMITED": "Too many actions. Wait a minute.",
         "INVALID_INPUT": "The file is empty or too large.",
         "CSV_INVALID_CHARACTERS": "The file contains invalid characters (NUL or not UTF-8). Save it as CSV UTF-8.",
-        "CSV_DUPLICATE_HEADER": "A column in the header is repeated."
+        "CSV_DUPLICATE_HEADER": "A column in the header is repeated.",
+        "BAD_ORIGIN": "The request came from another site.",
+        "BUSY": "Another import is running. Wait for it to finish.",
+        "TIMEOUT": "The upload took too long. Try again.",
+        "UNSUPPORTED_TYPE": "The file must be a CSV."
       },
       "exportParts": "There are too many products for one file. Download in parts: {count}.",
-      "exportPart": "Part {number}"
+      "exportPart": "Part {number}",
+      "templateTitle": "Content template",
+      "templateHint": "The header the import understands and one example row. The example row is refused by the import, so the file can be uploaded as it is without loading anything.",
+      "templateCsv": "Download the template",
+      "absent": "These content columns are not in the file (the texts stay as they are): {columns}",
+      "notes": {
+        "missing": "will still be empty",
+        "too_short": "shorter than the guide asks",
+        "too_long": "longer than the guide allows",
+        "same_in_both_languages": "the same text in both languages"
+      }
     },
     "media": {
       "title": "Photos",

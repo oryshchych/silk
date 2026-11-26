@@ -3,20 +3,14 @@
 import { useTranslations } from 'next-intl';
 import { useState, useTransition } from 'react';
 
-import { commitImportAction, previewImportAction } from '@/actions/admin-import';
-
 import { buttonClass, fieldClass } from './auth-card';
 import { StatusLine } from './fields';
+import { commitData, postCsv, previewData, type ImportRow } from './import-schemas';
 
-/** UTF-8 BYTES: the server action's body passes through the proxy's 64 KB limit. */
-const MAX_BYTES = 56_000;
+/** The route's own cap (`CSV_LIMITS.maxBytes`): a bigger file is refused before it is sent. */
+const MAX_BYTES = 2 * 1024 * 1024;
 
-interface Row {
-  line: number;
-  sku: string;
-  action: 'create' | 'update' | 'error';
-  errors: string[];
-}
+type Row = ImportRow;
 
 const ROW_ERRORS = [
   'sku_required',
@@ -36,11 +30,13 @@ const ROW_ERRORS = [
   'price_forbidden',
   'cost_forbidden',
   'row_too_short',
+  'example_row',
   'row_failed',
   'ADMIN_SLUG_TAKEN',
   'ADMIN_SKU_TAKEN',
   'ADMIN_INVALID_PRICE',
 ] as const;
+const NOTE_CODES = ['missing', 'too_short', 'too_long', 'same_in_both_languages'] as const;
 const FILE_ERRORS = [
   'CSV_TOO_LARGE',
   'CSV_INVALID_CHARACTERS',
@@ -50,6 +46,10 @@ const FILE_ERRORS = [
   'CSV_CELL_TOO_LONG',
   'CSV_UNTERMINATED_QUOTE',
   'CSV_EMPTY',
+  'BAD_ORIGIN',
+  'BUSY',
+  'TIMEOUT',
+  'UNSUPPORTED_TYPE',
   'FORBIDDEN',
   'UNAUTHENTICATED',
   'RATE_LIMITED',
@@ -58,13 +58,14 @@ const FILE_ERRORS = [
 
 type Phase =
   | { kind: 'idle' }
-  | { kind: 'preview'; csv: string; rows: Row[]; ignored: string[] }
+  | { kind: 'preview'; csv: string; rows: Row[]; ignored: string[]; absent: string[] }
   | { kind: 'done'; rows: Row[]; created: number; updated: number; failed: number };
 
 export function ImportPanel() {
   const t = useTranslations('admin.importExport');
   const rowErrors = useTranslations('admin.importExport.rowErrors');
   const fileErrors = useTranslations('admin.importExport.fileErrors');
+  const noteLabels = useTranslations('admin.importExport.notes');
   const [phase, setPhase] = useState<Phase>({ kind: 'idle' });
   const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
   const [pending, startTransition] = useTransition();
@@ -72,6 +73,10 @@ export function ImportPanel() {
   const fileMessage = (code: string): string => {
     const known = FILE_ERRORS.find((candidate) => candidate === code);
     return known === undefined ? t('failed') : fileErrors(known);
+  };
+  const noteText = (note: { column: string; code: string }): string => {
+    const known = NOTE_CODES.find((candidate) => candidate === note.code);
+    return `${note.column}: ${known === undefined ? note.code : noteLabels(known)}`;
   };
   const rowMessage = (code: string): string => {
     const known = ROW_ERRORS.find((candidate) => candidate === code);
@@ -89,7 +94,7 @@ export function ImportPanel() {
       }
       const csv = await file.text();
       // A refusal by the platform (a body over the limit) is a thrown error, not an answer.
-      const result = await previewImportAction({ csv }).catch(() => null);
+      const result = await postCsv('preview', csv, previewData);
       if (result === null) {
         setMessage({ kind: 'error', text: t('tooBig') });
         return;
@@ -103,13 +108,14 @@ export function ImportPanel() {
         csv,
         rows: result.data.results,
         ignored: result.data.ignoredColumns,
+        absent: result.data.absentColumns,
       });
     });
   }
 
   function onCommit(csv: string): void {
     startTransition(async () => {
-      const result = await commitImportAction({ csv }).catch(() => null);
+      const result = await postCsv('commit', csv, commitData);
       if (result === null) {
         setMessage({ kind: 'error', text: t('tooBig') });
         return;
@@ -154,6 +160,9 @@ export function ImportPanel() {
       {phase.kind === 'preview' ? (
         <div className="space-y-3">
           <p role="status">{t('previewSummary', { good, bad })}</p>
+          {phase.absent.length > 0 ? (
+            <p className="text-text-muted">{t('absent', { columns: phase.absent.join(', ') })}</p>
+          ) : null}
           {phase.ignored.length > 0 ? (
             <p className="text-text-muted">{t('ignored', { columns: phase.ignored.join(', ') })}</p>
           ) : null}
@@ -203,10 +212,17 @@ export function ImportPanel() {
                   <td className={cell}>
                     {row.action === 'error' ? (
                       <span className="text-danger">{row.errors.map(rowMessage).join('; ')}</span>
-                    ) : row.action === 'create' ? (
-                      t('willCreate')
                     ) : (
-                      t('willUpdate')
+                      <>
+                        {row.action === 'create' ? t('willCreate') : t('willUpdate')}
+                        {row.notes.length > 0 ? (
+                          <ul className="mt-1 space-y-1 text-sm text-text-muted">
+                            {row.notes.map((note) => (
+                              <li key={`${note.column}-${note.code}`}>{noteText(note)}</li>
+                            ))}
+                          </ul>
+                        ) : null}
+                      </>
                     )}
                   </td>
                 </tr>

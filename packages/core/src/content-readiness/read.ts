@@ -55,8 +55,8 @@ const COLUMN: Record<(typeof TEXT_FIELDS)[number], string> = {
  * line separators included) one space, trimmed. `btrim` alone strips only ASCII spaces, so a text of
  * U+200B or a lone NBSP would count as content.
  */
-const norm = (column: string): string =>
-  `btrim(regexp_replace(regexp_replace(coalesce(${column}, ''), '[\\u200b-\\u200d\\u2060\\ufeff]', '', 'g'), '[[:space:]\\u00a0\\u2028\\u2029]+', ' ', 'g'))`;
+export const norm = (column: string): string =>
+  `btrim(regexp_replace(regexp_replace(coalesce(${column}, ''), '[\\u200b-\\u200d\\u2060\\ufeff]', '', 'g'), '[[:space:]\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000]+', ' ', 'g'))`;
 
 /** Visible length of a nullable text column. */
 const len = (column: string): string => `char_length(${norm(column)})`;
