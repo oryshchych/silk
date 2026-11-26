@@ -35,6 +35,19 @@ export class LegalEmptyError extends DomainError {
     super('LEGAL_EMPTY', 'The document has neither a text nor a file');
   }
 }
+export class LegalSupersededError extends DomainError {
+  constructor() {
+    super(
+      'LEGAL_START_TOO_EARLY',
+      'A published version of this document already starts later: this one would be replaced by an older text',
+    );
+  }
+}
+export class LegalInvalidBodyError extends DomainError {
+  constructor() {
+    super('INVALID_INPUT', 'The text is too long or nested too deeply');
+  }
+}
 export class LegalStartTakenError extends DomainError {
   constructor() {
     super('LEGAL_START_TAKEN', 'Another published version starts at the same time');
@@ -55,7 +68,11 @@ const sourceSchema = z
   .max(MAX_RICH_TEXT_CHARS)
   .transform((value) => clean(value))
   .transform((value) => (value.trim() === '' ? null : value));
-const startSchema = z.iso.datetime({ offset: true });
+const MAX_AHEAD_MS = 366 * 24 * 60 * 60 * 1000;
+/** A start more than a year ahead is a typo, and a published version cannot be taken back (sanity bound, the database clock decides "current"). */
+const startSchema = z.iso
+  .datetime({ offset: true })
+  .refine((value) => Date.parse(value) <= Date.now() + MAX_AHEAD_MS);
 
 export const legalCreateSchema = z.object({
   kind: z.enum(LEGAL_KINDS),
@@ -80,7 +97,14 @@ export type LegalUpdateInput = z.output<typeof legalUpdateSchema>;
  * draft that is still being written satisfies `legal_docs_has_content`; publishing refuses an empty one.
  */
 export function renderLegalSource(source: string | null): string {
-  return source === null ? '' : markdownToHtml(source);
+  if (source === null) return '';
+  try {
+    return markdownToHtml(source);
+  } catch (error) {
+    // The sanitiser refuses an oversized or deeply nested text: a refusal of the input, not a crash.
+    if (error instanceof RangeError) throw new LegalInvalidBodyError();
+    throw error;
+  }
 }
 
 export async function createLegalDraft(
@@ -128,12 +152,12 @@ export async function updateLegalDraft(
 export async function deleteLegalDraft(
   tx: Tx,
   id: string,
-): Promise<{ kind: LegalKind; locale: LegalLocale }> {
-  const done = await tx.execute<{ kind: LegalKind; locale: LegalLocale }>(
-    sql`DELETE FROM legal_documents WHERE id = ${id}::uuid AND status = 'draft' RETURNING kind, locale`,
+): Promise<{ kind: LegalKind; locale: LegalLocale; fileKey: string | null }> {
+  const done = await tx.execute<{ kind: LegalKind; locale: LegalLocale; file_key: string | null }>(
+    sql`DELETE FROM legal_documents WHERE id = ${id}::uuid AND status = 'draft' RETURNING kind, locale, file_key`,
   );
   const row = done.rows[0];
-  if (row !== undefined) return row;
+  if (row !== undefined) return { kind: row.kind, locale: row.locale, fileKey: row.file_key };
   await assertExists(tx, id);
   throw new LegalNotDraftError();
 }
@@ -182,6 +206,24 @@ export async function publishLegalDocument(
   effectiveFrom: string;
   immediate: boolean;
 }> {
+  // One publisher per document, and a version may not start before one that is already published: when its
+  // start came, the older text would silently become current again over the newer one, and a published row
+  // can never be taken back.
+  const target = await tx.execute<{ kind: LegalKind; locale: LegalLocale }>(
+    sql`SELECT kind, locale FROM legal_documents WHERE id = ${id}::uuid AND status = 'draft'`,
+  );
+  const wanted = target.rows[0];
+  if (wanted !== undefined) {
+    await tx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtext(${`legal:${wanted.kind}:${wanted.locale}`}))`,
+    );
+    const later = await tx.execute(
+      sql`SELECT 1 FROM legal_documents d, legal_documents me
+           WHERE me.id = ${id}::uuid AND d.kind = me.kind AND d.locale = me.locale AND d.status = 'published'
+             AND d.effective_from > greatest(me.effective_from, now()) LIMIT 1`,
+    );
+    if (later.rows.length > 0) throw new LegalSupersededError();
+  }
   try {
     const done = await tx.execute<{
       kind: LegalKind;

@@ -98,6 +98,8 @@ async function upload(
   try {
     await media.storage.put(key, body, 'application/pdf', {
       contentDisposition: 'attachment; filename="document.pdf"',
+      // A draft is not public: no cache keeps it (the key is a random uuid, and Q76 puts the host rules in place).
+      cacheControl: 'private, no-store',
     });
   } catch {
     return reply(502, 'STORAGE_FAILED');

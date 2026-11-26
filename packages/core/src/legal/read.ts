@@ -23,7 +23,7 @@ import {
   type LegalKind,
   type LegalLocale,
 } from '@store/shared/legal';
-import { sanitizeHtml } from '@store/shared/rich-text';
+import { safeHref, sanitizeHtml } from '@store/shared/rich-text';
 
 const CURRENT = sql`status = 'published' AND effective_from <= now()`;
 
@@ -48,14 +48,26 @@ export async function getCurrentLegalDocument(
   );
   const row = result.rows[0];
   if (row === undefined) return null;
-  const html = (row.body_html ?? '').trim() === '' ? null : sanitizeHtml(row.body_html ?? '');
+  // An oversized or over-nested row (written around the service) must not take the page down: no text.
+  const html = ((): string | null => {
+    if ((row.body_html ?? '').trim() === '') return null;
+    try {
+      return sanitizeHtml(row.body_html ?? '');
+    } catch (error) {
+      if (error instanceof RangeError) return null;
+      throw error;
+    }
+  })();
+  // Only an https link to a file is ever handed out.
+  const fileUrl =
+    row.file_url !== null && /^https:\/\//.test(row.file_url) ? safeHref(row.file_url) : null;
   return serialize(publicLegalDto, {
     kind: row.kind,
     locale: row.locale,
     version: row.version,
     title: row.title,
     bodyHtml: html,
-    fileUrl: row.file_url,
+    fileUrl,
     effectiveFrom: new Date(row.effective_from).toISOString(),
   });
 }

@@ -50,6 +50,7 @@ const KNOWN_CODES = [
   'LEGAL_NOT_DRAFT',
   'LEGAL_EMPTY',
   'LEGAL_START_TAKEN',
+  'LEGAL_START_TOO_EARLY',
 ] as const;
 
 export type ActionOutcome = { ok: true; data?: unknown } | { ok: false; code: string };

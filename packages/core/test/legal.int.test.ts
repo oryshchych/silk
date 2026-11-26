@@ -12,7 +12,9 @@ import { createTestDatabase, type TestDatabase } from '@store/db/test/db';
 
 import {
   LegalEmptyError,
+  LegalInvalidBodyError,
   LegalNotDraftError,
+  LegalSupersededError,
   LegalStartTakenError,
   createLegalDraft,
   deleteLegalDraft,
@@ -90,17 +92,17 @@ describe('versions', () => {
       handle.pool.query(
         `INSERT INTO legal_documents (kind, version, locale, title, status, body_html, effective_from) VALUES ('offer','1','uk','x','draft','<p>x</p>', now())`,
       ),
-    ).rejects.toThrow(/legal_docs_kind/);
+    ).rejects.toMatchObject({ code: '23514', constraint: 'legal_docs_kind' });
     await expect(
       handle.pool.query(
         `INSERT INTO legal_documents (kind, version, locale, title, status, body_html, effective_from) VALUES ('terms','1','de','x','draft','<p>x</p>', now())`,
       ),
-    ).rejects.toThrow(/legal_docs_locale/);
+    ).rejects.toMatchObject({ code: '23514', constraint: 'legal_docs_locale' });
     await expect(
       handle.pool.query(
         `INSERT INTO legal_documents (kind, version, locale, title, status, body_html, effective_from) VALUES ('terms','v2','uk','x','draft','<p>x</p>', now())`,
       ),
-    ).rejects.toThrow(/legal_docs_version_format/);
+    ).rejects.toMatchObject({ code: '23514', constraint: 'legal_docs_version_format' });
   });
 });
 
@@ -193,16 +195,16 @@ describe('a published version is history', () => {
       handle.pool.query(`UPDATE legal_documents SET body_html = '<p>edited</p>' WHERE id = $1`, [
         d.id,
       ]),
-    ).rejects.toThrow(/immutable/);
+    ).rejects.toMatchObject({ code: '23514', constraint: 'legal_documents_guard_immutable' });
     await expect(
       handle.pool.query(`UPDATE legal_documents SET status = 'draft' WHERE id = $1`, [d.id]),
-    ).rejects.toThrow(/immutable/);
+    ).rejects.toMatchObject({ code: '23514', constraint: 'legal_documents_guard_status' });
     await expect(
       handle.pool.query(`UPDATE legal_documents SET effective_from = now() WHERE id = $1`, [d.id]),
-    ).rejects.toThrow(/immutable/);
+    ).rejects.toMatchObject({ code: '23514', constraint: 'legal_documents_guard_immutable' });
     await expect(
       handle.pool.query(`DELETE FROM legal_documents WHERE id = $1`, [d.id]),
-    ).rejects.toThrow(/never deleted/);
+    ).rejects.toMatchObject({ code: '23514', constraint: 'legal_documents_guard_delete' });
     await expect(
       handle.db.transaction(async (tx) => await deleteLegalDraft(tx, d.id)),
     ).rejects.toBeInstanceOf(LegalNotDraftError);
@@ -311,5 +313,87 @@ describe('drafts', () => {
     expect(
       (await handle.pool.query(`SELECT 1 FROM legal_documents WHERE id = $1`, [d.id])).rowCount,
     ).toBe(0);
+  });
+});
+
+describe('a later start cannot be overridden, and a start is bounded', () => {
+  it('refuses to publish a version that would start before an already published one', async () => {
+    const soon = new Date(Date.now() + 30 * 86_400_000).toISOString();
+    const scheduled = await draft({
+      kind: 'privacy',
+      locale: 'en',
+      title: 'v-scheduled',
+      effectiveFrom: soon,
+    });
+    await publish(scheduled.id);
+    // v4 "published today": it would be current now, and the scheduled v3 would take over again on its start.
+    const immediate = await draft({ kind: 'privacy', locale: 'en', title: 'v-immediate' });
+    await expect(publish(immediate.id)).rejects.toBeInstanceOf(LegalSupersededError);
+    const row = await handle.pool.query<{ status: string }>(
+      `SELECT status FROM legal_documents WHERE id = $1`,
+      [immediate.id],
+    );
+    expect(row.rows[0]?.status).toBe('draft');
+    // A start AFTER the scheduled one is fine.
+    const later = await draft({
+      kind: 'privacy',
+      locale: 'en',
+      title: 'v-later',
+      effectiveFrom: new Date(Date.now() + 60 * 86_400_000).toISOString(),
+    });
+    await publish(later.id);
+  });
+
+  it('refuses a start more than a year ahead (a typo in the year is permanent once published)', () => {
+    expect(() => create({ effectiveFrom: '9999-12-31T00:00:00Z' })).toThrow();
+    expect(() =>
+      legalUpdateSchema.parse({
+        id: '00000000-0000-4000-8000-000000000001',
+        title: 'x',
+        source: 'y',
+        effectiveFrom: '2999-01-01T00:00:00Z',
+      }),
+    ).toThrow();
+    expect(() =>
+      create({ effectiveFrom: new Date(Date.now() + 200 * 86_400_000).toISOString() }),
+    ).not.toThrow();
+  });
+});
+
+describe('text the sanitiser refuses is an input error on write and an empty body on read', () => {
+  it('maps an oversized text to LegalInvalidBodyError (INVALID_INPUT), not a crash', async () => {
+    const huge = '<'.repeat(90_000);
+    await expect(
+      draft({ kind: 'about', locale: 'uk', title: 'big', source: huge }),
+    ).rejects.toBeInstanceOf(LegalInvalidBodyError);
+  });
+
+  it('serves no body (and does not throw) for a row written around the service with absurd nesting', async () => {
+    const d = await draft({
+      kind: 'delivery_payment',
+      locale: 'uk',
+      title: 'nest',
+      source: 'ok',
+      effectiveFrom: new Date(Date.now() + 1_000).toISOString(),
+    });
+    await handle.pool.query(`UPDATE legal_documents SET body_html = $2 WHERE id = $1`, [
+      d.id,
+      '<ul>'.repeat(60),
+    ]);
+    await handle.db.transaction(async (tx) => await publishLegalDocument(tx, USER, d.id));
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+    const current = await getCurrentLegalDocument(handle.db, 'delivery_payment', 'uk');
+    expect(current?.title).toBe('nest');
+    expect(current?.bodyHtml).toBeNull();
+  });
+
+  it('hands out only an https file link', async () => {
+    const d = await draft({ kind: 'contacts', locale: 'uk', title: 'file', source: '' });
+    await handle.pool.query(
+      `UPDATE legal_documents SET file_url = 'http://insecure.example/a.pdf', file_key = 'legal/a.pdf' WHERE id = $1`,
+      [d.id],
+    );
+    await publish(d.id);
+    expect((await getCurrentLegalDocument(handle.db, 'contacts', 'uk'))?.fileUrl).toBeNull();
   });
 });

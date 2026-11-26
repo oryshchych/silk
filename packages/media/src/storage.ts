@@ -100,6 +100,8 @@ export function signRequest(input: {
 /** `Content-Disposition` is stored with the object and served back with it (a download, never inline). */
 export interface PutOptions {
   contentDisposition?: string;
+  /** Overrides the default `public, max-age=31536000, immutable` (a draft must never be cached publicly). */
+  cacheControl?: string;
 }
 
 export interface Storage {
@@ -136,7 +138,7 @@ export function createStorage(config: StorageConfig): Storage {
     const extra: Record<string, string> = {};
     if (contentType !== null) {
       extra['content-type'] = contentType;
-      extra['cache-control'] = 'public, max-age=31536000, immutable';
+      extra['cache-control'] = options.cacheControl ?? 'public, max-age=31536000, immutable';
       if (options.contentDisposition !== undefined) {
         extra['content-disposition'] = options.contentDisposition;
       }

@@ -99,7 +99,9 @@ export function LegalEditor({ doc, canPublish }: { doc: AdminLegalDto; canPublis
                 id: doc.id,
                 title: textOf(data, FIELD.title),
                 source: textOf(data, FIELD.source),
-                ...(start === '' ? {} : { effectiveFrom: new Date(start).toISOString() }),
+                ...(start === '' || Number.isNaN(Date.parse(start))
+                  ? {}
+                  : { effectiveFrom: new Date(start).toISOString() }),
               }),
             t('saved'),
             () => {

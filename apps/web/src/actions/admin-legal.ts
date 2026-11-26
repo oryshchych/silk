@@ -85,7 +85,7 @@ export async function publishLegalAction(input: unknown) {
 }
 
 export async function deleteLegalDraftAction(input: unknown) {
-  return await adminAction({
+  const result = await adminAction({
     permission: 'legal.publish',
     schema: legalIdSchema,
     input,
@@ -97,9 +97,15 @@ export async function deleteLegalDraftAction(input: unknown) {
         entityId: parsed.id,
         diff: { kind: done.kind, locale: done.locale },
       });
-      return { id: parsed.id };
+      return { id: parsed.id, fileKey: done.fileKey };
     },
   });
+  // The draft's PDF sits on the public media host: it goes with the draft (after the commit, best effort).
+  if (result.ok && result.data.fileKey !== null) {
+    const media = await mediaConfig();
+    await media?.storage.remove(result.data.fileKey).catch(() => undefined);
+  }
+  return result.ok ? { ok: true as const, data: { id: result.data.id } } : result;
 }
 
 /** Removes the PDF of a draft (the stored object is deleted after the commit, best effort). */

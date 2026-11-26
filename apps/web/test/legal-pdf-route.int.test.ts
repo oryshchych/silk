@@ -84,7 +84,10 @@ vi.mock('@/lib/media', () => ({
     ),
 }));
 
+vi.mock('@/lib/admin/invalidate', () => ({ invalidateTags: () => undefined }));
+
 const { POST } = await import('../src/app/admin/upload/legal-pdf/route');
+const actions = await import('../src/actions/admin-legal');
 
 let testDb: TestDatabase;
 let handle: DbHandle;
@@ -138,6 +141,8 @@ describe('POST /admin/upload/legal-pdf', () => {
     expect(key).toMatch(new RegExp(`^legal/${id}/[0-9a-f-]{36}\\.pdf$`));
     expect(object?.contentType).toBe('application/pdf');
     expect(object?.contentDisposition).toBe('attachment; filename="document.pdf"');
+    // A draft is never cached publicly.
+    expect(object?.cacheControl).toBe('private, no-store');
     expect(object?.body.equals(PDF)).toBe(true);
     expect(fake.rejected).toBe(0);
     const row = await handle.pool.query(
@@ -216,5 +221,26 @@ describe('POST /admin/upload/legal-pdf', () => {
     await post(id, Buffer.concat([PDF, Buffer.from('\n% second')]));
     expect(fake.objects.size).toBe(1);
     expect([...fake.objects.keys()][0]).not.toBe(first);
+  });
+
+  it('deletes the draft AND its stored PDF; replacing and removing a PDF remove the object too', async () => {
+    const id = await draft();
+    await post(id, PDF);
+    expect(fake.objects.size).toBe(1);
+    state.role = 'owner';
+    expect(await actions.deleteLegalDraftAction({ id })).toMatchObject({ ok: true });
+    expect(fake.objects.size).toBe(0);
+    expect(
+      (await handle.pool.query(`SELECT 1 FROM legal_documents WHERE id = $1`, [id])).rowCount,
+    ).toBe(0);
+
+    state.role = 'content';
+    const other = await draft();
+    await post(other, PDF);
+    expect(await actions.removeLegalFileAction({ id: other })).toMatchObject({
+      ok: true,
+      data: { removed: true },
+    });
+    expect(fake.objects.size).toBe(0);
   });
 });

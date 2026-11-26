@@ -1727,7 +1727,6 @@ export const legalDocuments = pgTable('legal_documents', {
   updatedAt: updatedAt(),
 }, (t) => [
   uniqueIndex('legal_docs_uq').on(t.kind, t.version, t.locale),
-  index('legal_docs_current_idx').on(t.kind, t.locale, t.effectiveFrom),
   /** No two published versions of one document start at the same instant, so "the current one" is never a tie. */
   uniqueIndex('legal_docs_published_start_uq').on(t.kind, t.locale, t.effectiveFrom).where(sql`${t.status} = 'published'`),
   check('legal_docs_has_content', sql`${t.bodyHtml} IS NOT NULL OR ${t.fileUrl} IS NOT NULL`),

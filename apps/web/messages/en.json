@@ -450,7 +450,8 @@
       "LEGAL_NOT_FOUND": "Document not found.",
       "LEGAL_NOT_DRAFT": "A published version cannot be changed. Create a new version.",
       "LEGAL_EMPTY": "Add a text or a PDF before publishing.",
-      "LEGAL_START_TAKEN": "Another published version starts at the same time. Choose a different start."
+      "LEGAL_START_TAKEN": "Another published version starts at the same time. Choose a different start.",
+      "LEGAL_START_TOO_EARLY": "A published version of this document already starts later. Pick a start after it, or leave the start as it is."
     },
     "editor": {
       "newTitle": "New product",
