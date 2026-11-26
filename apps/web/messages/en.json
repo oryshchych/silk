@@ -788,7 +788,8 @@
       "lastError": "Last carrier answer",
       "export": "Download CSV for accounting",
       "exportFrom": "From",
-      "exportTo": "To"
+      "exportTo": "To",
+      "exportHint": "A file holds at most 10 000 orders. If it was cut, its last line says where the next part starts (use that order number as the start of the next download)."
     },
     "customers": {
       "title": "Customers",
@@ -841,7 +842,8 @@
         "delivered": "Delivered",
         "cancelled": "Cancelled",
         "returned": "Returned"
-      }
+      },
+      "exportHint": "A file holds at most 10 000 customers. If it was cut, its last line says where the next part starts."
     }
   }
 }

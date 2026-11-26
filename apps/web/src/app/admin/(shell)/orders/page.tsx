@@ -158,6 +158,7 @@ export default async function AdminOrdersPage({
           <button type="submit" className="min-h-11 min-w-11 rounded-md border border-border px-4">
             {t('export')}
           </button>
+          <p className="basis-full text-sm text-text-muted">{t('exportHint')}</p>
         </form>
       ) : null}
       <p role="status" aria-live="polite" className="mt-4 text-text-muted">

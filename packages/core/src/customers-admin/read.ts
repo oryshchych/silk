@@ -110,7 +110,9 @@ function whereOf(filters: CustomerFilters): SQL {
   const parts = [
     searchCondition(term),
     filters.segment === undefined ? undefined : sql`(${segmentOf}) = ${filters.segment}`,
-    filters.tag === undefined ? undefined : sql`c.tags @> ARRAY[${filters.tag}]::text[]`,
+    filters.tag === undefined
+      ? undefined
+      : sql`c.tags @> ARRAY[${filters.tag.trim().toLowerCase()}]::text[]`,
   ].filter((part): part is SQL => part !== undefined);
   return parts.length === 0 ? sql`true` : sql.join(parts, sql` AND `);
 }

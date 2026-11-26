@@ -89,6 +89,9 @@ export default async function AdminCustomersPage({
             {t('export')}
           </a>
         ) : null}
+        {can(session.role, 'customers.export') ? (
+          <p className="basis-full text-sm text-text-muted">{t('exportHint')}</p>
+        ) : null}
       </form>
       <p role="status" aria-live="polite" className="mt-4 text-text-muted">
         {t('total', { count: result.total })}

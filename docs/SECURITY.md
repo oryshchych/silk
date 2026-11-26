@@ -165,6 +165,10 @@ SKU, old price over price, 301 on a renamed slug) holds. An empty cell on an upd
 nothing. The export neutralises formulas (a cell starting with `=`, `+`, `-`, `@`, tab or CR gets
 a leading apostrophe, removed again when the same file is imported) and reads the cost into the file only for a role that may see it. A file with a NUL byte, invalid UTF-8 or a repeated header is refused whole. A catalogue larger than one file (10 000 rows) is exported in parts (`?after=<sku>`; the screen lists them and a cut file answers `X-Export-Truncated`).
 
+## Exports (orders and customers CSV)
+
+Both routes check the session, the permission and a per-user limit (a 429 carries `Retry-After`) before anything is read. The columns are fixed in code (the audit row lists the range, the row count and whether the file was cut, not the columns). The audit row is written BEFORE the response is sent, so a download the browser aborts is still audited. Money cells are two-decimal text that a sheet reads as numbers, a phone is written as it is, and any other cell that starts with `=`, `+`, `-` or `@` (also after blanks) gets a leading apostrophe. A file is cut at 10 000 rows: its last line is `# truncated: next part starts after <cursor>`, so a person who only opens the file sees it, and the next download starts after that cursor (`after=`).
+
 ## Responses
 
 - Every admin response carries `Cache-Control: private, no-store` and `X-Robots-Tag: noindex, nofollow`

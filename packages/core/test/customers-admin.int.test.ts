@@ -253,6 +253,86 @@ describe('tags and note', () => {
   });
 });
 
+describe('review round 1 (#75): numbers, phones and truncation', () => {
+  const day = () =>
+    new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Kyiv' }).format(new Date());
+  const dataLines = (csv: string) =>
+    csv
+      .replace(/^\uFEFF/, '')
+      .trim()
+      .split('\r\n')
+      .slice(1);
+
+  it('a negative adjustment stays a number, a text cell that starts with a minus is still neutralised', async () => {
+    const id = await order({ email: 'neg@example.com', total: 100_000, daysAgo: 0 });
+    await admin.db.execute(
+      sql`UPDATE orders SET adjustment_total = -500, total = subtotal - discount_total + shipping_total - 500, fiscal_receipt_id = '-cmd', refunded_total = 0 WHERE id = ${id}`,
+    );
+    const file = await exportOrdersCsv(admin.db, { from: day(), to: day() });
+    const cells = dataLines(file.csv)[0]?.split(',') ?? [];
+    expect(cells).toContain('-5.00');
+    expect(cells).toContain("'-cmd");
+    expect(file.csv).not.toContain("'-5.00");
+  });
+
+  it('a phone in the customers file has no apostrophe', async () => {
+    await order({ email: 'phone@example.com' });
+    const file = await exportCustomersCsv(admin.db, {});
+    expect(file.csv).toContain(',+380501112233,');
+    expect(file.csv).not.toContain("'+380");
+  });
+
+  it('a cut orders file ends with the sentinel line, and the next part continues after it with no gap or repeat', async () => {
+    for (let i = 0; i < 5; i += 1)
+      await order({ email: `cut${String(i)}@example.com`, daysAgo: 0 });
+    const range = { from: day(), to: day(), limit: 2 };
+    const first = await exportOrdersCsv(admin.db, range);
+    expect(first).toMatchObject({ rows: 2, truncated: true });
+    const lines = dataLines(first.csv);
+    expect(lines.at(-1)).toBe(`# truncated: next part starts after ${first.lastNumber ?? ''}`);
+    const second = await exportOrdersCsv(admin.db, { ...range, after: first.lastNumber ?? '' });
+    const third = await exportOrdersCsv(admin.db, { ...range, after: second.lastNumber ?? '' });
+    expect(third).toMatchObject({ rows: 1, truncated: false });
+    expect(dataLines(third.csv).some((line) => line.startsWith('# truncated'))).toBe(false);
+    const numbers = [first, second, third].flatMap((f) =>
+      dataLines(f.csv)
+        .filter((l) => !l.startsWith('#'))
+        .map((l) => l.split(',')[0]),
+    );
+    expect(numbers).toHaveLength(5);
+    expect(new Set(numbers).size).toBe(5);
+  });
+
+  it('a cut customers file says so too, and a file that fits has no sentinel', async () => {
+    for (let i = 0; i < 3; i += 1) await order({ email: `c${String(i)}@example.com` });
+    const cut = await exportCustomersCsv(admin.db, { limit: 2 });
+    expect(cut.truncated).toBe(true);
+    expect(dataLines(cut.csv).at(-1)).toContain(
+      '# truncated: next part starts after c1@example.com',
+    );
+    const rest = await exportCustomersCsv(admin.db, { after: cut.lastEmail ?? '', limit: 2 });
+    expect(rest.truncated).toBe(false);
+    expect(rest.csv).not.toContain('# truncated');
+  });
+
+  it('the tag filter is case-insensitive like the stored tags', async () => {
+    await order({ email: 'tagcase@example.com' });
+    await admin.db.transaction(
+      async (tx) =>
+        await updateCustomer(
+          tx,
+          updateCustomerSchema.parse({
+            key: await keyOf('tagcase@example.com'),
+            tags: ['VIP'],
+            note: '',
+          }),
+        ),
+    );
+    expect((await listCustomers(admin.db, { tag: 'Vip' })).items).toHaveLength(1);
+    expect((await listCustomers(admin.db, { tag: ' VIP ' })).items).toHaveLength(1);
+  });
+});
+
 describe('the exports', () => {
   it('the orders CSV: two decimals, no email or phone, Kyiv days, a cursor, formulas neutralised', async () => {
     await order({

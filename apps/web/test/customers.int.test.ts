@@ -205,3 +205,15 @@ describe('the CSV routes', () => {
     ).toBe(1);
   });
 });
+
+// Last: it spends the orders route's whole per-user budget.
+describe('the CSV routes: rate limit', () => {
+  it('a 429 tells when to come back', async () => {
+    state.role = 'admin';
+    let last = new Response(null, { status: 200 });
+    for (let i = 0; i < 12; i += 1)
+      last = await get(ordersCsv, `/admin/export/orders?from=${today}&to=${today}`);
+    expect(last.status).toBe(429);
+    expect(Number(last.headers.get('retry-after'))).toBeGreaterThan(0);
+  });
+});

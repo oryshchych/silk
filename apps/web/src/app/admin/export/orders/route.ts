@@ -18,15 +18,18 @@ export const dynamic = 'force-dynamic';
 
 const limiter = createRateLimiter({ limit: 10, windowMs: 10 * 60_000 });
 const HEADERS = { 'Cache-Control': 'private, no-store', 'X-Robots-Tag': 'noindex, nofollow' };
-const refuse = (status: number, code: string): Response =>
-  Response.json({ ok: false, code }, { status, headers: HEADERS });
+const refuse = (status: number, code: string, extra: Record<string, string> = {}): Response =>
+  Response.json({ ok: false, code }, { status, headers: { ...HEADERS, ...extra } });
 
 export async function GET(request: Request): Promise<Response> {
   const resolved = await currentSession();
   if (resolved?.kind !== 'full') return refuse(401, 'UNAUTHENTICATED');
   const { session } = resolved;
   if (!can(session.role, 'orders.export')) return refuse(403, 'FORBIDDEN');
-  if (!limiter.check(session.userId).allowed) return refuse(429, 'RATE_LIMITED');
+  const verdict = limiter.check(session.userId);
+  if (!verdict.allowed) {
+    return refuse(429, 'RATE_LIMITED', { 'Retry-After': String(verdict.retryAfterSeconds) });
+  }
 
   const params = new URL(request.url).searchParams;
   const from = params.get('from') ?? '';

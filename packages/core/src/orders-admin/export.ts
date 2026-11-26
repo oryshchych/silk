@@ -14,6 +14,10 @@ import { money, toHryvniasText } from '@store/shared/money';
 import { writeCsv } from '../catalog-admin/csv.ts';
 
 export const ORDER_EXPORT_LIMIT = 10_000;
+
+/** The last line of a file that was cut: says where the next part starts (a person never sees the headers). */
+export const truncationLine = (cursor: string): string =>
+  `# truncated: next part starts after ${cursor}`;
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const isRealDay = (value: string): boolean => {
   if (!DAY.test(value)) return false;
@@ -49,11 +53,12 @@ export class ExportRangeError extends Error {
 
 export async function exportOrdersCsv(
   db: Reader,
-  options: { from: string; to: string; after?: string | undefined },
+  options: { from: string; to: string; after?: string | undefined; limit?: number },
 ): Promise<{ csv: string; rows: number; truncated: boolean; lastNumber: string | null }> {
   if (!isRealDay(options.from) || !isRealDay(options.to) || options.from > options.to) {
     throw new ExportRangeError();
   }
+  const limit = options.limit ?? ORDER_EXPORT_LIMIT;
   const rows = await db
     .select({
       number: orders.orderNumber,
@@ -85,29 +90,33 @@ export async function exportOrdersCsv(
       ),
     )
     .orderBy(asc(orders.orderNumber))
-    .limit(ORDER_EXPORT_LIMIT + 1);
-  const truncated = rows.length > ORDER_EXPORT_LIMIT;
-  const kept = truncated ? rows.slice(0, ORDER_EXPORT_LIMIT) : rows;
+    .limit(limit + 1);
+  const truncated = rows.length > limit;
+  const kept = truncated ? rows.slice(0, limit) : rows;
   const csv = writeCsv(
     HEADER,
-    kept.map((row) => [
-      row.number,
-      row.day,
-      row.status,
-      row.paymentStatus,
-      row.provider ?? '',
-      row.delivery,
-      toHryvniasText(money(row.subtotal)),
-      toHryvniasText(money(row.discount)),
-      toHryvniasText(money(row.shipping)),
-      toHryvniasText(money(row.adjustment)),
-      toHryvniasText(money(row.total)),
-      toHryvniasText(money(row.captured)),
-      toHryvniasText(money(row.refunded)),
-      row.fiscal,
-      row.receipt ?? '',
-      row.ttn ?? '',
-    ]),
+    kept
+      .map((row) => [
+        row.number,
+        row.day,
+        row.status,
+        row.paymentStatus,
+        row.provider ?? '',
+        row.delivery,
+        toHryvniasText(money(row.subtotal)),
+        toHryvniasText(money(row.discount)),
+        toHryvniasText(money(row.shipping)),
+        toHryvniasText(money(row.adjustment)),
+        toHryvniasText(money(row.total)),
+        toHryvniasText(money(row.captured)),
+        toHryvniasText(money(row.refunded)),
+        row.fiscal,
+        row.receipt ?? '',
+        row.ttn ?? '',
+      ])
+      .concat(
+        truncated && kept.length > 0 ? [[truncationLine(kept[kept.length - 1]?.number ?? '')]] : [],
+      ),
   );
   return { csv, rows: kept.length, truncated, lastNumber: kept.at(-1)?.number ?? null };
 }
