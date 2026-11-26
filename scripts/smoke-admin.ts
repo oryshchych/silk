@@ -583,18 +583,21 @@ export async function runAdminSmoke({
         adminCustomersCsv.html.includes('smoke-buyer@example.test'),
     );
 
-    // The user screen is the owner's alone: every other role gets the not-found page, no account data.
-    for (const [role, token] of [
-      ['admin', adminToken],
-      ['manager', managerToken],
-      ['content', contentToken],
+    // The user screen is the owner's alone: every other role gets the not-found page and NO other
+    // account's email. (The page carries the translation catalogue, so a label like "Two-step
+    // sign-in" is not a signal; the shell shows the viewer's own email, so only the OTHERS count.)
+    const knownEmails = [manager, ...[...roleUsers.values()]];
+    for (const [role, token, own] of [
+      ['admin', adminToken, roleUsers.get('admin') ?? ''],
+      ['manager', managerToken, manager],
+      ['content', contentToken, roleUsers.get('content') ?? ''],
     ] as const) {
       const usersPage = await get('/admin/users', cookie(token));
+      const others = knownEmails.filter((email) => email !== own);
       check(
-        `users: a ${role} role gets the not-found page on /admin/users, with no account listed`,
-        !usersPage.html.includes(manager) &&
-          !usersPage.html.includes('Two-step') &&
-          !usersPage.html.includes('Двоетапний') &&
+        `users: a ${role} role gets the not-found page on /admin/users, with no other account listed`,
+        others.length >= 2 &&
+          others.every((email) => !usersPage.html.includes(email)) &&
           (usersPage.status === 404 || usersPage.html.includes('NEXT_HTTP_ERROR_FALLBACK;404')),
       );
     }

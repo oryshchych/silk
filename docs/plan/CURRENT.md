@@ -5,54 +5,51 @@
 
 ## Current phase
 
-**Phase 4, "admin: access control and catalog": 9 of 11 acceptance criteria verified by execution**
-(2026-11-25); two left unchecked (below) plus scope items not built. Evidence: smoke names in
-`scripts/smoke-admin.ts` and the tests named below. Phase 5 starts in a NEW session after the
-owner's go-ahead. Standing rules (`AGENTS.md` section 0): technical text in English; one phase per session.
+**Phase 5, "admin: orders and customers": all 5 acceptance criteria verified by execution** (2026-11-26,
+about 3 hours, 7 PRs, 1 review round each). Two caveats: the Nova Poshta adapter is verified only against
+a local fake (Q49), and a "report" is the accountant's CSV (the reports screen is phase 10). Phase 6
+(SEO) starts in a NEW session. Standing rules (`AGENTS.md` section 0): English technical text; one phase per session.
 
 Infra: staging `https://staging.damazla.com` (basic auth), Hetzner CAX11, Dokploy. Next 16.4.6.
 
-## Done (phase 4, merged PRs)
+## Done (phase 5, merged PRs)
 
-- #62 Q35 migration; #63 auth (own session layer, TOTP, roles, `adminAction`, SECURITY.md tables held to
-  code by tests); #64 stock history; #65 catalog write layer, editor, 301s, trusted tag invalidation
-- #66 categories, dictionaries, attributes; #67 CSV import and export; #68 media; #69 stock screen
-- On `main` (b5ce820): CI 15/15 on every PR; `pnpm test:int` 500 tests in 24 files; smoke-web covers the
-  admin, catalog, import, export, taxonomy and media checks
+- #72 orders list, card, workflow, cancel with a comment, notes, transfer receipt (per-role DTO)
+- #73 edit items with recalculation, admin refund (request id makes a partial refund idempotent)
+- #74 Nova Poshta waybill (migration 0013, print route, buyer email); #75 customers, tags, CSV exports
+- #77 refund sweep job, withdraw and resolve; #78 migration 0014 (Q42), orders behind a reservation (Q44)
+- #80 user management for the owner (Q41); this docs PR holds the report and queue entries
+- On `main`: `pnpm test:int` 688 tests in 41 files; smoke-web covers orders, customers, exports, users
 
 ## Next step
 
-1. Owner: Q40 (set `AUTH_SECRET`, create the first owner with `scripts/admin-user.ts`, sign in on staging),
-   Q45 (real R2), then Q38, Q39, Q41 to Q47. Earlier open: Q1, Q2, Q3, Q8, Q13, Q19, Q24, Q31 to Q34, Q36, Q37.
-2. Phase 5 (admin orders) in a NEW session, after the go-ahead.
+1. Owner hands: Q40, Q45, Q13, Q2, Q3, Q32, Q24, Q8, Q19, Q1 and the new Q49 (carrier key and `np_sender`).
+2. Phase 6 (SEO) in a NEW session; it starts on the standing go-ahead (`docs/AUTONOMOUS_MODE.md`).
 
 ## Acceptance criteria
 
-- [x] `content` gets 403 on a price change, UI and direct POST: smoke "catalog: a content role POSTing a price"
-- [x] 100 rows with 3 broken: 97 imported, 3 errors with line numbers: `catalog-import.int.test.ts`, smoke "import"
-- [x] Slug change gives a 301, both locales, a draft is not revealed: smoke "catalog: renaming a product"
-- [x] Every mutation audited with author and diff: `MissingAuditError`; `stock-action.int.test.ts`
-- [x] Edit visible at once in the admin, on the storefront within a revalidation: smoke "a price change shows"
-- [x] Theme without flash (cookie sets `data-theme` on the first HTML): smoke
-- [x] Admin theme does not touch storefront HTML or cache: smoke "storefront: no admin theme attribute"
-- [x] One product change leaves other pages cached: smoke "changing one product leaves another"
-- [x] `SECURITY.md` matches the code: permission and mutation tables are tested against it
-- [ ] 3 colours x 12 sizes in under 10 minutes: 36 variants are made once (`catalog-admin.int.test.ts`); no timed run
-- [ ] 4000 px photo as WebP <= 150 KB on the PDP: a 3000 px photo through the real route gives a 1600 px WebP
-  under 150 KB against a signing fake store (smoke); no real R2, no 4000 px sample, the PDP ignores renditions (Q45)
+- [x] Waybill created, stored, email sent, tracking link: `waybill.int.test.ts` (29), `waybill-email.int.test.ts`,
+  `orders-waybill.int.test.ts` (real adapter over HTTP against the fake). NOT run against the real API (Q49)
+- [x] Editing a paid order recalculates the total and writes history: `orders-edit.int.test.ts` (14)
+- [x] Refund through the provider API changes `payment_status`, visible in the report: `orders-refund-edit.int.test.ts`
+  (real `MonoProvider` over a socket); the accountant CSV carries received and refunded (`customers-admin.int.test.ts`)
+- [x] Customer card shows sizes derived from purchases: `customers-admin.int.test.ts` (units per size, cancelled ignored)
+- [x] A list of 10 000 orders opens in under 500 ms: `orders-admin.int.test.ts` and `customers-admin.int.test.ts`
+  assert it at the read layer (page rendering is not timed)
 
 ## Not built or not verified
 
-- Drag and drop category tree; XLSX (Q46); bulk actions in the product list; photos linked to a colour on
-  the PDP; live SEO snippet preview not checked; staging sign-in (Q40)
+- Adding a product line to an order, re-pricing shipping after an edit (Q52); carrier cancel of a waybill (Q50)
+- Refund status lookup at the provider (Q53); forced password change (Q55); a component click test tool (Q51)
+- Real carrier and provider runs (Q49, Q13); the stock screen role test for the page itself (read layer tested)
 
 ## Caveats
 
 - Local smoke shows storefront and checkout FAILs on a stale dev database; CI is authoritative
-- `auth.int.test.ts` timing test failed once under full-suite load, passes alone: flaky candidate (`NOTES.md`)
+- Flaky candidates under full-suite load (`NOTES.md`): an auth timing test, the category-cycle race test
 
 ## Deviations from the plan
-- Own session layer instead of Auth.js (Q38); mobile refresh rotation deferred (Q39); no revalidate endpoint
-- Stocktake below reserved is refused (Q44); upload route outside the proxy matcher with in-flight slots, a
-  read deadline and malloc tuning; hand-signed S3 client
-- Owner queue entries added: Q38 to Q47
+- Skeleton jump `pending`/`confirmed` to `shipped` stays in core; the admin path enforces the steps (Q54)
+- Waybill adapter lives in `packages/payments/src/shipping`, not a new package; customers are derived from orders
+- Added beyond the plan, from the reviews: refund sweep, user management (Q41), migration 0014 (Q42), Q44 list
+- Owner queue entries added: Q48 to Q56

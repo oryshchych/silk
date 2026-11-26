@@ -15,6 +15,7 @@ Only what needs the owner's own hands (credentials, accounts, a setting in an ex
 
 | ID | Action for the owner |
 |---|---|
+| Q49 | Provide the Nova Poshta sandbox (or a production read-only test) API key (with Q2) and set `settings.np_sender` (`cityRef`, `senderRef`, `contactRef`, `addressRef`, `phone`: the shop's own refs at the carrier); then run the waybill adapter once against it. **The adapter (`packages/payments/src/shipping/nova-poshta.ts`) is verified only against the local fake**: confirm the required `InternetDocument/save` properties for a private-person recipient, the cash-on-delivery block (`BackwardDeliveryData`), the print URLs, and the `getDocumentList` lookup that would reconcile an unknown result |
 | Q40 | Generate `AUTH_SECRET` (`openssl rand -base64 48`), put it in Dokploy and the password manager, create the first owner on the server (`pnpm admin:create`), sign in on staging and save the 10 recovery codes |
 | Q45 | Create the media R2 bucket with a public domain and a bucket-scoped key; set `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_MEDIA`, `MEDIA_PUBLIC_BASE_URL` in Dokploy; upload one photo and look at the object and URL |
 | Q13 | Put the Mono sandbox token in a local `.env` (never in chat) so the adapter can be run once against it |
@@ -25,6 +26,20 @@ Only what needs the owner's own hands (credentials, accounts, a setting in an ex
 | Q8 | Check the R2 backup bucket: `staging/` must hold a second file from the 2026-11-23 03:00 Kyiv run |
 | Q19 | Supply the brands' bra size charts when they exist (the standard table ships meanwhile) |
 | Q1 | Shop name, palette and fonts when decided (the placeholder and neutral tokens stay meanwhile) |
+
+## Deferred by phase 5 (default applied; the owner can overrule)
+
+| ID | Raised | Item | Default applied |
+|---|---|---|---|
+| Q48 | 2026-11-26 | Customer definitions are placeholders: LTV = the total of orders that are not cancelled, returned or pending, minus refunds; `vip` at LTV 10 000.00 UAH or more, `lapsed` after 180 days without an order (`customers-admin/read.ts`: `VIP_LTV`, `LAPSED_DAYS`) | Keep; the owner sets the real numbers, a one-line change |
+| Q50 | 2026-11-26 | An order with a SUCCEEDED waybill cannot be cancelled or edited (the parcel would travel with stale data or a COD amount) and there is no carrier-cancel step, so such an order can only be shipped and delivered or returned | Build `InternetDocument/delete` (carrier cancel) with the sandbox key (Q49); until then the manager removes the document in the carrier's portal and a developer closes the operation. Accepted risk named in the #74 PASS |
+| Q51 | 2026-11-26 | No component-level test tool exists (no jsdom or testing library): the refund outcome buttons (#77, where a wrong button once recorded a refund as sent) are covered by a strict parser and its unit test only | Add `jsdom` and the testing library as dev dependencies with the first component-heavy phase (a new dev dependency is the owner's to approve); until then new money buttons carry their value in the form data and are parsed strictly |
+| Q52 | 2026-11-26 | Not built in the order edit: adding a new product line, re-evaluating the free-shipping threshold and a minimum order after a quantity change, editing shipping or the manual adjustment | Not built; the manager cancels and re-orders, or the owner asks for it with a real case |
+| Q53 | 2026-11-26 | The payment adapters have no refund status lookup, so an unknown refund is only alerted by the sweep (`refunds.sweep`, `alert.refund-unresolved`) and closed by a person on the card | Keep; add the lookup with the Mono and WayForPay sandbox runs (Q13, Q32) |
+| Q54 | 2026-11-26 | `transitions.ts` still allows the skeleton jump `pending` or `confirmed` to `shipped` (webhook and worker tests build on it); the admin path enforces the one-step workflow (`requireConfirmed`) | Remove both entries with those tests in the phase 12 hardening PR |
+| Q55 | 2026-11-26 | An account the owner creates or resets keeps the typed password until its holder gets another one; no forced change, and the policy is 12 characters plus the email-name check (no common-password list). The Users screen and `pnpm admin:create` are the only ways to set a password | A `must_change_password` migration and a change-password screen with the Q43 hardening PR; decide then whether to add a common-password list |
+| Q56 | 2026-11-26 | Customers are derived from guest orders by lower-cased email: two emails of one person are two customers, and the list aggregates `orders` at request time (about tens of milliseconds at 10 000 orders, measured under 500 ms) | Keep; phase 7 joins accounts by email and normalises `customers.email`; add an index on `lower(customer_email)` when the table is measured to need it |
+
 
 ## Answered
 
