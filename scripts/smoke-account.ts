@@ -393,6 +393,44 @@ export async function runAccountSmoke(ctx: Context): Promise<void> {
     );
     check('an anonymous visitor gets no order list', (await page('/account/orders')).status >= 300);
 
+    // 5a. Every account page renders TEXT, not message keys, in both languages (a client component whose namespace
+    // is missing from the provider shows `account.something` and has no accessible name).
+    const rawKey = /\baccount\.[a-z][A-Za-z.]*/;
+    const accountPages = [
+      '/account/orders',
+      '/account/profile',
+      '/account/addresses',
+      '/account/wishlist',
+      '/account/reviews',
+    ];
+    for (const prefix of ['', '/en']) {
+      for (const path of [
+        ...accountPages,
+        '/account/login',
+        '/account/register',
+        '/account/forgot',
+        '/account/set-password?t=x',
+        '/unsubscribe?t=x',
+      ]) {
+        const jarFor =
+          path.startsWith('/account/login') ||
+          path.startsWith('/account/register') ||
+          path.startsWith('/account/forgot') ||
+          path.startsWith('/account/set-password') ||
+          path.startsWith('/unsubscribe')
+            ? new Map<string, string>()
+            : jarA;
+        const rendered = await page(`${prefix}${path}`, jarFor);
+        check(
+          `${prefix}${path} renders text, not raw message keys`,
+          rendered.status === 200 &&
+            !rawKey.test(rendered.html) &&
+            !rendered.html.includes('MISSING_MESSAGE'),
+          { status: rendered.status, raw: rawKey.exec(rendered.html)?.[0] },
+        );
+      }
+    }
+
     // Actions: no session, foreign Origin, ownership.
     const noSession = await act(
       'addAddressAction',
