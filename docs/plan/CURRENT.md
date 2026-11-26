@@ -25,7 +25,7 @@ Infra: staging `https://staging.damazla.com` (basic auth). Next 16.4.6. The work
 
 ## Next step
 
-1. Owner hands: Q81 (the content itself, then `pnpm content:check --gate --allow-remote` against staging), Q45 (media bucket: photos cannot be uploaded before it), Q76, Q40, Q63, Q62.
+1. Owner hands, in order: Q40 (first owner), Q45 (R2 media bucket: no photo upload before it), Q76 (media headers), then fill the content with `docs/CONTENT_GUIDE.md` and run `pnpm content:check --gate --allow-remote` on staging (Q81); Q63, Q62 later.
 2. Owner and lawyer: Q77, Q79, Q75, Q80 (legal texts), then the launch checklist in the guide, section 8.
 3. Phase 10 in a NEW session.
 
@@ -44,7 +44,8 @@ Infra: staging `https://staging.damazla.com` (basic auth). Next 16.4.6. The work
 
 ## Caveats
 
-- Full local `test:int` can flake under load (one webhook, one auth timing test failed once each, pass alone); CI is authoritative
+- Flaky under load, pass alone: `webhook.int` (once locally) and `auth.int` "unknown account costs as much as a wrong password" (a timing assertion; failed once in CI, re-run green): a candidate for the #91 round-robin treatment. CI is authoritative
+- Not pinned by a test: that the route refuses a declared-too-large body BEFORE taking the in-flight slot (the order is in the code)
 - The meta title bound (46) assumes the placeholder shop name (Q1, Q84): a test fails when the name outgrows the reserve
 - The smoke "search finds products despite a typo" fails on a hand-built local database; CI on the project image is green
 
