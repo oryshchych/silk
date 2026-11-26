@@ -55,6 +55,10 @@
     "./orders-admin": "./src/orders-admin/workflow.ts",
     "./orders-admin-edit": "./src/orders-admin/edit-items.ts",
     "./orders-admin-refund": "./src/orders-admin/refund.ts",
+    "./customers-admin-read": "./src/customers-admin/read.ts",
+    "./customers-admin-update": "./src/customers-admin/update.ts",
+    "./customers-admin-export": "./src/customers-admin/export.ts",
+    "./orders-admin-export": "./src/orders-admin/export.ts",
     "./waybill": "./src/shipping/waybill.ts",
     "./orders-admin-schemas": "./src/orders-admin/schemas.ts"
   },

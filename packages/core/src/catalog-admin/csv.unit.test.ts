@@ -85,3 +85,38 @@ describe('writeCsv', () => {
     expect(parsed.rows[1]?.cells[1]?.startsWith("'=")).toBe(true);
   });
 });
+
+describe('safeCell: numbers and phones are data, formulas are not', () => {
+  it('leaves money amounts and canonical phones alone', () => {
+    for (const value of ['-5.00', '1299.50', '0.00', '-1234567.89', '+380501112233']) {
+      expect(safeCell(value), value).toBe(value);
+    }
+  });
+
+  it('still neutralises anything else that starts like a formula, also after blanks', () => {
+    for (const value of [
+      '-cmd',
+      '+1+1',
+      '-5.00x',
+      '=1+1',
+      '@SUM(A1)',
+      '  =1+1',
+      '\t=1',
+      ' -2+3',
+      '+3805',
+      '-5.0',
+      '-5.000',
+    ]) {
+      expect(safeCell(value), value).toBe(`'${value}`);
+    }
+    expect(safeCell('\rabc')).toBe("'\rabc");
+  });
+
+  it('unsafeCell undoes exactly what was neutralised', () => {
+    for (const value of ['-cmd', '  =1+1', '=1+1', '\t=1']) {
+      expect(unsafeCell(safeCell(value)), value).toBe(value);
+    }
+    expect(unsafeCell(safeCell('-5.00'))).toBe('-5.00');
+    expect(unsafeCell("'tis")).toBe("'tis");
+  });
+});

@@ -127,14 +127,29 @@ export function parseCsv(input: string): ParsedCsv {
   return { header, rows: rest };
 }
 
-/** The reverse of `safeCell`, for a file this shop exported: a leading apostrophe before a formula character is dropped. */
+/**
+ * A cell a spreadsheet would run as a formula starts (after optional blanks) with `=`, `+`, `-` or
+ * `@`, or with a tab or a carriage return.
+ */
+const FORMULA_START = /^[\t\r ]*[=+\-@]|^[\t\r]/;
+/**
+ * Cells this shop builds from numbers are plain data, not formulas: a money amount from
+ * `toHryvniasText` (`-5.00`, `1299.50`) and a canonical phone (`+380501112233`). They are left
+ * alone so an accountant's sums work and a phone shows without an apostrophe; anything else that
+ * starts with one of the formula characters (`-cmd`, `+1+1`, `-5.00x`) is still neutralised.
+ */
+const PLAIN_MONEY = /^-?\d+\.\d{2}$/;
+const PLAIN_PHONE = /^\+\d{7,15}$/;
+
+/** The reverse of `safeCell`, for a file this shop exported: the leading apostrophe of a neutralised cell is dropped. */
 export function unsafeCell(value: string): string {
-  return /^'[=+\-@\t\r]/.test(value) ? value.slice(1) : value;
+  return /^'(?:[\t\r ]*[=+\-@]|[\t\r])/.test(value) ? value.slice(1) : value;
 }
 
 /** A cell that a spreadsheet would run as a formula is made text by a leading apostrophe. */
 export function safeCell(value: string): string {
-  return /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+  if (PLAIN_MONEY.test(value) || PLAIN_PHONE.test(value)) return value;
+  return FORMULA_START.test(value) ? `'${value}` : value;
 }
 
 function quote(value: string): string {
