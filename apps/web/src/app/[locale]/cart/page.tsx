@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
-import Image from 'next/image';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
@@ -8,6 +7,7 @@ import { getCartView } from '@store/core/cart-view';
 import { formatMoney } from '@store/shared/money';
 
 import { CartLineControls } from '@/components/cart-line-controls';
+import { ResponsiveImage } from '@/components/responsive-image';
 import { SiteShell } from '@/components/site-shell';
 import { TrackEvent } from '@/components/track-event';
 import { resolveLocale } from '@/i18n/locale';
@@ -15,6 +15,9 @@ import { cartLineItem } from '@/lib/analytics/items';
 import { readCartToken } from '@/lib/cart-cookie';
 import { getDb } from '@/lib/db';
 import { href, paths } from '@/lib/paths';
+
+/** The cart thumbnail is a fixed 96 px box (`size-24`). */
+const CART_IMAGE_SIZES = '96px';
 
 type Props = PageProps<'/[locale]/cart'>;
 
@@ -54,12 +57,12 @@ export default async function CartPage({ params }: Props) {
               <li key={line.variantId} className="flex gap-4 py-4">
                 <div className="size-24 shrink-0 overflow-hidden rounded-sm bg-surface-raised">
                   {line.image === null ? null : (
-                    <Image
-                      src={line.image.url}
+                    <ResponsiveImage
+                      url={line.image.url}
                       alt={line.image.alt}
-                      width={line.image.width ?? 200}
-                      height={line.image.height ?? 250}
-                      unoptimized
+                      width={line.image.width}
+                      height={line.image.height}
+                      sizes={CART_IMAGE_SIZES}
                       className="h-full w-full object-cover"
                     />
                   )}

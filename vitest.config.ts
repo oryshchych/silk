@@ -10,6 +10,9 @@ export default defineConfig({
     // Projects, not one config: the test levels have different runners.
     projects: [
       {
+        // Components under test are rendered to markup (`renderToStaticMarkup`); the tsconfig keeps
+        // `jsx: preserve` for Next, so the unit project compiles JSX itself.
+        oxc: { jsx: { runtime: 'automatic' } },
         test: {
           name: 'unit',
           environment: 'node',

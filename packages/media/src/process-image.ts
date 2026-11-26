@@ -12,6 +12,7 @@
 import sharp, { type Metadata } from 'sharp';
 
 import { sniffImage } from './sniff.ts';
+import { WIDTHS, type RenditionSize } from './widths.ts';
 
 export const LIMITS = {
   /** Upload size cap in bytes (enforced while the body streams, and again here). */
@@ -22,8 +23,8 @@ export const LIMITS = {
   maxSide: 12_000,
 } as const;
 
-export const WIDTHS = { thumb: 320, card: 800, full: 1600 } as const;
-export type RenditionSize = keyof typeof WIDTHS;
+export { WIDTHS };
+export type { RenditionSize };
 export type RenditionFormat = 'webp' | 'avif';
 
 export interface Rendition {

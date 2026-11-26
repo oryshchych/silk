@@ -1,11 +1,11 @@
 import { getTranslations } from 'next-intl/server';
-import Image from 'next/image';
 import Link from 'next/link';
 
 import { formatMoney } from '@store/shared/money';
 import type { ProductCardDto } from '@store/shared/dto/catalog';
 import type { SiteLocale } from '@store/shared/seo';
 
+import { ResponsiveImage } from '@/components/responsive-image';
 import { href, paths } from '@/lib/paths';
 
 const BADGE_KEYS = {
@@ -18,12 +18,19 @@ const BADGE_KEYS = {
 export async function ProductCard({
   product,
   locale,
+  sizes,
   priority = false,
+  eager = false,
   as: Heading = 'h2',
 }: {
   product: ProductCardDto;
   locale: SiteLocale;
+  /** The `sizes` of the grid the card sits in (`lib/image-sizes.ts`). */
+  sizes: string;
+  /** The LCP candidate of the page: at most one. */
   priority?: boolean;
+  /** Above the fold (the first row) but not the candidate. */
+  eager?: boolean;
   /** Heading level of the name: h2 under a page title, h3 under a section title. */
   as?: 'h2' | 'h3';
 }) {
@@ -41,13 +48,14 @@ export async function ProductCard({
               {t('noImage')}
             </span>
           ) : (
-            <Image
-              src={product.image.url}
+            <ResponsiveImage
+              url={product.image.url}
               alt={product.image.alt}
-              width={product.image.width ?? 800}
-              height={product.image.height ?? 1000}
+              width={product.image.width}
+              height={product.image.height}
+              sizes={sizes}
               priority={priority}
-              unoptimized
+              eager={eager}
               className="h-full w-full object-cover"
             />
           )}

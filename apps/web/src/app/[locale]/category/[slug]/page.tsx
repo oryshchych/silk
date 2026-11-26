@@ -17,6 +17,7 @@ import { TrackEvent } from '@/components/track-event';
 import { resolveLocale } from '@/i18n/locale';
 import { cardItems } from '@/lib/analytics/items';
 import { getCachedFilterOptions, loadCategoryPage, loadListing } from '@/lib/catalog';
+import { CATEGORY_CARD_SIZES } from '@/lib/image-sizes';
 import { listingSeo } from '@/lib/listing-seo';
 import { pageMetadata } from '@/lib/metadata';
 import { href, paths } from '@/lib/paths';
@@ -162,7 +163,13 @@ export default async function CategoryPage({ params, searchParams }: Props) {
             <ul className="grid grid-cols-2 gap-x-4 gap-y-8 lg:grid-cols-3">
               {listing.items.map((item, index) => (
                 <li key={item.id}>
-                  <ProductCard product={item} locale={locale} priority={index < 3} />
+                  <ProductCard
+                    product={item}
+                    locale={locale}
+                    sizes={CATEGORY_CARD_SIZES}
+                    priority={index === 0}
+                    eager={index > 0 && index < 3}
+                  />
                 </li>
               ))}
             </ul>
