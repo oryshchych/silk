@@ -5,9 +5,14 @@
  */
 import { buildAlternates, siteLocales, type SiteLocale } from './seo';
 
-/** A sitemap file holds at most 50 000 URLs; a product takes one URL per locale. */
+/** A sitemap file holds at most 50 000 URLs AND 50 MB uncompressed; a product takes one URL per locale. */
 export const SITEMAP_URL_LIMIT = 50_000;
-export const SITEMAP_PRODUCTS_PER_FILE = SITEMAP_URL_LIMIT / siteLocales.length;
+export const SITEMAP_BYTE_LIMIT = 50 * 1024 * 1024;
+/**
+ * Products per file. A URL entry repeats its slug four times, and a slug may be 200 characters,
+ * so the byte limit (not the URL limit) decides: 15 000 products stay near 36 MB even then.
+ */
+export const SITEMAP_PRODUCTS_PER_FILE = 15_000;
 
 export function escapeXml(value: string): string {
   return value
@@ -26,7 +31,7 @@ export const URLSET_OPEN =
 export const URLSET_CLOSE = '</urlset>\n';
 
 export interface SitemapEntry {
-  /** Locale-less path, e.g. `/category/bras`. */
+  /** Locale-less path, already percent-encoded (`slugPath` does it for a slug), e.g. `/category/bras`. */
   path: string;
   /** UTC date-time (`2026-11-26T10:00:00Z`); omitted when unknown or malformed. */
   lastmod: string | null;
@@ -36,6 +41,10 @@ export interface SitemapEntry {
 const bare = (url: string): string => (url.endsWith('/') ? url.slice(0, -1) : url);
 
 /** One `<url>` per locale, each listing the whole pair (hreflang from the single source). */
+/** A storefront path with the slug percent-encoded: a slug can never change the shape of the URL. */
+export const slugPath = (kind: 'product' | 'category', slug: string): string =>
+  `/${kind}/${encodeURIComponent(slug)}`;
+
 export function urlEntries(siteUrl: string, entry: SitemapEntry): string {
   const lastmod =
     entry.lastmod !== null && LASTMOD.test(entry.lastmod)
@@ -61,6 +70,14 @@ export function sitemapIndexXml(locs: readonly string[]): string {
     '<?xml version="1.0" encoding="UTF-8"?>\n' +
     `<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${items}</sitemapindex>\n`
   );
+}
+
+/** The only slug spelling the storefront serves (the proxy gate uses the same shape). */
+export const SITEMAP_SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+
+/** Syntax only: `pages.xml` or `products-<n>.xml`. No database, so a bad name costs nothing. */
+export function isSitemapFileName(name: string): boolean {
+  return name === 'pages.xml' || /^products-(?:0|[1-9]\d{0,5})\.xml$/.test(name);
 }
 
 /** `pages.xml` or `products-<n>.xml` (n below `fileCount`): anything else is not a sitemap. */

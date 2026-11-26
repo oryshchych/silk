@@ -32,7 +32,7 @@ export async function runSeoSmoke({
   check(
     'robots.txt (production) closes admin, api, cart, checkout, order, search and names the sitemap',
     robots.status === 200 &&
-      ['/admin/', '/api/', '/cart', '/checkout', '/order/', '/search', '/en/cart'].every((p) =>
+      ['/admin/', '/api/', '/cart$', '/checkout?', '/order/', '/search?', '/en/cart$'].every((p) =>
         robots.body.includes(`Disallow: ${p}`),
       ) &&
       robots.body.includes(`Sitemap: ${site}/sitemap.xml`),

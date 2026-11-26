@@ -19,13 +19,17 @@ describe('robotsRules', () => {
       expect.arrayContaining([
         '/admin/',
         '/api/',
-        '/cart',
-        '/en/cart',
+        '/cart$',
+        '/cart?',
+        '/en/cart$',
         '/order/',
         '/en/order/',
-        '/en/search',
+        '/en/search?',
       ]),
     );
     expect(rules?.allow).toBe('/');
+    // A sibling that only starts like a private root stays open.
+    expect(rules?.disallow).not.toContain('/cart');
+    expect(rules?.disallow).not.toContain('/search');
   });
 });
