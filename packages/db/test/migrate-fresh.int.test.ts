@@ -948,3 +948,35 @@ describe('0012_variant_barcode_unique', () => {
     await variant(`BC-V4-${stamp}`, `Z4${stamp}`.slice(0, 20), null);
   });
 });
+
+describe('0013_shipment_one_live', () => {
+  it('an order has one live shipment operation; a failed one does not block the next', async () => {
+    const stamp = String(Date.now());
+    const { id: order } = await one<{ id: string }>(
+      app,
+      `INSERT INTO orders (order_number, customer_email, customer_phone, customer_name, delivery_method, subtotal, total)
+       VALUES ($1, 'a@b.co', '+380501112233', 'n', 'np_warehouse', 100, 100) RETURNING id`,
+      [`SH-2026-${stamp.slice(-6)}`],
+    );
+    const make = async (state: string) =>
+      await app.query(
+        `INSERT INTO shipment_operations (order_id, carrier, state) VALUES ($1, 'nova_poshta', $2)`,
+        [order, state],
+      );
+    await make('failed');
+    await make('failed');
+    await make('pending');
+    for (const state of ['pending', 'in_flight', 'unknown', 'succeeded']) {
+      await expect(make(state), state).rejects.toMatchObject({
+        code: '23505',
+        constraint: 'shipment_one_live_uq',
+      });
+    }
+    await app.query(
+      `UPDATE shipment_operations SET state = 'failed' WHERE order_id = $1 AND state = 'pending'`,
+      [order],
+    );
+    await make('succeeded');
+    await expect(make('pending')).rejects.toMatchObject({ code: '23505' });
+  });
+});

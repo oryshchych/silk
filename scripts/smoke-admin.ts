@@ -556,6 +556,18 @@ export async function runAdminSmoke({
       'orders: a manager cancels with a reason; the order is cancelled',
       cancelled.body.includes('"ok":true') && (await statusNow()) === 'cancelled',
     );
+    // The waybill print route: its own auth, checked before the carrier or the order is touched.
+    const printPath = `/admin/print/waybill/${order.id}?kind=document`;
+    const anonymousPrint = await get(printPath);
+    const contentPrint = await get(printPath, cookie(contentToken));
+    const noWaybillPrint = await get(printPath, cookie(managerToken));
+    check(
+      'orders: the print route is 401 without a session, 403 for a content role and 404 for an order with no waybill (and never carries a key)',
+      anonymousPrint.status === 401 &&
+        contentPrint.status === 403 &&
+        noWaybillPrint.status === 404 &&
+        !noWaybillPrint.html.includes('apiKey'),
+    );
 
     // A changed slug answers 301 at the old address, for both locales.
     const oldSlug = original?.slug ?? '';

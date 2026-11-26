@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "shipment_one_live_uq" ON "shipment_operations" USING btree ("order_id") WHERE "shipment_operations"."state" IN ('pending', 'in_flight', 'unknown', 'succeeded');

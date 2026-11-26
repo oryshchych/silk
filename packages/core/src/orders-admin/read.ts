@@ -14,6 +14,7 @@ import {
   paymentAttempts,
   paymentEvents,
   refundOperations,
+  shipmentOperations,
 } from '@store/db/schema';
 import type { Reader } from '@store/db/types';
 import {
@@ -206,7 +207,7 @@ export async function getAdminOrder(
 ): Promise<AdminOrderDto | AdminOrderWithCostDto | null> {
   const [order] = await db.select().from(orders).where(eq(orders.id, orderId));
   if (order === undefined) return null;
-  const [items, history, events, attempts, refunds] = await Promise.all([
+  const [items, history, events, attempts, refunds, shipments] = await Promise.all([
     db.select().from(orderItems).where(eq(orderItems.orderId, orderId)).orderBy(asc(orderItems.id)),
     db
       .select({
@@ -246,6 +247,16 @@ export async function getAdminOrder(
       .from(refundOperations)
       .where(eq(refundOperations.orderId, orderId))
       .orderBy(desc(refundOperations.createdAt)),
+    db
+      .select({
+        state: shipmentOperations.state,
+        error: shipmentOperations.lastError,
+        at: shipmentOperations.createdAt,
+      })
+      .from(shipmentOperations)
+      .where(eq(shipmentOperations.orderId, orderId))
+      .orderBy(desc(shipmentOperations.createdAt))
+      .limit(1),
   ]);
   return serializeAdminOrder(
     {
@@ -283,6 +294,8 @@ export async function getAdminOrder(
         at: row.createdAt.toISOString(),
         settledAt: iso(row.settledAt),
       })),
+      shipment:
+        shipments[0] === undefined ? null : { ...shipments[0], at: shipments[0].at.toISOString() },
       actions: availableActions(order),
     },
     canSeeCost,

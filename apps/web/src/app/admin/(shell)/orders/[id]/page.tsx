@@ -1,5 +1,6 @@
 import { can } from '@store/core/auth-permissions';
 import { getAdminOrder } from '@store/core/orders-admin-read';
+import { trackingUrl } from '@store/payments/shipping';
 import { formatMoney, money } from '@store/shared/money';
 import { getTranslations } from 'next-intl/server';
 import { cookies } from 'next/headers';
@@ -8,6 +9,7 @@ import { z } from 'zod';
 
 import { OrderActions } from '@/components/admin/order-actions';
 import { OrderItemsEditor } from '@/components/admin/order-items-editor';
+import { OrderWaybill } from '@/components/admin/order-waybill';
 import { OrderRefundForm } from '@/components/admin/order-refund-form';
 import { LOCALE_COOKIE, parseAdminLocale } from '@/lib/admin/preferences';
 import { formatWhen } from '@/lib/admin/format';
@@ -143,6 +145,17 @@ export default async function AdminOrderPage({ params }: { params: Promise<{ id:
         }
       />
 
+      {can(session.role, 'orders.waybill') &&
+      (order.deliveryMethod === 'np_warehouse' || order.deliveryMethod === 'np_courier') ? (
+        <OrderWaybill
+          orderId={order.id}
+          ttn={order.ttn}
+          trackingUrl={order.ttn === null ? null : trackingUrl(order.ttn)}
+          shipmentState={order.shipment?.state ?? null}
+          shipmentError={order.shipment?.error ?? null}
+          canCreate={order.status === 'confirmed' || order.status === 'processing'}
+        />
+      ) : null}
       {can(session.role, 'orders.edit') && order.actions.includes('cancel') ? (
         <OrderItemsEditor
           orderId={order.id}

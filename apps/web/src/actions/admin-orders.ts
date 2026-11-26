@@ -1,15 +1,19 @@
 'use server';
 
+import { writeAudit } from '@store/core/audit';
 import { cancelOrder, shipOrder } from '@store/core/fulfilment';
 import { advanceOrder, addOrderNote, ADMIN_SOURCE } from '@store/core/orders-admin';
 import { editOrderItems } from '@store/core/orders-admin-edit';
 import { reserveAdminRefund } from '@store/core/orders-admin-refund';
 import { processRefund, type ProviderMap } from '@store/core/refunds';
+import { WaybillNotConfiguredError } from '@store/core/errors';
+import { beginWaybill, completeWaybill, resolveWaybill } from '@store/core/waybill';
 import {
   cancelOrderSchema,
   confirmTransferSchema,
   editItemsSchema,
   refundSchema,
+  resolveWaybillSchema,
   orderIdSchema,
   orderNoteSchema,
 } from '@store/core/orders-admin-schemas';
@@ -18,6 +22,7 @@ import { confirmTransferReceived } from '@store/core/offline';
 import { adminAction } from '@/lib/admin/bound-action';
 import { getDb } from '@/lib/db';
 import { getPaymentProviders } from '@/lib/payment-providers';
+import { getWaybillCarrier } from '@/lib/waybill-carrier';
 
 /**
  * Order mutations. Each one names ONE permission (`adminAction` checks it before the input is
@@ -256,4 +261,79 @@ export async function refundOrderAction(input: unknown) {
     }
   }
   return { ok: true as const, data: { states } };
+}
+
+/**
+ * A Nova Poshta waybill in three steps (see `core/shipping/waybill.ts`): the operation is recorded
+ * and COMMITTED, the carrier is called with no transaction open, and the answer settles the
+ * operation in a second transaction. A lost answer leaves the operation live: nothing here ever
+ * calls `save` a second time for the order.
+ */
+export async function createWaybillAction(input: unknown) {
+  const carrier = await getWaybillCarrier();
+  const begun = await adminAction({
+    permission: 'orders.waybill',
+    schema: orderIdSchema,
+    input,
+    run: async ({ tx, input: parsed, session, audit }) => {
+      if (carrier === null) throw new WaybillNotConfiguredError();
+      const started = await beginWaybill(tx, { orderId: parsed.orderId });
+      await audit({
+        action: 'create',
+        entity: 'shipment_operation',
+        entityId: parsed.orderId,
+        diff: { operationId: started.operationId, carrier: carrier.code },
+      });
+      return { ...started, userId: session.userId, orderId: parsed.orderId };
+    },
+  });
+  if (!begun.ok || carrier === null) return begun;
+  const result = await carrier.createWaybill(begun.data.request);
+  const db = await getDb();
+  const settled = await db.transaction(async (tx) => {
+    const done = await completeWaybill(tx, {
+      operationId: begun.data.operationId,
+      result,
+      actorUserId: begun.data.userId,
+    });
+    if (done.changed) {
+      // The answer settled the operation: its own audit row (the request row was written at the start).
+      await writeAudit(tx, {
+        userId: begun.data.userId,
+        action: 'update',
+        entity: 'shipment_operation',
+        entityId: begun.data.orderId,
+        diff: { state: done.state, ttn: done.ttn },
+      });
+    }
+    return done;
+  });
+  return { ok: true as const, data: { state: settled.state, ttn: settled.ttn } };
+}
+
+/** A person closes an unknown waybill after checking the carrier's portal. */
+export async function resolveWaybillAction(input: unknown) {
+  return await adminAction({
+    permission: 'orders.waybill',
+    schema: resolveWaybillSchema,
+    input,
+    run: async ({ tx, input: parsed, session, audit, skipAudit }) => {
+      const done = await resolveWaybill(tx, {
+        orderId: parsed.orderId,
+        resolution: parsed.resolution,
+        actorUserId: session.userId,
+      });
+      if (!done.changed) {
+        skipAudit();
+        return { changed: false, ttn: null };
+      }
+      await audit({
+        action: 'update',
+        entity: 'shipment_operation',
+        entityId: parsed.orderId,
+        diff: { resolution: parsed.resolution.kind, ttn: done.ttn },
+      });
+      return { changed: true, ttn: done.ttn };
+    },
+  });
 }

@@ -54,6 +54,7 @@
     "./orders-admin": "./src/orders-admin/workflow.ts",
     "./orders-admin-edit": "./src/orders-admin/edit-items.ts",
     "./orders-admin-refund": "./src/orders-admin/refund.ts",
+    "./waybill": "./src/shipping/waybill.ts",
     "./orders-admin-schemas": "./src/orders-admin/schemas.ts"
   },
   "scripts": {
