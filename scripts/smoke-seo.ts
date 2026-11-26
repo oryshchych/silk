@@ -148,6 +148,17 @@ async function runFeedSmoke(
   sitemapUrls: readonly string[],
 ): Promise<void> {
   const before = storedFiles();
+  // HEAD (a monitor, a link checker) must not hold a feed slot: ten of them, then a real GET.
+  const heads: number[] = [];
+  for (let i = 0; i < 10; i++) {
+    for (const path of ['/feed/google.xml', '/feed/facebook.csv']) {
+      heads.push((await fetch(`${base}${path}`, { method: 'HEAD' })).status);
+    }
+  }
+  check(
+    'feed: twenty HEAD requests answer 200 and leave both feeds available',
+    heads.every((s) => s === 200),
+  );
   const google = await fetch(`${base}/feed/google.xml`);
   const xml = await google.text();
   const items = xml.split('<item>').slice(1);
@@ -179,6 +190,14 @@ async function runFeedSmoke(
     'feed: every item link is on the runtime SITE_URL and is a product URL the sitemap lists',
     links.length === items.length &&
       links.every((link) => link.startsWith(`${site}/product/`) && listed.has(link)),
+  );
+  check(
+    'feed: every image_link is an absolute https or runtime-origin URL',
+    items.every(
+      (item) =>
+        /<g:image_link>(https:\/\/|http:\/\/localhost)[^<]+<\/g:image_link>/.test(item) ||
+        item.includes(`<g:image_link>${site}`),
+    ),
   );
   const groups = new Map<string, number>();
   for (const item of items) {

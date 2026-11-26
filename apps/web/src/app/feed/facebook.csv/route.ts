@@ -6,18 +6,25 @@ import { getSiteUrl } from '../../../lib/site-url';
 /** Product feed (facebook). Dynamic: the origin is a runtime value (ADR-10) and nothing is cached by Next. */
 export const dynamic = 'force-dynamic';
 
-export async function GET(): Promise<Response> {
-  // The slot is held for the whole stream: a feed is the heaviest read the site serves.
+const headers = { ...FEED_HEADERS, 'Content-Type': FEED_TYPES.facebook };
+
+export async function GET(request: Request): Promise<Response> {
+  // Next answers HEAD by calling this function and dropping the body WITHOUT cancelling the stream,
+  // so a HEAD must never open one (it would keep its slot for good). Headers only, no database.
+  if (request.method === 'HEAD') return new Response(null, { headers });
   const release = takeFeedSlot();
   if (release === null) {
-    return new Response('Busy', { status: 503, headers: { 'Retry-After': '60' } });
+    return new Response('Busy', {
+      status: 503,
+      headers: { 'Retry-After': '60', 'Cache-Control': 'no-store' },
+    });
   }
+  // A client that goes away frees the slot at once.
+  request.signal.addEventListener('abort', release, { once: true });
   try {
     const t = await getTranslations({ locale: 'uk', namespace: 'meta' });
     const stream = await openFeed(await getSiteUrl(), t('siteName'), 'facebook', release);
-    return new Response(stream, {
-      headers: { ...FEED_HEADERS, 'Content-Type': FEED_TYPES.facebook },
-    });
+    return new Response(stream, { headers });
   } catch (error: unknown) {
     release();
     throw error;

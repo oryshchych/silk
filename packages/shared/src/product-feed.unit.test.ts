@@ -64,7 +64,8 @@ describe('google feed', () => {
     );
     expect(xml).toContain('<g:gender>female</g:gender>');
     expect(xml).toContain('<g:age_group>adult</g:age_group>');
-    expect(xml).toContain('<g:identifier_exists>no</g:identifier_exists>');
+    // Brand plus mpn identify the item: `identifier_exists` must not say otherwise.
+    expect(xml).not.toContain('identifier_exists');
   });
 
   it('converts kopiykas to hryvnias once, with integer arithmetic only', () => {
@@ -132,7 +133,6 @@ describe('google feed', () => {
     expect(googleItemXml(item({ gtin: '4006381333931' }))).toContain(
       '<g:gtin>4006381333931</g:gtin>',
     );
-    expect(googleItemXml(item({ gtin: '4006381333931' }))).not.toContain('identifier_exists');
   });
 
   it('writes no private field: the item type has no cost and no stock', () => {
@@ -148,6 +148,52 @@ describe('google feed', () => {
     expect(googleItemXml(item({ imageLink: null, additionalImages: [] }))).not.toContain(
       'image_link',
     );
+  });
+});
+
+describe('facebook csv: formulas', () => {
+  const cellsOf = (over: Partial<FeedItem>): Record<(typeof FACEBOOK_COLUMNS)[number], string> => {
+    const cells = parseLine(facebookCsvRow(item(over)).trim());
+    return Object.fromEntries(FACEBOOK_COLUMNS.map((c, i) => [c, cells[i] ?? ''])) as Record<
+      (typeof FACEBOOK_COLUMNS)[number],
+      string
+    >;
+  };
+
+  it('neutralises a free-text cell that would run as a formula, in every text column', () => {
+    for (const evil of ['=HYPERLINK("http://evil","x")', '+SUM(1)', '-2+3', '@desc']) {
+      const cells = cellsOf({
+        title: evil,
+        description: evil,
+        brand: evil,
+        productType: evil,
+        size: evil,
+        color: evil,
+      });
+      for (const column of [
+        'title',
+        'description',
+        'brand',
+        'product_type',
+        'size',
+        'color',
+      ] as const) {
+        expect(cells[column], `${column}: ${evil}`).toBe(`'${evil}`);
+      }
+    }
+  });
+
+  it('leaves ids, prices, links and GTINs alone so they keep matching the catalog', () => {
+    const cells = cellsOf({ id: '-A1', mpn: '-A1', gtin: '4006381333931' });
+    expect(cells.id).toBe('-A1');
+    expect(cells.mpn).toBe('-A1');
+    expect(cells.price).toBe('1299.00 UAH');
+    expect(cells.gtin).toBe('4006381333931');
+    expect(cells.link.startsWith('https://')).toBe(true);
+  });
+
+  it('does not touch text that merely contains the characters', () => {
+    expect(cellsOf({ title: 'Set = bra + brief' }).title).toBe('Set = bra + brief');
   });
 });
 

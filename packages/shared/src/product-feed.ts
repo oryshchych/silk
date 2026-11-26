@@ -95,7 +95,6 @@ export function googleItemXml(item: FeedItem): string {
     tag('brand', feedText(item.brand, 70)),
     ...(item.gtin === null ? [] : [tag('gtin', item.gtin)]),
     tag('mpn', feedText(item.mpn, 70)),
-    ...(item.gtin === null ? [tag('identifier_exists', 'no')] : []),
     tag('item_group_id', item.groupId),
     tag('google_product_category', GOOGLE_CATEGORY),
     tag('product_type', feedText(item.productType, 750)),
@@ -130,18 +129,28 @@ export const FACEBOOK_COLUMNS = [
   'age_group',
 ] as const;
 
+/** A text that a spreadsheet would run as a formula is made text by a leading apostrophe (as in the shop's own exports). */
+const FORMULA_START = /^[=+\-@]/;
+const text = (value: string): string => (FORMULA_START.test(value) ? `'${value}` : value);
+
 function csvCell(value: string): string {
   return /[",\r\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
 }
 
 export const facebookCsvHeader = (): string => `${FACEBOOK_COLUMNS.join(',')}\r\n`;
 
-/** One CSV line. No BOM and no formula guard: a catalog importer reads text, a spreadsheet never opens it. */
+/**
+ * One CSV line, no BOM. The feed is public and merchants download it to inspect, so the free-text
+ * columns (written by staff) start with an apostrophe when they would be a formula; ids, prices, GTINs
+ * and URLs are not touched, so they keep matching the catalog.
+ */
 export function facebookCsvRow(item: FeedItem): string {
   const cells: Record<(typeof FACEBOOK_COLUMNS)[number], string> = {
     id: item.id,
-    title: feedText(item.title, TITLE_MAX),
-    description: feedText(item.description === '' ? item.title : item.description, DESCRIPTION_MAX),
+    title: text(feedText(item.title, TITLE_MAX)),
+    description: text(
+      feedText(item.description === '' ? item.title : item.description, DESCRIPTION_MAX),
+    ),
     availability: item.inStock ? 'in stock' : 'out of stock',
     condition: 'new',
     price: price(item.price),
@@ -149,14 +158,14 @@ export function facebookCsvRow(item: FeedItem): string {
     link: item.link,
     image_link: item.imageLink ?? '',
     additional_image_link: item.additionalImages.slice(0, MAX_ADDITIONAL_IMAGES).join(','),
-    brand: feedText(item.brand, 70),
+    brand: text(feedText(item.brand, 70)),
     gtin: item.gtin ?? '',
     mpn: feedText(item.mpn, 70),
     item_group_id: item.groupId,
     google_product_category: GOOGLE_CATEGORY,
-    product_type: feedText(item.productType, 750),
-    size: feedText(item.size, 100),
-    color: feedText(item.color, 100),
+    product_type: text(feedText(item.productType, 750)),
+    size: text(feedText(item.size, 100)),
+    color: text(feedText(item.color, 100)),
     gender: FEED_GENDER,
     age_group: FEED_AGE_GROUP,
   };

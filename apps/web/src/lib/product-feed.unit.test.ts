@@ -48,6 +48,11 @@ describe('toFeedItem', () => {
     expect(toFeedItem('https://s.example', row({ image: null }))).toBeNull();
   });
 
+  it('leaves out an item whose id is longer than Google allows (50), never truncates it', () => {
+    expect(toFeedItem('https://s.example', row({ sku: 'S'.repeat(50) }))?.id).toBe('S'.repeat(50));
+    expect(toFeedItem('https://s.example', row({ sku: 'S'.repeat(51) }))).toBeNull();
+  });
+
   it('keeps the product id as the group, not the slug (a rename must not split a group)', () => {
     expect(toFeedItem('https://s.example', row())?.groupId).toBe(
       '0190a1b2-0000-7000-8000-000000000001',
@@ -56,19 +61,18 @@ describe('toFeedItem', () => {
 });
 
 describe('takeFeedSlot', () => {
-  it('allows two streams at once, refuses the third, and frees a slot once (release is idempotent)', () => {
-    const a = takeFeedSlot();
-    const b = takeFeedSlot();
-    expect(a).not.toBeNull();
-    expect(b).not.toBeNull();
+  it('allows 8 streams at once, refuses the 9th, and frees a slot once (release is idempotent)', () => {
+    const slots = Array.from({ length: 8 }, () => takeFeedSlot());
+    expect(slots.every((slot) => slot !== null)).toBe(true);
     expect(takeFeedSlot()).toBeNull();
-    a?.();
-    a?.();
-    const c = takeFeedSlot();
-    expect(c).not.toBeNull();
+    slots[0]?.();
+    slots[0]?.();
+    const again = takeFeedSlot();
+    expect(again).not.toBeNull();
     expect(takeFeedSlot()).toBeNull();
-    b?.();
-    c?.();
-    expect(takeFeedSlot()).not.toBeNull();
+    for (const slot of [...slots.slice(1), again]) slot?.();
+    const free = takeFeedSlot();
+    expect(free).not.toBeNull();
+    free?.();
   });
 });

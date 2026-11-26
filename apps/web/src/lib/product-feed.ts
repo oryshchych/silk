@@ -17,38 +17,54 @@ import {
 import { slugPath } from '@store/shared/sitemap-xml';
 
 import { htmlToSnippet } from './html-text';
+import { createSemaphore } from './semaphore';
 
 const BATCH = 1_000;
+const MAX_ID_LENGTH = 50;
 /** A feed this long is cut: a runaway table must not hold a connection for minutes. */
 const MAX_FEED_ITEMS = 200_000;
-const MAX_ACTIVE_FEEDS = 2;
-let activeFeeds = 0;
+/**
+ * Concurrency, in two layers. At most `MAX_STREAMS` feeds are open at once (a slot is held until the
+ * stream ends, fails, is cancelled, is aborted by the client or passes the deadline), and at most
+ * two database reads run at any moment (`batchGate`), so a slow reader holds a stream but never
+ * the database. A stream that has not finished after `FEED_DEADLINE_MS` is cut: a socket that
+ * reads nothing cannot hold a slot for ever.
+ */
+const MAX_STREAMS = 8;
+export const FEED_DEADLINE_MS = 120_000;
+const batchGate = createSemaphore(2, 32);
+let openStreams = 0;
 
-/** A slot for one feed stream, held until the stream ends, fails or is cancelled; null when full. */
+/** A slot for one feed stream; null when all are taken. The release is idempotent. */
 export function takeFeedSlot(): (() => void) | null {
-  if (activeFeeds >= MAX_ACTIVE_FEEDS) return null;
-  activeFeeds += 1;
+  if (openStreams >= MAX_STREAMS) return null;
+  openStreams += 1;
   let released = false;
   return () => {
     if (released) return;
     released = true;
-    activeFeeds -= 1;
+    openStreams -= 1;
   };
 }
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 export const FEED_HEADERS = {
   // A feed is for a crawler of a merchant platform, never for the search index.
   'X-Robots-Tag': 'noindex',
-  'Cache-Control': 'public, max-age=300, s-maxage=3600, stale-while-revalidate=3600',
+  'Cache-Control':
+    'public, max-age=300, s-maxage=3600, stale-while-revalidate=3600, stale-if-error=86400',
 } as const;
 
 const absolute = (siteUrl: string, url: string | null): string | null =>
   url === null ? null : url.startsWith('/') ? `${siteUrl}${url}` : url;
 
-/** An item without a photo is left out: Merchant Center disapproves it (`image_link` is required). */
+/** An item without a photo or with an over-long id is left out: Merchant Center would disapprove it. */
 export function toFeedItem(siteUrl: string, r: FeedVariantRow): FeedItem | null {
   const imageLink = absolute(siteUrl, r.image);
   if (imageLink === null) return null;
+  // Google's limit for `id` is 50 characters; a longer SKU cannot be listed (truncating would break the key).
+  if (r.sku.length > MAX_ID_LENGTH) return null;
   const onSale = r.compareAtPrice !== null && r.compareAtPrice > r.price;
   const description = htmlToSnippet(r.shortDescription ?? r.description, 5000) ?? r.name;
   return {
@@ -100,8 +116,17 @@ export async function openFeed(
   let after: string | null = null;
   let sent = 0;
   let finished = false;
+  let cut = false;
+  let deadline: ReturnType<typeof setTimeout> | undefined;
   return new ReadableStream<Uint8Array>({
     start(controller) {
+      // A timer, not a check inside `pull`: a reader that reads nothing never calls `pull`.
+      deadline = setTimeout(() => {
+        cut = true;
+        release();
+        controller.error(new Error('feed deadline passed'));
+      }, FEED_DEADLINE_MS);
+      deadline.unref();
       controller.enqueue(
         encoder.encode(
           kind === 'google'
@@ -111,14 +136,27 @@ export async function openFeed(
       );
     },
     cancel() {
+      clearTimeout(deadline);
       release();
     },
     async pull(controller) {
       if (finished) return;
       let rows: FeedVariantRow[];
       try {
-        rows = await listFeedVariants(db, after, Math.min(BATCH, MAX_FEED_ITEMS - sent));
+        // Wait for a database slot, but not past the deadline (the timer sets `cut`).
+        for (;;) {
+          if (cut) return;
+          const read = await batchGate.run(
+            async () => await listFeedVariants(db, after, Math.min(BATCH, MAX_FEED_ITEMS - sent)),
+          );
+          if (read.ran) {
+            rows = read.value;
+            break;
+          }
+          await sleep(100);
+        }
       } catch (error: unknown) {
+        clearTimeout(deadline);
         release();
         throw error;
       }
@@ -138,6 +176,7 @@ export async function openFeed(
       if (rows.length < BATCH || sent >= MAX_FEED_ITEMS) {
         if (kind === 'google') controller.enqueue(encoder.encode(GOOGLE_FEED_CLOSE));
         finished = true;
+        clearTimeout(deadline);
         release();
         controller.close();
       }
