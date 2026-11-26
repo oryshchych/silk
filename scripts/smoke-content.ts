@@ -131,7 +131,7 @@ export async function runContentSmoke({
       method: 'POST',
       redirect: 'manual',
       headers: {
-        'Next-Action': ids['updateCategoryAction'] ?? '',
+        'Next-Action': ids['updateCategoryContentAction'] ?? '',
         'Content-Type': 'text/plain;charset=UTF-8',
         'X-Forwarded-For': nextClient(),
         Origin: siteOrigin,
@@ -141,14 +141,48 @@ export async function runContentSmoke({
       body: JSON.stringify([
         {
           categoryId,
-          seoTextUk: `<p>${filler('Smoke uk text', 260)}</p>`,
-          seoTextEn: `<p>${filler('Smoke en text', 260)}</p>`,
+          // Plain paragraphs, the way a person types them: the action turns them into <p>.
+          seoTextUk: `${filler('Smoke uk text', 260)}\n\nДругий абзац українською.`,
+          seoTextEn: `${filler('Smoke en text', 260)}\n\nSecond paragraph in English.`,
+          descriptionUk: '',
+          descriptionEn: '',
+          metaTitleUk: '',
+          metaTitleEn: '',
+          metaDescriptionUk: '',
+          metaDescriptionEn: '',
+          noindex: false,
         },
       ]),
     });
     check(
       'content: a content editor saves the category text through the real action',
       updated.status === 200,
+    );
+    // Its editor page: a content editor opens it (both locales, real text, the SEO text field); a manager gets a 404.
+    for (const [locale, text] of [
+      ['uk', 'Тексти категорії'],
+      ['en', 'Texts of the category'],
+    ] as const) {
+      const editor = await get(`/admin/categories/${categoryId}`, {
+        Cookie: `admin_session=${tokens['content'] ?? ''}; admin_locale=${locale}`,
+      });
+      check(
+        `content: the category editor (${locale}) renders real text and the SEO text field, private no-store`,
+        editor.status === 200 &&
+          editor.html.includes(text) &&
+          editor.html.includes('name="seoTextUk"') &&
+          editor.html.includes('Smoke uk text') &&
+          !editor.html.includes('admin.categoryEditor.') &&
+          !editor.html.includes('MISSING_MESSAGE') &&
+          editor.cache.includes('no-store'),
+      );
+    }
+    const managerEditor = await get(`/admin/categories/${categoryId}`, {
+      Cookie: `admin_session=${tokens['manager'] ?? ''}`,
+    });
+    check(
+      'content: a manager (no categories.edit) is not given the category editor form',
+      !managerEditor.html.includes('name="seoTextUk"'),
     );
 
     // 2. The storefront agrees, in both languages. The proxy's set of visible product slugs reloads
@@ -185,7 +219,9 @@ export async function runContentSmoke({
       check(
         `content: the category page (${locale}) shows the SEO text the report counted`,
         cat.status === 200 &&
-          cat.html.includes(filler(locale === 'uk' ? 'Smoke uk text' : 'Smoke en text', 260)),
+          cat.html.includes(
+            `<p>${filler(locale === 'uk' ? 'Smoke uk text' : 'Smoke en text', 260)}</p>`,
+          ),
       );
     }
 

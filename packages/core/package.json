@@ -41,6 +41,7 @@
     "./admin-products": "./src/catalog-admin/products.ts",
     "./admin-variants": "./src/catalog-admin/variants.ts",
     "./admin-categories": "./src/catalog-admin/categories.ts",
+    "./admin-category-text": "./src/catalog-admin/category-text.ts",
     "./admin-dictionaries": "./src/catalog-admin/dictionaries.ts",
     "./admin-schemas": "./src/catalog-admin/schemas.ts",
     "./admin-read": "./src/catalog-admin/read.ts",

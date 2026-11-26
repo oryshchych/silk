@@ -50,6 +50,7 @@ export function TextField({
 export function TextArea({
   label,
   name,
+  hint,
   defaultValue,
   maxLength,
   rows = 4,
@@ -77,6 +78,9 @@ export function TextArea({
         }
         className={`${fieldClass} py-2`}
       />
+      {hint === undefined ? null : (
+        <span className="mt-1 block text-sm text-text-muted">{hint}</span>
+      )}
     </label>
   );
 }

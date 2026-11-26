@@ -547,7 +547,8 @@
       "filterable": "In filters",
       "valueUk": "Value (uk)",
       "valueEn": "Value (en)",
-      "productAttributes": "Product attributes"
+      "productAttributes": "Product attributes",
+      "texts": "Texts"
     },
     "importExport": {
       "title": "Import and export",
@@ -1158,6 +1159,28 @@
         "alt_too_short": "Alt text too short to be real",
         "alt_too_long": "Alt text longer than the guide allows"
       }
+    },
+    "categoryEditor": {
+      "title": "Texts of the category: {name}",
+      "back": "Back to the categories",
+      "saved": "Saved.",
+      "seoTexts": "SEO text under the product list",
+      "seoTextUk": "SEO text, Ukrainian",
+      "seoTextEn": "SEO text, English",
+      "seoHint": "Recommended {min} to {max} characters. Write plain paragraphs (a blank line starts a new one) or HTML with p, h2, h3, ul, ol, li, strong, em and https links.",
+      "descriptions": "Short description under the title",
+      "descriptionUk": "Description, Ukrainian",
+      "descriptionEn": "Description, English",
+      "snippet": "How the category looks in search",
+      "metaTitleUk": "Meta title, Ukrainian",
+      "metaTitleEn": "Meta title, English",
+      "metaDescriptionUk": "Meta description, Ukrainian",
+      "metaDescriptionEn": "Meta description, English",
+      "titleHint": "Up to {max} characters: the shop name is added after it.",
+      "metaHint": "{min} to {max} characters.",
+      "noindex": "Do not show this category in search engines",
+      "save": "Save",
+      "texts": "Texts"
     }
   },
   "consent": {

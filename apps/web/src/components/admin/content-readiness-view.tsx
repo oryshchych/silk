@@ -164,7 +164,7 @@ function CategoriesTable({ rows, t }: { rows: readonly CategoryReadinessDto[]; t
               </td>
               <td className={cell}>
                 <a
-                  href="/admin/categories"
+                  href={`/admin/categories/${row.id}`}
                   className="inline-flex min-h-11 min-w-11 items-center underline"
                 >
                   {t('edit')}

@@ -547,7 +547,8 @@
       "filterable": "У фільтрах",
       "valueUk": "Значення (укр)",
       "valueEn": "Значення (eng)",
-      "productAttributes": "Атрибути товару"
+      "productAttributes": "Атрибути товару",
+      "texts": "Тексти"
     },
     "importExport": {
       "title": "Імпорт та експорт",
@@ -1158,6 +1159,28 @@
         "alt_too_short": "Alt-текст надто короткий",
         "alt_too_long": "Alt-текст довший, ніж дозволяє посібник"
       }
+    },
+    "categoryEditor": {
+      "title": "Тексти категорії: {name}",
+      "back": "Назад до категорій",
+      "saved": "Збережено.",
+      "seoTexts": "SEO-текст під списком товарів",
+      "seoTextUk": "SEO-текст українською",
+      "seoTextEn": "SEO-текст англійською",
+      "seoHint": "Рекомендовано від {min} до {max} символів. Пишіть звичайними абзацами (порожній рядок починає новий) або HTML з тегами p, h2, h3, ul, ol, li, strong, em та https-посиланнями.",
+      "descriptions": "Короткий опис під заголовком",
+      "descriptionUk": "Опис українською",
+      "descriptionEn": "Опис англійською",
+      "snippet": "Як категорія виглядає в пошуку",
+      "metaTitleUk": "Meta title українською",
+      "metaTitleEn": "Meta title англійською",
+      "metaDescriptionUk": "Meta description українською",
+      "metaDescriptionEn": "Meta description англійською",
+      "titleHint": "До {max} символів: після нього додається назва магазину.",
+      "metaHint": "Від {min} до {max} символів.",
+      "noindex": "Не показувати цю категорію в пошукових системах",
+      "save": "Зберегти",
+      "texts": "Тексти"
     }
   },
   "consent": {

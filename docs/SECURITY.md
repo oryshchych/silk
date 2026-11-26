@@ -33,7 +33,8 @@ confirmed TOTP before a session counts; so must anyone who enrolled one.
 | `catalog.create` | owner, admin | Create a product (a draft: it needs a price) |
 | `catalog.edit` | owner, admin, content | Product text, SEO fields, structure, variant SKU/barcode/active |
 | `categories.edit` | owner, admin, content | Create, edit and move categories |
-| `dictionaries.edit` | owner, admin | Colours, sizes, attributes and their values |
+| `dictionaries.edit` | owner, admin | Edit the texts of a category (SEO text, description, search snippet) | `categories.edit` | `updateCategoryContentAction` (`actions/admin-taxonomy.ts`) from `/admin/categories/<id>` (`requirePermission('categories.edit')`): the SEO text is plain paragraphs or HTML, escaped or sanitised on write (`categoryTextToHtml`) and sanitised again on render |
+| Colours, sizes, attributes and their values |
 | `catalog.price` | owner, admin | Price, old price, promo price of products and variants |
 | `catalog.cost.view` | owner, admin | See `cost_price` / `unit_cost_snapshot` anywhere (screens, exports) |
 | `catalog.publish` | owner, admin, content | Publish or unpublish a product |

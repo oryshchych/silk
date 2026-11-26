@@ -114,3 +114,22 @@ export function serializeAdminProductRow(
 ): AdminProductRowDto | AdminProductRowWithCostDto {
   return canSeeCost ? adminProductRowWithCostDto.parse(value) : adminProductRowDto.parse(value);
 }
+
+/** The texts of one category, for its content editor: an explicit list, no product or cost data. */
+export const adminCategoryContentDto = z.object({
+  id: z.uuid(),
+  slug: z.string(),
+  nameUk: z.string(),
+  nameEn: z.string(),
+  isActive: z.boolean(),
+  noindex: z.boolean(),
+  descriptionUk: z.string().nullable(),
+  descriptionEn: z.string().nullable(),
+  seoTextUk: z.string().nullable(),
+  seoTextEn: z.string().nullable(),
+  metaTitleUk: z.string().nullable(),
+  metaTitleEn: z.string().nullable(),
+  metaDescriptionUk: z.string().nullable(),
+  metaDescriptionEn: z.string().nullable(),
+});
+export type AdminCategoryContentDto = z.output<typeof adminCategoryContentDto>;
