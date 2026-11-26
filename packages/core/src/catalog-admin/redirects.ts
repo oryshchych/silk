@@ -111,9 +111,6 @@ export async function listRedirects(db: Reader): Promise<RedirectRow[]> {
   );
 }
 
-/** Most paths one flush may carry: the map holds at most `REDIRECT_LIMIT`, so this is never exceeded. */
-export const HIT_FLUSH_LIMIT = REDIRECT_LIMIT;
-
 /**
  * Adds counted hits to `redirects.hit_count`, one statement for the whole batch. Paths that are no
  * longer in the table are ignored. Called from a timer in the web process, never per request.
@@ -124,7 +121,7 @@ export async function addRedirectHits(
 ): Promise<void> {
   const entries = [...hits]
     .filter(([, n]) => Number.isInteger(n) && n > 0)
-    .slice(0, HIT_FLUSH_LIMIT);
+    .slice(0, REDIRECT_LIMIT);
   if (entries.length === 0) return;
   const values = sql.join(
     entries.map(([path, n]) => sql`(${path}::text, ${n}::int)`),
