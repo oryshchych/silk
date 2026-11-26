@@ -12,6 +12,8 @@ describe('isAccountPath', () => {
     '//account//login/',
     '/en/%41CCOUNT/set-password',
     '/%zzaccount',
+    '/unsubscribe',
+    '/en/UNSUBSCRIBE/',
   ])('%s is the account', (path) => {
     expect(isAccountPath(path)).toBe(true);
   });

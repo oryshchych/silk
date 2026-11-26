@@ -12,6 +12,7 @@ import type { Reader } from '@store/db/types';
 
 import type { MessageSender, OutboundMessage } from './deliver.ts';
 import { handleAccountLink } from './email/account-emails.ts';
+import { handleBackInStock } from './email/back-in-stock.ts';
 import { handleOrderCreated } from './email/order-created.ts';
 import {
   handlePaymentFailed,
@@ -91,6 +92,10 @@ export function createMessageSender(deps: {
       }
       if (message.topic === 'email.account-verify' || message.topic === 'email.password-reset') {
         await handleAccountLink({ ...mail, authSecret: deps.authSecret }, envelope);
+        return;
+      }
+      if (message.topic === 'email.back-in-stock') {
+        await handleBackInStock({ ...mail, authSecret: deps.authSecret }, envelope);
         return;
       }
       if (message.topic === 'fiscal.issue-receipt') {

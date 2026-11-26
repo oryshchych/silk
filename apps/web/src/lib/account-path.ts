@@ -21,7 +21,13 @@ export function isAccountPath(pathname: string): boolean {
   const path = normalise(pathname);
   // An undecodable path is treated as account: the safe side.
   if (path === null) return pathname.toLowerCase().includes('account');
-  return path === '/account' || path.startsWith('/account/');
+  // `/unsubscribe` (the link in a back-in-stock mail) takes a credential in its query: same rules.
+  return (
+    path === '/account' ||
+    path.startsWith('/account/') ||
+    path === '/unsubscribe' ||
+    path.startsWith('/unsubscribe/')
+  );
 }
 
 /** The pages that take a credential or send a mail: limited hard, open without a session. */
@@ -30,6 +36,7 @@ const AUTH_PATHS = [
   '/account/register',
   '/account/forgot',
   '/account/set-password',
+  '/unsubscribe',
 ] as const;
 
 export function isAccountAuthPath(pathname: string): boolean {

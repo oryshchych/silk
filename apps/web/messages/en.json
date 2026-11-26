@@ -152,7 +152,16 @@
     "added": "Added to cart.",
     "viewCart": "View cart",
     "mySizeAvailable": "Your size ({size}) is available.",
-    "mySizeMissing": "Your size ({size}) is not available in this colour."
+    "mySizeMissing": "Your size ({size}) is not available in this colour.",
+    "wishlistAdd": "Add to wishlist",
+    "alertIntro": "Sold out. Tell me when it is back?",
+    "alertSize": "Size {size}",
+    "account": {
+      "saved": "Added to your wishlist.",
+      "alerted": "We will email you when the size is back.",
+      "error": "That did not work. Please try again.",
+      "available": "This size can be ordered now."
+    }
   },
   "search": {
     "title": "Search",
@@ -951,7 +960,8 @@
     "section": {
       "orders": "Orders",
       "profile": "Profile",
-      "addresses": "Addresses"
+      "addresses": "Addresses",
+      "wishlist": "Wishlist"
     },
     "noOrders": "No orders yet.",
     "reorder": "Order again",
@@ -981,6 +991,18 @@
     "postcode": "Postcode",
     "makeDefault": "Make default",
     "languageUk": "Ukrainian",
-    "languageEn": "English"
+    "languageEn": "English",
+    "noWishlist": "Your wishlist is empty.",
+    "inStock": "in stock",
+    "soldOut": "sold out",
+    "alerts": "Back-in-stock alerts",
+    "noAlerts": "No alerts.",
+    "alertWaiting": "waiting for a restock",
+    "alertSent": "email sent",
+    "remove": "Remove",
+    "unsubscribeTitle": "Stop a back-in-stock alert",
+    "unsubscribeIntro": "Confirm that you no longer want to hear when this size is back.",
+    "unsubscribeConfirm": "Unsubscribe",
+    "unsubscribed": "Done: no more emails about this size."
   }
 }

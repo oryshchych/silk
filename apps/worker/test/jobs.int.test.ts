@@ -380,6 +380,7 @@ describe('scheduled jobs', () => {
         JOB_NAMES.reconcileFiscal,
         JOB_NAMES.sweepRefunds,
         JOB_NAMES.purgePendingAccounts,
+        JOB_NAMES.notifyRestocked,
       ].sort(),
     );
     expect(schedules.every((s) => s.timezone === 'Europe/Kyiv')).toBe(true);

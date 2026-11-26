@@ -69,7 +69,9 @@
     "./customer-token": "./src/customer-auth/tokens.ts",
     "./account-orders": "./src/account/orders.ts",
     "./account-profile": "./src/account/profile.ts",
-    "./account-addresses": "./src/account/addresses.ts"
+    "./account-addresses": "./src/account/addresses.ts",
+    "./account-wishlist": "./src/account/wishlist.ts",
+    "./account-alerts": "./src/account/stock-alerts.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"

@@ -6,6 +6,7 @@
  * The mailed link is rebuilt from the token id in the database, exactly as the worker does (nothing
  * is sent anywhere).
  */
+import { buildUnsubscribeToken } from '../packages/core/src/account/unsubscribe-token.ts';
 import { buildEmailToken } from '../packages/core/src/customer-auth/tokens.ts';
 import { createDb } from '../packages/db/src/client.ts';
 import { absorb, actionIds, cookieHeader, type Jar } from './smoke-http.ts';
@@ -503,6 +504,138 @@ export async function runAccountSmoke(ctx: Context): Promise<void> {
         'CACHE: the product page is byte-identical for a signed-in visitor with saved sizes (no personal markup)',
         anonHtml === signedHtml && !signedHtml.includes(emailA),
         { same: anonHtml === signedHtml, signedCache: signed.headers.get('x-nextjs-cache') },
+      );
+    }
+
+    // 5c. Wishlist and back-in-stock alerts, again with two customers.
+    const { rows: products } = await handle.pool.query<{ id: string; slug: string }>(
+      `SELECT id, slug FROM products WHERE is_active AND published_at <= now() ORDER BY created_at LIMIT 1`,
+    );
+    const product = products[0];
+    if (product !== undefined) {
+      const added2 = await act(
+        'addToWishlistAction',
+        { productId: product.id },
+        jarA,
+        newClient(),
+        '/account/wishlist',
+      );
+      check('wishlist: A adds a product', added2.body.includes('"ok":true'), brief(added2));
+      const wishA = await page('/account/wishlist', jarA);
+      const wishB = await page('/account/wishlist', jarB);
+      check(
+        'wishlist: A sees it, B does not',
+        wishA.html.includes(product.slug) && !wishB.html.includes(`/product/${product.slug}`),
+      );
+      const bad = await act(
+        'addToWishlistAction',
+        { productId: '00000000-0000-4000-8000-000000000000' },
+        jarA,
+        newClient(),
+        '/account/wishlist',
+      );
+      check(
+        'wishlist: an unknown product is "not found"',
+        bad.body.includes('"code":"notFound"'),
+        brief(bad),
+      );
+      const anon = await act(
+        'addToWishlistAction',
+        { productId: product.id },
+        new Map(),
+        newClient(),
+        '/account/wishlist',
+      );
+      check(
+        'wishlist: no session gives "unauthorized"',
+        anon.body.includes('"code":"unauthorized"'),
+      );
+    }
+    const { rows: soldOut } = await handle.pool.query<{ id: string }>(
+      `SELECT v.id FROM product_variants v JOIN products p ON p.id = v.product_id
+        WHERE v.is_active AND v.stock_quantity - v.reserved_quantity <= 0 AND p.is_active
+          AND p.kind = 'physical' AND p.published_at <= now() LIMIT 1`,
+    );
+    const soldOutId = soldOut[0]?.id;
+    if (soldOutId !== undefined) {
+      const sub = await act(
+        'subscribeStockAlertAction',
+        { variantId: soldOutId },
+        jarA,
+        newClient(),
+        '/account/wishlist',
+      );
+      const alertId = /"value":"([0-9a-f-]{36})"/.exec(sub.body)?.[1] ?? '';
+      check(
+        'alerts: A follows a sold-out size',
+        sub.body.includes('"ok":true') && alertId !== '',
+        brief(sub),
+      );
+      const { rows: stored } = await handle.pool.query<{ email: string }>(
+        `SELECT email FROM stock_notifications WHERE id = $1`,
+        [alertId],
+      );
+      check(
+        'alerts: the alert belongs to the signed-in address, never one from the request',
+        stored[0]?.email === emailA,
+        stored,
+      );
+      const stranger = await act(
+        'cancelStockAlertAction',
+        { id: alertId },
+        jarB,
+        newClient(),
+        '/account/wishlist',
+      );
+      const { rows: still } = await handle.pool.query(
+        `SELECT 1 FROM stock_notifications WHERE id = $1`,
+        [alertId],
+      );
+      check(
+        "IDOR: B cannot remove A's alert (nothing deleted)",
+        stranger.body.includes('"value":false') && still.length === 1,
+        brief(stranger),
+      );
+      const link = await page(
+        `/unsubscribe?t=${encodeURIComponent(buildUnsubscribeToken(ctx.authSecret, alertId))}`,
+      );
+      check(
+        'unsubscribe page: opening the link deletes nothing, is no-store, sends no referrer',
+        link.status === 200 && link.cache.includes('no-store') && link.referrer === 'no-referrer',
+        brief(link),
+      );
+      const { rows: afterOpen } = await handle.pool.query(
+        `SELECT 1 FROM stock_notifications WHERE id = $1`,
+        [alertId],
+      );
+      check('unsubscribe: a GET changed nothing', afterOpen.length === 1);
+      const forged = await act(
+        'unsubscribeStockAlertAction',
+        { token: `${alertId}.${'A'.repeat(43)}` },
+        new Map(),
+        newClient(),
+        '/unsubscribe',
+      );
+      check(
+        'unsubscribe: a forged token does nothing',
+        forged.body.includes('"code":"invalid"'),
+        brief(forged),
+      );
+      const real = await act(
+        'unsubscribeStockAlertAction',
+        { token: buildUnsubscribeToken(ctx.authSecret, alertId) },
+        new Map(),
+        newClient(),
+        '/unsubscribe',
+      );
+      const { rows: gone } = await handle.pool.query(
+        `SELECT 1 FROM stock_notifications WHERE id = $1`,
+        [alertId],
+      );
+      check(
+        'unsubscribe: the signed link removes the alert without a session',
+        real.body.includes('"status":"done"') && gone.length === 0,
+        brief(real),
       );
     }
 
