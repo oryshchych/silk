@@ -90,7 +90,8 @@ export default async function ProductPage({ params }: Props) {
   // The photo the gallery opens on is the LCP element: tell the browser about it in the first bytes
   // (AVIF only: a browser that cannot decode it skips the hint and loads the WebP normally).
   const lead = imagesForColor(product.images, initialSelection(product.variants).colorSlug)[0];
-  const leadSources = lead === undefined ? null : renditionSources(lead.url, lead.width);
+  const leadSources =
+    lead === undefined ? null : renditionSources(lead.url, lead.width, lead.height);
   if (lead !== undefined && leadSources !== null) {
     preload(lead.url, {
       as: 'image',

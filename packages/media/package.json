@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     "./process": "./src/process-image.ts",
+    "./widths": "./src/widths.ts",
     "./sniff": "./src/sniff.ts",
     "./storage": "./src/storage.ts",
     "./test/fake-s3": "./test/fake-s3.ts"

@@ -13,8 +13,8 @@ const render = (props: Partial<Parameters<typeof ResponsiveImage>[0]> = {}): str
     createElement(ResponsiveImage, {
       url: upload,
       alt: 'Бюстгальтер',
-      width: 2000,
-      height: 2500,
+      width: 3000,
+      height: 2000,
       sizes: '46vw',
       ...props,
     }),
@@ -24,13 +24,14 @@ describe('ResponsiveImage (the real markup)', () => {
   it('an upload becomes a picture with AVIF then WebP sources and a sized fallback image', () => {
     const html = render();
     expect(html.startsWith('<picture>')).toBe(true);
+    expect(html.indexOf('image/avif')).toBeGreaterThanOrEqual(0);
     expect(html.indexOf('image/avif')).toBeLessThan(html.indexOf('image/webp'));
     expect(html).toContain('320w');
     expect(html).toContain('1600w');
     expect(html).toContain('sizes="46vw"');
     expect(html).toContain(`<img src="${upload}"`);
-    expect(html).toContain('width="2000"');
-    expect(html).toContain('height="2500"');
+    expect(html).toContain('width="3000"');
+    expect(html).toContain('height="2000"');
     expect(html).toContain('alt="Бюстгальтер"');
     expect(html).toContain('decoding="async"');
   });
@@ -42,6 +43,16 @@ describe('ResponsiveImage (the real markup)', () => {
     expect(lead).toContain('loading="eager"');
     // React writes the attribute as `fetchPriority`; HTML attribute names are case-insensitive.
     expect(lead).toContain('fetchPriority="high"');
+  });
+
+  it('an eager image is not the priority candidate: eager loading, no priority hint', () => {
+    const html = render({ eager: true });
+    expect(html).toContain('loading="eager"');
+    expect(html.toLowerCase()).not.toContain('fetchpriority');
+  });
+
+  it('portrait photos describe their real widths in the markup', () => {
+    expect(render({ width: 2000, height: 2500 })).toContain('full.webp 1280w');
   });
 
   it('a placeholder keeps the plain image, still with its box reserved, and no picture', () => {

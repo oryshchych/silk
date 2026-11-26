@@ -1,6 +1,8 @@
 import type { ProductCardDto } from '@store/shared/dto/catalog';
 import type { SiteLocale } from '@store/shared/seo';
 
+import { LISTING_CARD_SIZES } from '@/lib/image-sizes';
+
 import { ProductCard } from './product-card';
 
 /** A titled row of product cards on the home page. Renders nothing when there is nothing to show. */
@@ -24,7 +26,7 @@ export function ShowcaseSection({
       <ul className="grid grid-cols-2 gap-x-4 gap-y-8 lg:grid-cols-4">
         {items.map((item) => (
           <li key={item.id}>
-            <ProductCard product={item} locale={locale} as="h3" />
+            <ProductCard product={item} locale={locale} sizes={LISTING_CARD_SIZES} as="h3" />
           </li>
         ))}
       </ul>

@@ -11,6 +11,7 @@ import { ProductCard } from '@/components/product-card';
 import { SiteShell } from '@/components/site-shell';
 import { resolveLocale } from '@/i18n/locale';
 import { searchCatalog } from '@/lib/catalog';
+import { LISTING_CARD_SIZES } from '@/lib/image-sizes';
 import { pageMetadata } from '@/lib/metadata';
 import { readSearchQuery } from '@/lib/search-query';
 import { href, paths } from '@/lib/paths';
@@ -110,7 +111,13 @@ export default async function SearchPage({ params, searchParams }: Props) {
             <ul className="grid grid-cols-2 gap-x-4 gap-y-8 lg:grid-cols-4">
               {results.items.map((item, index) => (
                 <li key={item.id}>
-                  <ProductCard product={item} locale={locale} priority={index < 4} />
+                  <ProductCard
+                    product={item}
+                    locale={locale}
+                    sizes={LISTING_CARD_SIZES}
+                    priority={index === 0}
+                    eager={index > 0 && index < 4}
+                  />
                 </li>
               ))}
             </ul>

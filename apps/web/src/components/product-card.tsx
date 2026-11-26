@@ -8,9 +8,6 @@ import type { SiteLocale } from '@store/shared/seo';
 import { ResponsiveImage } from '@/components/responsive-image';
 import { href, paths } from '@/lib/paths';
 
-/** Two columns on a phone, three from `lg`, inside a 72 rem page with the 16 rem filter column. */
-const CARD_SIZES = '(min-width: 1024px) 22vw, (min-width: 768px) 30vw, 46vw';
-
 const BADGE_KEYS = {
   new: 'badgeNew',
   sale: 'badgeSale',
@@ -21,12 +18,19 @@ const BADGE_KEYS = {
 export async function ProductCard({
   product,
   locale,
+  sizes,
   priority = false,
+  eager = false,
   as: Heading = 'h2',
 }: {
   product: ProductCardDto;
   locale: SiteLocale;
+  /** The `sizes` of the grid the card sits in (`lib/image-sizes.ts`). */
+  sizes: string;
+  /** The LCP candidate of the page: at most one. */
   priority?: boolean;
+  /** Above the fold (the first row) but not the candidate. */
+  eager?: boolean;
   /** Heading level of the name: h2 under a page title, h3 under a section title. */
   as?: 'h2' | 'h3';
 }) {
@@ -49,8 +53,9 @@ export async function ProductCard({
               alt={product.image.alt}
               width={product.image.width}
               height={product.image.height}
-              sizes={CARD_SIZES}
+              sizes={sizes}
               priority={priority}
+              eager={eager}
               className="h-full w-full object-cover"
             />
           )}

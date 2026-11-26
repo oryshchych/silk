@@ -970,20 +970,47 @@ export async function runAdminSmoke({
         full.cacheControl.includes('immutable'),
     );
     // The storefront serves the renditions: AVIF and WebP at three widths with `sizes`, a reserved
-    // box, and the lead photo announced in the head (the LCP candidate).
-    const photoPage = await get(`/product/${oldSlug}`);
+    // box, and the lead photo announced in the head (the LCP candidate). The seed product's first
+    // photo is a placeholder, so the uploaded one is made the lead first, and the (ISR) page is
+    // fetched until it shows the new lead.
+    const placeholders = (await db.select().from(productImages)).filter(
+      (row) => row.productId === target.id && row.url === '/placeholder.svg',
+    );
+    for (const placeholder of placeholders) {
+      await form(
+        'updateProductImageAction',
+        { imageId: placeholder.id, sortOrder: 50 },
+        cookie(contentToken),
+        '/admin/products',
+      );
+    }
+    let photoPage = await get(`/product/${oldSlug}`);
+    for (let i = 0; i < 20 && !photoPage.html.includes('<picture>'); i++) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      photoPage = await get(`/product/${oldSlug}`);
+    }
     check(
       'images: the product page serves the uploaded photo as <picture> (AVIF, WebP, three widths, sizes, width and height) and preloads the lead photo',
       photoPage.status === 200 &&
         photoPage.html.includes('<picture>') &&
-        photoPage.html.includes('type="image/avif"') &&
-        photoPage.html.includes('type="image/webp"') &&
-        photoPage.html.includes('/thumb.avif 320w') &&
-        photoPage.html.includes('/card.webp 800w') &&
-        photoPage.html.includes('/full.webp 1600w') &&
-        /<img[^>]*width="\d+"[^>]*height="\d+"/.test(photoPage.html) &&
-        /<link rel="preload" as="image"[^>]*\/full\.avif 1600w/.test(photoPage.html),
+        /<source type="image\/avif" srcSet="[^"]*thumb\.avif 320w[^"]*" sizes="[^"]+"/.test(
+          photoPage.html,
+        ) &&
+        /<source type="image\/webp" srcSet="[^"]*card\.webp 800w[^"]*full\.webp \d+w" sizes="[^"]+"/.test(
+          photoPage.html,
+        ) &&
+        /<img src="[^"]*\/full\.webp"[^>]*width="\d+" height="\d+"/.test(photoPage.html) &&
+        /<link rel="preload" as="image"[^>]*\/full\.avif \d+w/.test(photoPage.html),
     );
+    // Put the placeholder back where the seed had it.
+    for (const placeholder of placeholders) {
+      await form(
+        'updateProductImageAction',
+        { imageId: placeholder.id, sortOrder: placeholder.sortOrder },
+        cookie(contentToken),
+        '/admin/products',
+      );
+    }
     const svg = await upload(
       Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'),
       contentToken,
