@@ -3,8 +3,10 @@
  * visitor gets. One READY and one INCOMPLETE product are written straight into the database; the
  * report must call the first ready and the second not, and the real storefront HTML in BOTH
  * languages must show the first one's title, description, name, composition and photo alt text,
- * and the second one's fallbacks without a photo. The category text is saved the way the editor does
- * (a real server action through a content editor's session) and must then appear on the category page.
+ * and the second one's fallbacks without a photo. The admin screen is fetched with real sessions of
+ * every role we can mint without a second factor: anonymous is sent to the login, manager and
+ * content read it (private, no-store, noindex) and see no cost, and a hostile product name is
+ * shown as text.
  */
 import { beginLogin, createAdminUser } from '../packages/core/src/auth/service.ts';
 import { readContentReadiness } from '../packages/core/src/content-readiness/read.ts';
@@ -29,6 +31,7 @@ interface Context {
 
 const PASSWORD = 'smoke-content-password-0123456789';
 const HOSTILE = '<script>alert("smoke")</script>';
+const COST = '4242424';
 
 export async function runContentSmoke({
   base,
@@ -108,7 +111,7 @@ export async function runContentSmoke({
     const config = { secret: authSecret };
     const client = { ip: '198.51.100.88', userAgent: 'smoke-content' };
     const tokens: Record<string, string> = {};
-    for (const role of ['content'] as const) {
+    for (const role of ['manager', 'content'] as const) {
       const email = `${role}-content-${suffix}@example.test`;
       await db.transaction(async (tx) => {
         await createAdminUser(tx, { email, password: PASSWORD, role });
@@ -187,6 +190,35 @@ export async function runContentSmoke({
     }
 
     // 3. The admin screen, by role.
+    const anonymous = await get('/admin/content-readiness');
+    check(
+      'content: the screen sends an anonymous visitor to the login, never indexed',
+      anonymous.status === 307 &&
+        new URL(anonymous.location ?? 'x:', base).pathname === '/admin/login' &&
+        anonymous.robots.includes('noindex'),
+    );
+    for (const role of ['manager', 'content'] as const) {
+      for (const locale of ['uk', 'en'] as const) {
+        const page = await get('/admin/content-readiness', {
+          Cookie: `admin_session=${tokens[role] ?? ''}; admin_locale=${locale}`,
+        });
+        const title = locale === 'uk' ? 'Готовність контенту' : 'Content readiness';
+        check(
+          `content: the screen (${role}, ${locale}) renders real text, private no-store, with the editor link, no cost, escaped names`,
+          page.status === 200 &&
+            page.html.includes(title) &&
+            !page.html.includes('MISSING_MESSAGE') &&
+            !/admin\.contentReadiness\./.test(page.html) &&
+            page.cache.includes('private') &&
+            page.cache.includes('no-store') &&
+            page.robots.includes('noindex') &&
+            page.html.includes(`/admin/products/${bad}`) &&
+            page.html.includes('&lt;script&gt;alert(&quot;smoke&quot;)') &&
+            !page.html.includes(HOSTILE) &&
+            !page.html.includes(COST),
+        );
+      }
+    }
   } finally {
     await close();
   }

@@ -79,6 +79,12 @@ export default async function AdminShellLayout({ children }: { children: React.R
             {t('categories')}
           </a>
           <a
+            href="/admin/content-readiness"
+            className="ml-4 inline-flex min-h-11 items-center underline"
+          >
+            {t('contentReadiness')}
+          </a>
+          <a
             href="/admin/dictionaries"
             className="ml-4 inline-flex min-h-11 items-center underline"
           >

@@ -366,7 +366,8 @@
       "users": "Users",
       "reviews": "Reviews",
       "returns": "Returns",
-      "legal": "Legal pages"
+      "legal": "Legal pages",
+      "contentReadiness": "Content readiness"
     },
     "dashboard": {
       "title": "Overview",
@@ -1053,6 +1054,110 @@
         "TIMEOUT": "The upload timed out."
       },
       "fromTemplate": "Start from the neutral draft template (title and text are filled in; still needs a lawyer)"
+    },
+    "contentReadiness": {
+      "title": "Content readiness",
+      "intro": "What is missing before launch, read from the database. The bounds and the workflow are in the content guide (docs/CONTENT_GUIDE.md).",
+      "readyOfTarget": "{ready} of {target} live products are ready",
+      "liveLine": "Live on the storefront: {live}. Active (meant to be sold): {active}. Drafts: {drafts}.",
+      "gateTitle": "Launch gate",
+      "gatePass": "Passed: the catalogue meets the launch criteria.",
+      "gateFail": "Not passed: fix the blockers below.",
+      "ok": "Met",
+      "notMet": "Not met",
+      "check": {
+        "active_products": "Live products (at least {expected} expected): {actual}",
+        "variants_stock_photos": "Active products without a variant, stock or a photo: {actual}",
+        "alt_meta_photo": "Active products without alt text, a meta title, a meta description or a photo: {actual}",
+        "category_seo_text": "Active categories without an SEO text in both languages: {actual}",
+        "no_blockers": "Active products and categories with any other blocker (lengths, copied snippets, missing renditions, hidden state ...): {actual}"
+      },
+      "productsTitle": "Products",
+      "filter": "Show",
+      "show": {
+        "todo": "Needs work",
+        "all": "All products",
+        "drafts": "Drafts"
+      },
+      "sku": "SKU",
+      "name": "Name",
+      "state": "State",
+      "issues": "What is missing",
+      "edit": "Edit",
+      "size": "Size (px)",
+      "unknownSize": "Unknown",
+      "stateLive": "Live",
+      "stateNotLive": "Active, not live",
+      "stateDraft": "Draft",
+      "ready": "ready",
+      "noIssues": "Nothing missing",
+      "empty": "Nothing to show here.",
+      "truncated": "The list is cut at {limit} products. The totals above cover all of them.",
+      "categoriesTitle": "Categories",
+      "categoriesLine": "{ready} of {total} active categories are ready.",
+      "category": "Category",
+      "seoUk": "SEO text, Ukrainian (characters)",
+      "seoEn": "SEO text, English (characters)",
+      "photosTitle": "Photos with problems: {count} of {total}",
+      "photosTruncated": "Only the first {limit} are listed.",
+      "severity": {
+        "blocker": "Blocker",
+        "warning": "Advice"
+      },
+      "locale": {
+        "uk": "UK",
+        "en": "EN"
+      },
+      "fields": {
+        "name": "Name",
+        "short_description": "Short description",
+        "description": "Description",
+        "composition": "Composition",
+        "care": "Care",
+        "meta_title": "Meta title",
+        "meta_description": "Meta description",
+        "alt": "Photo alt text",
+        "seo_text": "SEO text"
+      },
+      "findings": {
+        "inactive": "Draft: not active",
+        "unpublished": "Active but not published (no publish date, or in the future)",
+        "category_hidden": "Active but its category or a parent category is hidden",
+        "slug_unservable": "The slug cannot be served (lowercase words joined by hyphens only)",
+        "noindex": "Marked noindex: excluded from search, so it does not count as a launch product",
+        "brand_missing": "Brand missing",
+        "price_missing": "Price missing",
+        "no_active_variant": "No active variant",
+        "no_stock": "No active variant has stock",
+        "no_attributes": "No attributes assigned",
+        "gtin_missing": "Active variants without a valid GTIN barcode",
+        "missing": "missing",
+        "too_short": "shorter than the guide asks",
+        "too_long": "longer than the guide allows",
+        "same_in_both_languages": "the same text in both languages (copied?)",
+        "duplicate_in_catalog": "the same text as another product",
+        "claim_review": "Wording that needs a source (certification, health or absolute claim)",
+        "no_photo": "No photo",
+        "photo_alt_missing": "photos without alt text",
+        "photo_too_narrow": "photos narrower than the minimum width",
+        "photo_aspect": "photos outside the recommended proportions",
+        "photo_renditions_missing": "photos with a missing rendition (re-upload)",
+        "photo_url_unsafe": "photos with an unsafe address",
+        "variant_sku_too_long": "A variant SKU is longer than the feed allows: the feed drops that variant",
+        "no_products": "No live products in this category (an empty page for search engines)",
+        "photo_alt_too_short": "photos with alt text too short to be real",
+        "photo_alt_too_long": "photos with alt text over the guide's length"
+      },
+      "photoIssue": {
+        "alt_missing_uk": "No Ukrainian alt text",
+        "alt_missing_en": "No English alt text",
+        "too_narrow": "Narrower than the minimum width",
+        "aspect": "Proportions outside the guide",
+        "renditions_missing": "A rendition is missing: upload the photo again",
+        "url_unsafe": "The stored address is unsafe",
+        "alt_too_short": "Alt text too short to be real",
+        "alt_too_long": "Alt text longer than the guide allows"
+      }
     }
   },
   "consent": {
