@@ -52,6 +52,8 @@
     "./admin-stock": "./src/catalog-admin/stock.ts",
     "./orders-admin-read": "./src/orders-admin/read.ts",
     "./orders-admin": "./src/orders-admin/workflow.ts",
+    "./orders-admin-edit": "./src/orders-admin/edit-items.ts",
+    "./orders-admin-refund": "./src/orders-admin/refund.ts",
     "./orders-admin-schemas": "./src/orders-admin/schemas.ts"
   },
   "scripts": {

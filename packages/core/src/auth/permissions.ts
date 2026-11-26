@@ -27,6 +27,8 @@ export const PERMISSIONS = {
   'orders.view': ['owner', 'admin', 'manager'],
   'orders.manage': ['owner', 'admin', 'manager'],
   'orders.cancel': ['owner', 'admin', 'manager'],
+  'orders.edit': ['owner', 'admin', 'manager'],
+  'orders.refund': ['owner', 'admin'],
   'orders.confirm_payment': ['owner', 'admin', 'manager'],
   'media.upload': ['owner', 'admin', 'content'],
   'catalog.import': ['owner', 'admin'],

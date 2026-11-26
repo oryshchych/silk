@@ -63,6 +63,8 @@ export interface RefundRequest {
    * amount is reserved, and there is no second list that could drift from the first.
    */
   providers: ProviderMap;
+  /** The caller writes the audit row itself (an admin action: author and address, one row). */
+  auditByCaller?: boolean;
 }
 
 export interface RefundReservation {
@@ -125,13 +127,15 @@ async function reserveUnderLocks(
     })
     .returning({ id: refundOperations.id, localReference: refundOperations.localReference });
   if (operation === undefined) throw new Error('refund operation insert returned no row');
-  await tx.insert(auditLog).values({
-    userId: input.initiatedBy,
-    action: 'refund',
-    entity: 'order',
-    entityId: input.orderId,
-    diff: { operationId: operation.id, amount: input.amount, state: 'pending' },
-  });
+  if (input.auditByCaller !== true) {
+    await tx.insert(auditLog).values({
+      userId: input.initiatedBy,
+      action: 'refund',
+      entity: 'order',
+      entityId: input.orderId,
+      diff: { operationId: operation.id, amount: input.amount, state: 'pending' },
+    });
+  }
   return {
     operationId: operation.id,
     localReference: operation.localReference,

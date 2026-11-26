@@ -33,6 +33,10 @@ const KNOWN_CODES = [
   'ORDER_TRANSITION_INVALID',
   'TRANSFER_AMOUNT_MISMATCH',
   'STOCK_COUNTER_DRIFT',
+  'REFUND_BUDGET_EXCEEDED',
+  'REFUND_NO_PROVIDER',
+  'REFUND_NOT_ALLOWED',
+  'CHECKOUT_INSUFFICIENT_STOCK',
 ] as const;
 
 export type ActionOutcome = { ok: true; data?: unknown } | { ok: false; code: string };

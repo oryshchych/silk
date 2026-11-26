@@ -26,3 +26,21 @@ export const confirmTransferSchema = z.object({
   bankReference: text(1, 128),
   amount: hryvnias,
 });
+
+/** Change quantities or take lines off a not-yet-shipped order; a reason is always recorded. */
+export const editItemsSchema = z.object({
+  orderId: z.uuid(),
+  reason: text(3, 300),
+  changes: z
+    .array(z.object({ itemId: z.uuid(), quantity: z.number().int().min(0).max(1000) }))
+    .min(1)
+    .max(50),
+});
+
+/** Refund: the whole remaining amount, or a positive sum in hryvnias; a short reason (provider limit). */
+export const refundSchema = z.object({
+  orderId: z.uuid(),
+  amount: hryvnias.refine((value) => value > 0, 'must be positive').optional(),
+  attemptId: z.uuid().optional(),
+  reason: text(3, 200),
+});

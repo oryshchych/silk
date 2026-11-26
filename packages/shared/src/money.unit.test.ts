@@ -9,6 +9,7 @@ import {
   multiply,
   parseHryvnias,
   percentOf,
+  prorate,
   subtract,
   toHryvniasText,
   sum,
@@ -156,5 +157,27 @@ describe('toHryvniasText', () => {
       expect(toHryvniasText(money(kopiykas))).toBe(text);
       expect(parseHryvnias(text)).toBe(kopiykas);
     }
+  });
+});
+
+describe('prorate', () => {
+  it('rounds half-up once', () => {
+    expect(prorate(money(1000), 2, 3)).toBe(667);
+    expect(prorate(money(1000), 1, 3)).toBe(333);
+    expect(prorate(money(5), 1, 2)).toBe(3);
+    expect(prorate(money(1000), 3, 3)).toBe(1000);
+    expect(prorate(money(1000), 0, 3)).toBe(0);
+    expect(prorate(money(0), 1, 3)).toBe(0);
+  });
+
+  it('stays exact on a large amount (the product exceeds 2^53)', () => {
+    expect(prorate(money(2_000_000_000), 9_000_000, 9_000_001)).toBe(1_999_999_778);
+  });
+
+  it('refuses a zero denominator, a negative operand and fractions', () => {
+    expect(() => prorate(money(1), 1, 0)).toThrow(RangeError);
+    expect(() => prorate(money(1), -1, 2)).toThrow(RangeError);
+    expect(() => prorate(money(-1), 1, 2)).toThrow(RangeError);
+    expect(() => prorate(money(1), 0.5, 2)).toThrow(RangeError);
   });
 });
