@@ -15,6 +15,7 @@ const SECTIONS = [
   { path: paths.accountOrders, key: 'orders' },
   { path: paths.accountWishlist, key: 'wishlist' },
   { path: paths.accountReviews, key: 'reviews' },
+  { path: paths.accountReturns, key: 'returns' },
   { path: paths.accountProfile, key: 'profile' },
   { path: paths.accountAddresses, key: 'addresses' },
 ] as const;

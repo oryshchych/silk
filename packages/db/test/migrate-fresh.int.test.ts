@@ -1192,3 +1192,59 @@ describe('0017_review_moderation constraints and 0018_review_indexes', () => {
     expect(byName.get('reviews_customer_created_idx')).toContain('(customer_id, created_at)');
   });
 });
+
+describe('0020_return_invariants', () => {
+  it('the customer list and the open-request count have an index led by the customer', async () => {
+    const { rows } = await app.query<{ indexdef: string }>(
+      `SELECT indexdef FROM pg_indexes WHERE indexname = 'return_requests_customer_idx'`,
+    );
+    expect(rows[0]?.indexdef).toContain('(customer_id, created_at)');
+  });
+});
+
+describe('0019_returns_flow', () => {
+  it('a return has at most one refund operation (partial unique index) and the stock history accepts the reason `return`', async () => {
+    const { id: order } = await one<{ id: string }>(
+      app,
+      `INSERT INTO orders (order_number, customer_email, customer_phone, customer_name, delivery_method, subtotal, total)
+       VALUES ($1, 'ret@b.co', '+380501112233', 'n', 'pickup', 100, 100) RETURNING id`,
+      ['RT-2026-018018'],
+    );
+    const { id: refund } = await one<{ id: string }>(
+      app,
+      `INSERT INTO refund_operations (order_id, amount) VALUES ($1, 50) RETURNING id`,
+      [order],
+    );
+    const make = async (suffix: string): Promise<string> =>
+      (
+        await one<{ id: string }>(
+          app,
+          `INSERT INTO return_requests (request_number, order_id, reason, policy_version)
+           VALUES (next_return_number(), $1, 'defect', $2) RETURNING id`,
+          [order, `v-${suffix}`],
+        )
+      ).id;
+    const first = await make('a');
+    const second = await make('b');
+    await app.query(
+      `UPDATE return_requests SET refund_amount = 50, refund_operation_id = $1 WHERE id = $2`,
+      [refund, first],
+    );
+    await expect(
+      app.query(
+        `UPDATE return_requests SET refund_amount = 50, refund_operation_id = $1 WHERE id = $2`,
+        [refund, second],
+      ),
+    ).rejects.toMatchObject({ code: '23505', constraint: 'return_requests_refund_op_uq' });
+    await expect(
+      app.query(`UPDATE return_requests SET refund_amount = -1 WHERE id = $1`, [second]),
+    ).rejects.toMatchObject({ code: '23514', constraint: 'return_requests_refund_nonneg' });
+    const reason = await app.query<{ def: string }>(
+      `SELECT pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE conname = 'stock_adjustments_reason'`,
+    );
+    expect(reason.rows[0]?.def).toContain("'return'");
+    expect((await one<{ n: string }>(app, `SELECT next_return_number() AS n`)).n).toMatch(
+      /^RET-\d{4}-\d{5,}$/,
+    );
+  });
+});
