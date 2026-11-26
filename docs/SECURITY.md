@@ -110,6 +110,41 @@ The stock history lists the author's email next to every change, to every role t
   `hash`, `code`, `key`, `cookie`, `authorization`). Authentication events are audited without the
   email or any secret.
 
+## Customer accounts (phase 7)
+
+A customer is NOT an admin: `admin_users` has no row for them, and the two audiences never mix.
+
+- **Registration** starts with an address only. The mailed link opens a page where the PERSON sets the
+  password, so someone who types another person's address cannot choose the password of the account that
+  person verifies later. The address counts as verified when the link is used; only then are the guest
+  orders placed with that address claimed (`claimGuestOrders`: `lower(customer_email)` equals the verified
+  address, `customer_id IS NULL`), never on a typed claim.
+- **No enumeration.** Register, forgot-password and sign-in answer the same for a new address, an existing
+  one, an admin and garbage; an unknown account still spends one password hash; the mail cap per account
+  (3 an hour per purpose) is silent. A throttled client does see "too many attempts" (that depends on the
+  client, not the address).
+- **Links.** `<token row id>.<HMAC(id)>` under an HKDF key from `AUTH_SECRET`; nothing that works as a
+  credential is stored or queued (the outbox payload is the row id only). Single use (one conditional
+  UPDATE: two parallel uses have one winner), 24 hours for verification, 1 hour for reset; asking again
+  replaces the older links. Opening the link page changes nothing (a mail scanner may fetch it); the POST
+  uses it. The page sends no referrer.
+- **Sessions.** Same design as the admin (ADR-19) with two walls: `auth_sessions.audience = 'customer'`
+  (the admin lookup filters on `'admin'`) and a token signed under its own key (`customer-session`). The
+  account, its verified address and the revocation are read from the database on every request. 14 days,
+  fixed. A password reset ends every customer session of the account.
+- **Cookie `customer_session`**: HttpOnly, SameSite=Lax (the link in a mail must open the account signed
+  in), Secure outside local, `Path=/`. No storefront page reads it (the header link is static), so the
+  public pages stay one cached copy for everyone. Every mutation also checks `Origin`.
+- **Lockout** is the admin's: five wrong passwords lock the account for 15 minutes, one advisory lock per
+  account serialises attempts.
+- **Limits.** `proxy.ts` limits `/account/*` (30 a minute per client on the credential pages, 600 over all
+  clients; 300 on the rest), every method but OPTIONS, every spelling (`/%61ccount`, `/en/account`); the
+  actions repeat a per-client limit. Every response under `/account` is `private, no-store`, noindex,
+  `Referrer-Policy: no-referrer`.
+- **Ownership.** Every account query is scoped by the customer id of the SESSION, never by an id from the
+  request; a customer who names another customer's order, address or review gets the same "not found" as
+  for a record that does not exist.
+
 ## Catalog data and the cost
 
 `products.cost_price` is read for the admin only through `packages/core/src/catalog-admin/read.ts`,

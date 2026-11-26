@@ -11,6 +11,7 @@ import type { PgBoss } from 'pg-boss';
 
 import { DomainError } from '@store/core/errors';
 
+import { purgePendingAccounts } from '@store/core/customer-auth';
 import { findReservedDrift, releaseExpiredOrders } from '@store/core/expiry';
 import { findReceiptGaps } from '@store/core/fiscal-gaps';
 import { purgeQuarantine } from '@store/core/quarantine';
@@ -34,6 +35,8 @@ export const JOB_NAMES = {
   reconcileFiscal: 'fiscal.reconcile',
   /** Q17: send refunds nobody sent, alert on those whose answer is unknown. */
   sweepRefunds: 'refunds.sweep',
+  /** Phase 7: registrations nobody confirmed within a week are removed. */
+  purgePendingAccounts: 'accounts.purge-pending',
 } as const;
 
 /** Cron expressions and their timezone (ADR-17): the timezone moves the schedule, nothing else. */
@@ -48,6 +51,7 @@ const SCHEDULES = {
   [JOB_NAMES.cleanQuarantine]: '0 5 * * *',
   [JOB_NAMES.reconcileFiscal]: '0 6 * * *',
   [JOB_NAMES.sweepRefunds]: '*/10 * * * *',
+  [JOB_NAMES.purgePendingAccounts]: '20 5 * * *',
 } as const;
 const CRON_TZ = 'Europe/Kyiv';
 
@@ -119,6 +123,10 @@ export function createJobHandlers(deps: JobDeps): JobHandlers {
     [JOB_NAMES.cleanQuarantine]: async () => {
       const removed = await deps.db.transaction(async (tx) => await purgeQuarantine(tx));
       line({ level: 'info', scope: JOB_NAMES.cleanQuarantine, removed });
+    },
+    [JOB_NAMES.purgePendingAccounts]: async () => {
+      const removed = await deps.db.transaction(async (tx) => await purgePendingAccounts(tx));
+      line({ level: 'info', scope: JOB_NAMES.purgePendingAccounts, removed });
     },
     [JOB_NAMES.reconcileFiscal]: async () => {
       const gaps = await findReceiptGaps(deps.db);

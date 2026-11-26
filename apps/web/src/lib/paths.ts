@@ -11,6 +11,11 @@ export const paths = {
   orderSuccess: '/order/success',
   orderFailed: '/order/failed',
   orderTrack: '/order/track',
+  account: '/account',
+  accountLogin: '/account/login',
+  accountRegister: '/account/register',
+  accountForgot: '/account/forgot',
+  accountSetPassword: '/account/set-password',
 } as const;
 
 export const href = (locale: SiteLocale, path: string, search = ''): string =>

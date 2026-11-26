@@ -63,7 +63,10 @@
     "./customers-admin-export": "./src/customers-admin/export.ts",
     "./orders-admin-export": "./src/orders-admin/export.ts",
     "./waybill": "./src/shipping/waybill.ts",
-    "./orders-admin-schemas": "./src/orders-admin/schemas.ts"
+    "./orders-admin-schemas": "./src/orders-admin/schemas.ts",
+    "./customer-auth": "./src/customer-auth/account.ts",
+    "./customer-session": "./src/customer-auth/session.ts",
+    "./customer-token": "./src/customer-auth/tokens.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"

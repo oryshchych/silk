@@ -6,7 +6,9 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { routing } from './i18n/routing';
 import { stripDefaultLocalePrefix } from './lib/locale-redirect';
 import { clientAddress, UNKNOWN_CLIENT } from './lib/client-address';
+import { isAccountAuthPath, isAccountPath } from './lib/account-path';
 import { isAdminAuthPath, isAdminPath } from './lib/admin-path';
+import { CUSTOMER_COOKIE } from './lib/account/cookies';
 import { SESSION_COOKIE } from './lib/admin/cookies';
 import { missingPath, parseProductPath } from './lib/product-path';
 import { redirectMap } from './lib/redirect-map';
@@ -50,6 +52,12 @@ const GLOBAL_KEY = 'all';
 const adminAuthLimiter = createRateLimiter({ limit: 30, windowMs: 60_000 });
 const adminAuthGlobalLimiter = createRateLimiter({ limit: 600, windowMs: 60_000, maxKeys: 1 });
 const adminLimiter = createRateLimiter({ limit: 300, windowMs: 60_000 });
+// The customer account. Pages that take a credential or send a mail (and the server actions that
+// post to them) get a hard per-client limit and a cap over all clients' attempts; the rest a
+// generous one. Every method but OPTIONS counts, on every spelling of the path.
+const accountAuthLimiter = createRateLimiter({ limit: 30, windowMs: 60_000 });
+const accountAuthGlobalLimiter = createRateLimiter({ limit: 600, windowMs: 60_000, maxKeys: 1 });
+const accountLimiter = createRateLimiter({ limit: 300, windowMs: 60_000 });
 // Reverse proxies that append to X-Forwarded-For and are trusted (Traefik: 1).
 const trustedHops = env.TRUSTED_PROXY_HOPS ?? 1;
 let unknownClientLoggedAt = Number.NEGATIVE_INFINITY;
@@ -114,7 +122,40 @@ function handleAdmin(request: NextRequest): NextResponse {
   return adminHeaders(NextResponse.next());
 }
 
-export async function proxy(request: NextRequest): Promise<NextResponse> {
+/**
+ * The account answers a person, so no shared cache may keep it; it is never indexed, and the
+ * page behind a mailed link sends no referrer (its query holds a one-time credential).
+ */
+function accountHeaders(response: NextResponse): NextResponse {
+  response.headers.set('Cache-Control', 'private, no-store');
+  response.headers.set('X-Robots-Tag', 'noindex, nofollow');
+  response.headers.set('Referrer-Policy', 'no-referrer');
+  return response;
+}
+
+/** Limits and headers of the account. Access control is in the pages and actions (AGENTS.md 2.6). */
+function handleAccount(request: NextRequest): NextResponse | null {
+  const { pathname } = request.nextUrl;
+  if (request.method === 'OPTIONS') return null;
+  const client = clientAddress(request.headers.get('x-forwarded-for'), trustedHops);
+  if (client === UNKNOWN_CLIENT) noteUnknownClient();
+  const authPath = isAccountAuthPath(pathname);
+  const clientVerdict = (authPath ? accountAuthLimiter : accountLimiter).check(client);
+  const tries = request.method !== 'GET' && request.method !== 'HEAD';
+  const verdict =
+    authPath && tries && clientVerdict.allowed
+      ? accountAuthGlobalLimiter.check(GLOBAL_KEY)
+      : clientVerdict;
+  if (verdict.allowed) return null;
+  return accountHeaders(
+    new NextResponse('Too many requests', {
+      status: 429,
+      headers: { 'Retry-After': String(verdict.retryAfterSeconds) },
+    }),
+  );
+}
+
+async function route(request: NextRequest): Promise<NextResponse> {
   const { pathname } = request.nextUrl;
 
   if (
@@ -132,6 +173,22 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   }
 
   if (isAdminPath(pathname)) return withNoindex(handleAdmin(request));
+
+  // The account: limit first (a refusal ends here), then let the normal routing run and stamp its
+  // headers on whatever it answers (a redirect from `/uk/account`, the page itself).
+  const accountRefusal = isAccountPath(pathname) ? handleAccount(request) : null;
+  if (accountRefusal !== null) return withNoindex(accountRefusal);
+  // A convenience only (the page checks the session itself): the account root without a session
+  // cookie goes straight to the sign-in page, with a real 307 instead of a render.
+  const accountRoot = /^\/(?:(uk|en)\/)?account\/?$/i.exec(pathname);
+  if (
+    accountRoot !== null &&
+    (request.method === 'GET' || request.method === 'HEAD') &&
+    !request.cookies.has(CUSTOMER_COOKIE)
+  ) {
+    const prefix = accountRoot[1] === undefined ? '' : `/${accountRoot[1].toLowerCase()}`;
+    return withNoindex(NextResponse.redirect(new URL(`${prefix}/account/login`, request.url), 307));
+  }
 
   if (request.method !== 'OPTIONS' && isSearchPath(pathname)) {
     const client = clientAddress(request.headers.get('x-forwarded-for'), trustedHops);
@@ -222,6 +279,11 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   // (robots.txt, sitemap.xml), інакше next-intl перепише їх у /uk/....
   const isPage = !pathname.startsWith('/api/') && !/\.[a-z0-9]+$/i.test(pathname);
   return withNoindex(isPage ? intl(request) : NextResponse.next());
+}
+
+export async function proxy(request: NextRequest): Promise<NextResponse> {
+  const response = await route(request);
+  return isAccountPath(request.nextUrl.pathname) ? accountHeaders(response) : response;
 }
 
 export const config = {

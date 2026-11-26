@@ -379,6 +379,7 @@ describe('scheduled jobs', () => {
         JOB_NAMES.cleanQuarantine,
         JOB_NAMES.reconcileFiscal,
         JOB_NAMES.sweepRefunds,
+        JOB_NAMES.purgePendingAccounts,
       ].sort(),
     );
     expect(schedules.every((s) => s.timezone === 'Europe/Kyiv')).toBe(true);

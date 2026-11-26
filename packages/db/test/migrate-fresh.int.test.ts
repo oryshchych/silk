@@ -1040,3 +1040,61 @@ describe('0014_q42_fiscal_check_drop_open_idx', () => {
     );
   });
 });
+
+describe('0015_customer_auth', () => {
+  it('a session is an admin one unless it says otherwise; the audience is a closed list', async () => {
+    const { id: user } = await one<{ id: string }>(
+      app,
+      `INSERT INTO auth_users (email) VALUES ('aud@example.test') RETURNING id`,
+    );
+    const { audience } = await one<{ audience: string }>(
+      app,
+      `INSERT INTO auth_sessions (user_id, expires_at) VALUES ($1, now() + interval '1 hour') RETURNING audience`,
+      [user],
+    );
+    expect(audience).toBe('admin');
+    await expect(
+      app.query(
+        `INSERT INTO auth_sessions (user_id, expires_at, audience) VALUES ($1, now(), 'root')`,
+        [user],
+      ),
+    ).rejects.toMatchObject({ code: '22P02' });
+  });
+
+  it('an e-mail link row names a purpose from a closed list and follows its user', async () => {
+    const { id: user } = await one<{ id: string }>(
+      app,
+      `INSERT INTO auth_users (email) VALUES ('tok@example.test') RETURNING id`,
+    );
+    const { locale } = await one<{ locale: string }>(
+      app,
+      `INSERT INTO auth_email_tokens (user_id, purpose, expires_at) VALUES ($1, 'verify_email', now() + interval '1 day') RETURNING locale`,
+      [user],
+    );
+    expect(locale).toBe('uk');
+    await expect(
+      app.query(
+        `INSERT INTO auth_email_tokens (user_id, purpose, expires_at) VALUES ($1, 'login', now())`,
+        [user],
+      ),
+    ).rejects.toMatchObject({ code: '22P02' });
+    await app.query(`DELETE FROM auth_users WHERE id = $1`, [user]);
+    expect(
+      (await app.query(`SELECT 1 FROM auth_email_tokens WHERE user_id = $1`, [user])).rowCount,
+    ).toBe(0);
+  });
+
+  it('a customer e-mail is stored in lower case (Q56)', async () => {
+    await expect(
+      app.query(`INSERT INTO customers (email) VALUES ('Mixed@Example.test')`),
+    ).rejects.toMatchObject({ code: '23514', constraint: 'customers_email_lower' });
+    await app.query(`INSERT INTO customers (email) VALUES ('mixed@example.test')`);
+  });
+
+  it('the guest-order claim by address uses an index, not a scan', async () => {
+    const { rows } = await app.query<{ indexdef: string }>(
+      `SELECT indexdef FROM pg_indexes WHERE indexname = 'orders_email_lower_idx'`,
+    );
+    expect(rows[0]?.indexdef).toContain('lower((customer_email)::text)');
+  });
+});

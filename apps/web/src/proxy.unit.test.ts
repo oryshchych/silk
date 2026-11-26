@@ -338,3 +338,75 @@ describe('proxy: redirects and gone pages', () => {
     expect(has).not.toHaveBeenCalled();
   });
 });
+
+describe('proxy: customer account limits and headers', () => {
+  const account = (path: string, method = 'GET', ip = '203.0.113.50') =>
+    new NextRequest(`http://localhost:3000${path}`, {
+      method,
+      headers: { 'x-forwarded-for': ip },
+    });
+
+  it('stamps no-store, noindex and no-referrer on every account answer, in either language', async () => {
+    const proxy = await loadProxy('local');
+    for (const path of ['/account', '/en/account/login', '/account/set-password?t=x']) {
+      const response = await proxy(account(path));
+      expect(response.headers.get('cache-control'), path).toBe('private, no-store');
+      expect(response.headers.get('x-robots-tag'), path).toBe('noindex, nofollow');
+      expect(response.headers.get('referrer-policy'), path).toBe('no-referrer');
+    }
+    // A page of the storefront is not an account page.
+    expect((await proxy(account('/category/bras'))).headers.get('referrer-policy')).toBeNull();
+  });
+
+  it('sends the account root without a session cookie to the sign-in page (307), in either language', async () => {
+    const proxy = await loadProxy('local');
+    for (const [from, to] of [
+      ['/account', '/account/login'],
+      ['/en/account', '/en/account/login'],
+      ['/en/account/', '/en/account/login'],
+    ] as const) {
+      const response = await proxy(account(from));
+      expect(response.status, from).toBe(307);
+      expect(new URL(response.headers.get('location') ?? '').pathname, from).toBe(to);
+    }
+    // With a cookie the page decides (the cookie proves nothing here), and POST is never redirected.
+    const withCookie = new NextRequest('http://localhost:3000/account', {
+      headers: { cookie: 'customer_session=x', 'x-forwarded-for': '203.0.113.60' },
+    });
+    expect((await proxy(withCookie)).status).not.toBe(307);
+    expect((await proxy(account('/account', 'POST', '203.0.113.61'))).status).not.toBe(307);
+  });
+
+  it('limits the credential pages to 30 a minute per client, every method but OPTIONS, every spelling', async () => {
+    const proxy = await loadProxy('local');
+    const spellings = [
+      '/account/login',
+      '/en/account/login',
+      '/%61ccount/login',
+      '/ACCOUNT//login/',
+    ];
+    for (let i = 0; i < 30; i++) {
+      const path = spellings[i % spellings.length] ?? '/account/login';
+      expect((await proxy(account(path, i % 2 === 0 ? 'GET' : 'POST'))).status).not.toBe(429);
+    }
+    const blocked = await proxy(account('/account/forgot', 'PUT'));
+    expect(blocked.status).toBe(429);
+    expect(blocked.headers.get('cache-control')).toBe('private, no-store');
+    expect(Number(blocked.headers.get('retry-after'))).toBeGreaterThan(0);
+    // OPTIONS is never counted; another client and the storefront are unaffected.
+    expect((await proxy(account('/account/login', 'OPTIONS'))).status).not.toBe(429);
+    expect((await proxy(account('/account/login', 'GET', '198.51.100.9'))).status).not.toBe(429);
+    expect((await proxy(account('/category/bras'))).status).not.toBe(429);
+  });
+
+  it('caps the attempts of ALL clients on the credential pages (600 a minute)', async () => {
+    const proxy = await loadProxy('local');
+    let blocked = 0;
+    for (let i = 0; i < 700; i++) {
+      const ip = `10.${String(Math.floor(i / 250))}.${String(i % 250)}.1, 192.0.2.${String(i % 250)}`;
+      const response = await proxy(account('/account/register', 'POST', ip));
+      if (response.status === 429) blocked += 1;
+    }
+    expect(blocked).toBeGreaterThanOrEqual(90);
+  });
+});
