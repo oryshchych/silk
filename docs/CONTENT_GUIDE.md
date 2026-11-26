@@ -102,14 +102,22 @@ The report lists, per photo, what is wrong: alt text missing or too short, narro
 9. **Publish** each product (owner, admin and content may publish). It then appears on the storefront within a minute.
 10. **Gate** (section 8).
 
-## 6. The import columns
+## 6. The import columns and what the import does
 
 Basics: `sku` (required, unique), `slug`, `brand`, `category`, `name_uk`, `name_en`, `price`, `compare_at_price`, `cost_price` (owner and admin only), `weight_grams`.
-Content (each with `_uk` and `_en`): `short_description`, `description`, `composition`, `care`, `meta_title`, `meta_description`.
+Content (each with `_uk` and `_en`, bounds in section 2): `short_description`, `description`, `composition`, `care`, `meta_title`, `meta_description`.
 
-A product is matched by `sku`. To **create**, these are required: `sku`, brand, category, both names, price. Columns the file does not have are listed in the preview ("not in the file"); unknown columns are listed and ignored. Variants, stock, photos, alt text and attributes are not in the CSV: they are entered in the editors (step 7).
+How to fill the file:
 
-A row whose SKU starts with `EXAMPLE-` is the template's example and is always refused.
+- A product is matched by `sku`. To **create** one these are required: `sku`, `brand`, `category`, both names, `price`. Columns the file does not have are listed in the preview ("not in the file"); unknown columns are listed and ignored.
+- **Ukrainian and English are separate columns.** A missing English text is not filled from the Ukrainian one: that language's page then has no text, and the gate counts it as missing.
+- **An empty cell never deletes anything.** On an update it leaves the stored text as it is, and there is no way to clear a field through the CSV: use the product card to clear one.
+- **Text is plain text.** A line break inside a quoted cell starts a new paragraph; anything between angle brackets (`<S>`) is dropped by the storefront, so do not use angle brackets (the preview warns). Invisible characters (zero-width, direction marks, control characters) are removed on import.
+- **The slug** is made from `name_en` for a new product when the slug cell is empty (lowercase Latin words with hyphens). It is not changed afterwards; a filled slug cell on an update changes the address and leaves a 301 from the old one. Two rows (or a row and an existing product) with the same slug are reported in the preview: give each its own value in the `slug` column.
+- **Photos, alt text, colours, sizes and stock are not in the CSV.** They are added in the product card afterwards (section 5, step 7). A product made from a CSV is a **draft** until then; the preview says so on every created row.
+- **The template's example row** (its SKU starts with `EXAMPLE-`, and its cells carry `[EXAMPLE]` or `[ПРИКЛАД]`) is always refused, in any spelling: delete it, do not edit it into a product.
+
+Reading the preview: every line shows "Row N (line M)", the row as Excel numbers it and the line in the file. **Errors** (red) mean the row is skipped and the others still import; each names its column where it can (`meta_title_uk: text too long`). **Notes** (grey) are advice: they list what the product will still be missing or outside the bounds after the import, and never stop it.
 
 ## 7. What the readiness gate checks and how to read it
 
