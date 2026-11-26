@@ -593,33 +593,47 @@ export async function adminUserExists(db: Reader, email: string): Promise<boolea
   return rows.length > 0;
 }
 
-/** Creates an admin user (a seed or the owner's CLI; there is no public sign-up). */
-export async function createAdminUser(
-  tx: Tx,
-  input: { email: string; password: string; role: AdminRole; actorId?: string | null },
-): Promise<{ userId: string }> {
-  const email = z.email().parse(input.email.trim().toLowerCase());
-  const password = passwordSchema.safeParse(input.password);
+/** The rules every new password follows (length, and not the part of the email before the `@`). */
+export function assertPasswordAllowed(email: string, plain: string): void {
+  const password = passwordSchema.safeParse(plain);
   if (!password.success)
     throw new WeakPasswordError(password.error.issues[0]?.message ?? 'invalid');
   const namePart = email.split('@')[0] ?? email;
   // Only a name long enough to mean something: a one-letter name would refuse most passwords.
-  if (namePart.length >= 4 && input.password.toLowerCase().includes(namePart)) {
+  if (namePart.length >= 4 && plain.toLowerCase().includes(namePart.toLowerCase())) {
     throw new WeakPasswordError('must not contain the email name');
   }
+}
+
+/** Creates an admin user (a seed, the owner's CLI or the owner's screen; there is no public sign-up). */
+export async function createAdminUser(
+  tx: Tx,
+  input: {
+    email: string;
+    password: string;
+    role: AdminRole;
+    actorId?: string | null;
+    /** The caller writes the audit row itself (an admin action: author and address, one row). */
+    auditByCaller?: boolean;
+  },
+): Promise<{ userId: string }> {
+  const email = z.email().parse(input.email.trim().toLowerCase());
+  assertPasswordAllowed(email, input.password);
   const [user] = await tx.insert(authUsers).values({ email }).returning({ id: authUsers.id });
   if (user === undefined) throw new Error('user insert returned no row');
   await tx
     .insert(authCredentials)
     .values({ userId: user.id, passwordHash: await hashPassword(input.password) });
   await tx.insert(adminUsers).values({ userId: user.id, role: input.role });
-  await writeAudit(tx, {
-    userId: input.actorId ?? null,
-    action: 'create',
-    entity: 'admin_user',
-    entityId: user.id,
-    diff: { role: input.role },
-  });
+  if (input.auditByCaller !== true) {
+    await writeAudit(tx, {
+      userId: input.actorId ?? null,
+      action: 'create',
+      entity: 'admin_user',
+      entityId: user.id,
+      diff: { role: input.role },
+    });
+  }
   return { userId: user.id };
 }
 

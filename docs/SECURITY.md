@@ -77,6 +77,7 @@ confirmed TOTP before a session counts; so must anyone who enrolled one.
 | Download the product CSV | `catalog.export` | `GET /admin/export/products` (`app/admin/export/products/route.ts`): the cost column only for `catalog.cost.view`, every export audited |
 | Change a quantity or take a line off an unshipped order | `orders.edit` | `editOrderItemsAction`: refused while an online payment is open, after a fiscal receipt, and for a shipped or cancelled order; the audit row records the lines that really changed |
 | Refund (full or part) | `orders.refund` | `refundOrderAction`: the amount is reserved and audited in one transaction, the provider is called after the commit; a client request id makes a double submit of a partial refund one refund |
+| Create an account, change a role, deactivate or activate, reset a password | `users.manage` (owner only) | `createUserAction`, `changeUserRoleAction`, `setUserActiveAction`, `resetUserPasswordAction` (`actions/admin-users.ts`, rules in `core/auth/users-admin.ts`): nobody changes their OWN account here, the last active owner cannot be demoted or deactivated (one advisory lock serialises two owners demoting each other), a role change, a deactivation and a password reset end every session of that person, a password is never audited, returned or stored in clear |
 | Withdraw an unsent refund; confirm a refund whose answer is unknown | `orders.refund` | `withdrawRefundAction` (only `pending`), `resolveRefundAction` (only `in_flight` or `unknown`, the outcome and where it was checked are the person's, audited with the author); the worker sweep (`refunds.sweep`) sends an unsent one and only ALERTS on an unknown one, it never guesses |
 | Adjust the stock of a variant (receipt, write-off, stocktake) | `stock.adjust` | `adjustStockAction` (`actions/admin-stock.ts`): refuses a result below the reserved quantity (Q44), a request id makes a repeat harmless, the history row and the audit entry are written in the same transaction |
 
@@ -182,7 +183,9 @@ Both routes check the session, the permission and a per-user limit (a 429 carrie
 
 ## Known gaps (owner queue)
 
+- **No forced password change** (owner queue Q55). An account the owner creates or resets keeps the password the owner typed until its holder asks for another one, and the owner knows it meanwhile. The Users screen and `pnpm admin:create` are the ONLY ways to set a password. Default: a later migration (`must_change_password`) and a change-password screen with the Q43 hardening PR. The password policy is a 12-character minimum plus the email-name check (no common-password list): also asked in Q55.
+- Reactivating an account keeps its old authenticator (TOTP) and does not clear a lockout; a password reset clears the lockout and ends every session.
+
 - Mobile refresh-token rotation (the bearer token works, refresh rotation needs its own table).
-- Password reset by email, and TOTP re-enrolment or user management screens: not in phase 4's plan;
-  until then the owner resets an account with `pnpm admin:create`.
+- Password reset by email and TOTP re-enrolment: not built. The owner resets another person's password on the Users screen (phase 5, Q41); the owner's own password is reset with `pnpm admin:create`.
 - QR code for enrolment: the key and the `otpauth` link are shown as text.

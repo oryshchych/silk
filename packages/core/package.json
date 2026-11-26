@@ -34,6 +34,7 @@
     "./auth": "./src/auth/service.ts",
     "./auth-permissions": "./src/auth/permissions.ts",
     "./auth-totp": "./src/auth/totp.ts",
+    "./users-admin": "./src/auth/users-admin.ts",
     "./audit": "./src/audit/write-audit.ts",
     "./admin-products": "./src/catalog-admin/products.ts",
     "./admin-variants": "./src/catalog-admin/variants.ts",
