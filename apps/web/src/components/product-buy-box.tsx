@@ -1,13 +1,14 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import Image from 'next/image';
 import { useId, useState } from 'react';
 
 import { calculateBraSize } from '@store/core/bra-size';
 import type { ColorDto, ProductImageDto } from '@store/shared/dto/catalog';
 
 import { AddToCartButton } from '@/components/add-to-cart-button';
+import { ResponsiveImage } from '@/components/responsive-image';
+import { GALLERY_SIZES } from '@/lib/image-sizes';
 import {
   imagesForColor,
   initialSelection,
@@ -18,7 +19,6 @@ import {
 } from '@/lib/variant-selection';
 
 const FIELD = { color: 'color', size: 'size' } as const;
-const IMAGE_SIZES = '(min-width: 768px) 50vw, 100vw';
 const THUMB_SIZES = '80px';
 
 interface Props {
@@ -49,14 +49,13 @@ function Gallery({ images, name }: { images: ProductImageDto[]; name: string }) 
             {name}
           </span>
         ) : (
-          <Image
-            src={main.url}
+          <ResponsiveImage
+            url={main.url}
             alt={main.alt}
-            width={main.width ?? 800}
-            height={main.height ?? 1000}
-            sizes={IMAGE_SIZES}
+            width={main.width}
+            height={main.height}
+            sizes={GALLERY_SIZES}
             priority
-            unoptimized
             className="h-full w-full object-cover"
           />
         )}
@@ -74,13 +73,12 @@ function Gallery({ images, name }: { images: ProductImageDto[]; name: string }) 
                 aria-current={position === index}
                 className="size-16 overflow-hidden rounded-sm border border-border aria-[current=true]:border-accent"
               >
-                <Image
-                  src={image.url}
+                <ResponsiveImage
+                  url={image.url}
                   alt=""
-                  width={image.width ?? 800}
-                  height={image.height ?? 1000}
+                  width={image.width}
+                  height={image.height}
                   sizes={THUMB_SIZES}
-                  unoptimized
                   className="h-full w-full object-cover"
                 />
               </button>

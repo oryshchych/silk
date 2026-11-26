@@ -1,12 +1,15 @@
 import { getTranslations } from 'next-intl/server';
-import Image from 'next/image';
 import Link from 'next/link';
 
 import { formatMoney } from '@store/shared/money';
 import type { ProductCardDto } from '@store/shared/dto/catalog';
 import type { SiteLocale } from '@store/shared/seo';
 
+import { ResponsiveImage } from '@/components/responsive-image';
 import { href, paths } from '@/lib/paths';
+
+/** Two columns on a phone, three from `lg`, inside a 72 rem page with the 16 rem filter column. */
+const CARD_SIZES = '(min-width: 1024px) 22vw, (min-width: 768px) 30vw, 46vw';
 
 const BADGE_KEYS = {
   new: 'badgeNew',
@@ -41,13 +44,13 @@ export async function ProductCard({
               {t('noImage')}
             </span>
           ) : (
-            <Image
-              src={product.image.url}
+            <ResponsiveImage
+              url={product.image.url}
               alt={product.image.alt}
-              width={product.image.width ?? 800}
-              height={product.image.height ?? 1000}
+              width={product.image.width}
+              height={product.image.height}
+              sizes={CARD_SIZES}
               priority={priority}
-              unoptimized
               className="h-full w-full object-cover"
             />
           )}

@@ -969,6 +969,21 @@ export async function runAdminSmoke({
         full.contentType === 'image/webp' &&
         full.cacheControl.includes('immutable'),
     );
+    // The storefront serves the renditions: AVIF and WebP at three widths with `sizes`, a reserved
+    // box, and the lead photo announced in the head (the LCP candidate).
+    const photoPage = await get(`/product/${oldSlug}`);
+    check(
+      'images: the product page serves the uploaded photo as <picture> (AVIF, WebP, three widths, sizes, width and height) and preloads the lead photo',
+      photoPage.status === 200 &&
+        photoPage.html.includes('<picture>') &&
+        photoPage.html.includes('type="image/avif"') &&
+        photoPage.html.includes('type="image/webp"') &&
+        photoPage.html.includes('/thumb.avif 320w') &&
+        photoPage.html.includes('/card.webp 800w') &&
+        photoPage.html.includes('/full.webp 1600w') &&
+        /<img[^>]*width="\d+"[^>]*height="\d+"/.test(photoPage.html) &&
+        /<link rel="preload" as="image"[^>]*\/full\.avif 1600w/.test(photoPage.html),
+    );
     const svg = await upload(
       Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'),
       contentToken,

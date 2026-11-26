@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
+import { preload } from 'react-dom';
 import { notFound } from 'next/navigation';
 
 import { formatMoney } from '@store/shared/money';
@@ -13,10 +14,12 @@ import { SiteShell } from '@/components/site-shell';
 import { SizeGuide } from '@/components/size-guide';
 import { resolveLocale } from '@/i18n/locale';
 import { loadProduct } from '@/lib/catalog';
+import { GALLERY_SIZES } from '@/lib/image-sizes';
 import { htmlToParagraphs, htmlToSnippet } from '@/lib/html-text';
 import { pageMetadata } from '@/lib/metadata';
 import { productImageUrls, uniqueOffers } from '@/lib/product-jsonld';
-import { initialSelection } from '@/lib/variant-selection';
+import { renditionSources } from '@/lib/renditions';
+import { imagesForColor, initialSelection } from '@/lib/variant-selection';
 import { href, paths } from '@/lib/paths';
 import { getSiteUrl } from '@/lib/site-url';
 
@@ -84,6 +87,19 @@ export default async function ProductPage({ params }: Props) {
     initialSelection(product.variants).colorSlug,
     siteUrl,
   );
+  // The photo the gallery opens on is the LCP element: tell the browser about it in the first bytes
+  // (AVIF only: a browser that cannot decode it skips the hint and loads the WebP normally).
+  const lead = imagesForColor(product.images, initialSelection(product.variants).colorSlug)[0];
+  const leadSources = lead === undefined ? null : renditionSources(lead.url, lead.width);
+  if (lead !== undefined && leadSources !== null) {
+    preload(lead.url, {
+      as: 'image',
+      imageSrcSet: leadSources.avif,
+      imageSizes: GALLERY_SIZES,
+      fetchPriority: 'high',
+      type: 'image/avif',
+    });
+  }
   const bands = [
     ...new Set(
       product.variants.flatMap((variant) => (variant.band === null ? [] : [variant.band])),
