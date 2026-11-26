@@ -154,8 +154,16 @@ export const contentReadinessDto = z.object({
   acceptance: z.array(acceptanceCheckDto),
   /** The launch gate: every acceptance check passes (the last one is "no blocker anywhere"). */
   gatePassed: z.boolean(),
-  /** Not ready first (by SKU), then the rest. Capped: see `productsTruncated`. */
+  /** The view that was asked for (a filter, then a page): the filter runs before the page is cut. */
+  show: z.enum(['todo', 'all', 'drafts']),
+  page: z.number().int(),
+  pageSize: z.number().int(),
+  pages: z.number().int(),
+  /** How many products the filter matches in all, not only on this page. */
+  matchingProducts: z.number().int(),
+  /** Not ready first (by SKU), then the rest, for this page only. */
   products: z.array(productReadinessDto),
+  /** More matched than this first page holds (the CLI says so; the screen pages). */
   productsTruncated: z.boolean(),
   categories: z.array(categoryReadinessDto),
   photoProblems: z.array(photoProblemDto),

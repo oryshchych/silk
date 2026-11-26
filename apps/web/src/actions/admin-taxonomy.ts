@@ -1,6 +1,8 @@
 'use server';
 
 import { createCategory, moveCategory, updateCategory } from '@store/core/admin-categories';
+import { categoryTextToHtml } from '@store/core/admin-category-text';
+import { DomainError } from '@store/core/errors';
 import {
   saveAttribute,
   saveAttributeValue,
@@ -16,6 +18,7 @@ import {
   moveCategorySchema,
   setProductAttributesSchema,
   sizeSchema,
+  updateCategoryContentSchema,
   updateCategorySchema,
 } from '@store/core/admin-schemas';
 
@@ -51,6 +54,39 @@ export async function updateCategoryAction(input: unknown) {
     input,
     dropped: (data) => (data.changed.includes('slug') ? { redirects: true } : {}),
     op: updateCategory,
+  });
+}
+
+/** Thrown when a category text is too long or too deeply nested for the sanitiser. */
+class CategoryTextError extends DomainError {
+  constructor() {
+    super('ADMIN_CATEGORY_TEXT_INVALID', 'The category text is too long or too deeply nested');
+  }
+}
+
+/** The texts of a category, from its content editor. The SEO texts go through `categoryTextToHtml`. */
+export async function updateCategoryContentAction(input: unknown) {
+  return await catalogAction({
+    permission: 'categories.edit',
+    schema: updateCategoryContentSchema,
+    input,
+    op: async (tx, value) => {
+      let seoTextUk: string;
+      let seoTextEn: string;
+      try {
+        seoTextUk = categoryTextToHtml(value.seoTextUk);
+        seoTextEn = categoryTextToHtml(value.seoTextEn);
+      } catch (error) {
+        if (error instanceof RangeError) throw new CategoryTextError();
+        throw error;
+      }
+      return await updateCategory(tx, {
+        ...value,
+        // An empty text is NULL, not an empty string: "no text" has one spelling.
+        seoTextUk: seoTextUk === '' ? null : seoTextUk,
+        seoTextEn: seoTextEn === '' ? null : seoTextEn,
+      });
+    },
   });
 }
 

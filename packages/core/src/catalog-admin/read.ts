@@ -18,9 +18,11 @@ import {
 } from '@store/db/schema';
 import type { Reader } from '@store/db/types';
 import {
+  adminCategoryContentDto,
   adminCategoryDto,
   serializeAdminProduct,
   serializeAdminProductRow,
+  type AdminCategoryContentDto,
   type AdminCategoryDto,
   type AdminProductDto,
   type AdminProductRowDto,
@@ -179,6 +181,32 @@ export async function listAdminCategories(db: Reader): Promise<AdminCategoryDto[
     .from(categories)
     .orderBy(asc(categories.depth), asc(categories.sortOrder), asc(categories.slug));
   return rows.map((row) => adminCategoryDto.parse(row));
+}
+
+export async function getAdminCategoryContent(
+  db: Reader,
+  categoryId: string,
+): Promise<AdminCategoryContentDto | null> {
+  const [row] = await db
+    .select({
+      id: categories.id,
+      slug: categories.slug,
+      nameUk: categories.nameUk,
+      nameEn: categories.nameEn,
+      isActive: categories.isActive,
+      noindex: categories.noindex,
+      descriptionUk: categories.descriptionUk,
+      descriptionEn: categories.descriptionEn,
+      seoTextUk: categories.seoTextUk,
+      seoTextEn: categories.seoTextEn,
+      metaTitleUk: categories.metaTitleUk,
+      metaTitleEn: categories.metaTitleEn,
+      metaDescriptionUk: categories.metaDescriptionUk,
+      metaDescriptionEn: categories.metaDescriptionEn,
+    })
+    .from(categories)
+    .where(eq(categories.id, categoryId));
+  return row === undefined ? null : adminCategoryContentDto.parse(row);
 }
 
 export interface AdminSizeOption {

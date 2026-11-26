@@ -22,7 +22,7 @@ import {
 import {
   DEFAULT_EXPECTED_ACTIVE,
   readContentReadiness,
-} from '../packages/core/src/content-readiness/read.ts';
+} from '../packages/core/src/content-readiness/report.ts';
 import { createDb } from '../packages/db/src/client.ts';
 
 const FLAGS = ['--gate', '--json', '--report-only', '--allow-remote'];

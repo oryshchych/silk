@@ -202,6 +202,13 @@ function CategoryLine({
       <td className="px-2 py-2">
         {canEdit ? (
           <>
+            <a
+              href={`/admin/categories/${row.id}`}
+              className="mr-2 inline-flex min-h-11 min-w-11 items-center underline"
+            >
+              {t('texts')}
+              <span className="sr-only">{` ${row.nameUk}`}</span>
+            </a>
             <button
               type="submit"
               form={formId}
