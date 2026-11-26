@@ -19,7 +19,8 @@
     "./phone": "./src/phone.ts",
     "./dto/admin-catalog": "./src/dto/admin-catalog.ts",
     "./dto/admin-order": "./src/dto/admin-order.ts",
-    "./dto/admin-customer": "./src/dto/admin-customer.ts"
+    "./dto/admin-customer": "./src/dto/admin-customer.ts",
+    "./dto/account": "./src/dto/account.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"

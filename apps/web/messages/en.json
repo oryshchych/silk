@@ -150,7 +150,9 @@
     "addToCart": "Add to cart",
     "adding": "Adding…",
     "added": "Added to cart.",
-    "viewCart": "View cart"
+    "viewCart": "View cart",
+    "mySizeAvailable": "Your size ({size}) is available.",
+    "mySizeMissing": "Your size ({size}) is not available in this colour."
   },
   "search": {
     "title": "Search",
@@ -944,6 +946,41 @@
       "weak": "That password is not accepted: at least 12 characters, without the part of your address before the @.",
       "rateLimited": "Too many attempts. Wait a little and try again.",
       "error": "Something went wrong. Please try again."
-    }
+    },
+    "sections": "Account sections",
+    "section": {
+      "orders": "Orders",
+      "profile": "Profile",
+      "addresses": "Addresses"
+    },
+    "noOrders": "No orders yet.",
+    "reorder": "Order again",
+    "reordered": "Added lines: {added}, skipped (not available): {skipped}.",
+    "openCart": "Open the cart",
+    "saved": "Saved.",
+    "save": "Save",
+    "delete": "Delete",
+    "firstName": "First name",
+    "lastName": "Last name",
+    "phone": "Phone",
+    "language": "Language",
+    "mySizes": "My sizes",
+    "mySizesHint": "On a product page we will show whether your size is available.",
+    "braSize": "Bra size",
+    "apparelSize": "Clothing size",
+    "noSize": "Not set",
+    "newsletter": "Newsletter",
+    "newsletterLabel": "Send me emails about new arrivals and offers",
+    "noAddresses": "No saved addresses.",
+    "defaultAddress": "default",
+    "addAddress": "Add an address (Ukrposhta)",
+    "recipient": "Recipient",
+    "street": "Street",
+    "house": "House",
+    "apartment": "Apartment",
+    "postcode": "Postcode",
+    "makeDefault": "Make default",
+    "languageUk": "Ukrainian",
+    "languageEn": "English"
   }
 }

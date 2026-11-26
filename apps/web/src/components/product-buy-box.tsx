@@ -8,6 +8,7 @@ import type { AnalyticsItem } from '@store/shared/analytics';
 import type { ColorDto, ProductImageDto } from '@store/shared/dto/catalog';
 
 import { AddToCartButton } from '@/components/add-to-cart-button';
+import { MySizeNotice } from '@/components/my-size-notice';
 import { ResponsiveImage } from '@/components/responsive-image';
 import { GALLERY_SIZES } from '@/lib/image-sizes';
 import {
@@ -294,6 +295,8 @@ export function ProductBuyBox({
                 ? t('lastUnits')
                 : t('inStock')}
         </p>
+
+        <MySizeNotice variants={variants} colorSlug={selection.colorSlug} />
 
         <AddToCartButton
           variantId={selected?.available === true ? selected.id : null}
