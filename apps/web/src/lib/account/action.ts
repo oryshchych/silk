@@ -2,12 +2,19 @@ import type { CustomerSession } from '@store/core/customer-session';
 import type { Tx } from '@store/db/types';
 import type { z } from 'zod';
 
-import { requestOriginOk } from '@/lib/admin/bound-action';
-import { getDb } from '@/lib/db';
-import { createRateLimiter } from '@/lib/rate-limit';
-import { checkLimit, currentClient } from '@/lib/request-limits';
+import { requestOriginOk } from '../admin/bound-action';
+import { getDb } from '../db';
+import { createRateLimiter } from '../rate-limit';
+import { checkLimit, currentClient } from '../request-limits';
 
 import { currentCustomer } from './session';
+
+const INVALID_CODES: readonly string[] = [
+  'ADDRESS_LIMIT',
+  'ALERT_AVAILABLE',
+  'ALERT_LIMIT',
+  'WISHLIST_FULL',
+];
 
 /** Mutations of a signed-in customer: a person edits a few things a minute, a script hundreds. */
 const limiter = createRateLimiter({ limit: 60, windowMs: 60_000 });
@@ -52,8 +59,10 @@ export async function customerAction<S extends z.ZodType, T>(
     if ((options.notFoundCodes ?? ['ADDRESS_NOT_FOUND']).includes(code)) {
       return { ok: false, code: 'notFound' };
     }
-    if (code === 'ADDRESS_LIMIT' || code.startsWith('CHECKOUT_'))
+    // A refusal the person caused (a limit, a size that can be bought now): the UI says so, no error is logged.
+    if (INVALID_CODES.includes(code) || code.startsWith('CHECKOUT_')) {
       return { ok: false, code: 'invalid' };
+    }
     process.stderr.write(
       `${JSON.stringify({ level: 'error', scope: 'account-action', name: error instanceof Error ? error.name : 'unknown' })}\n`,
     );

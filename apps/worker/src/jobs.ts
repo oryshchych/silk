@@ -59,6 +59,8 @@ const SCHEDULES = {
   [JOB_NAMES.notifyRestocked]: '*/10 * * * *',
 } as const;
 const CRON_TZ = 'Europe/Kyiv';
+const RESTOCK_BATCH = 200;
+const RESTOCK_MAX_BATCHES = 25;
 
 export interface JobDeps {
   db: Reader & { transaction: <T>(fn: (tx: Tx) => Promise<T>) => Promise<T> };
@@ -130,7 +132,16 @@ export function createJobHandlers(deps: JobDeps): JobHandlers {
       line({ level: 'info', scope: JOB_NAMES.cleanQuarantine, removed });
     },
     [JOB_NAMES.notifyRestocked]: async () => {
-      const queued = await deps.db.transaction(async (tx) => await notifyRestocked(tx));
+      // Bounded batches, each its own transaction, until nothing is left or the budget is spent: a
+      // popular size must not wait hours for a drain of 200 per run (25 batches = 5000 alerts a run).
+      let queued = 0;
+      for (let batch = 0; batch < RESTOCK_MAX_BATCHES; batch += 1) {
+        const claimed = await deps.db.transaction(
+          async (tx) => await notifyRestocked(tx, RESTOCK_BATCH),
+        );
+        queued += claimed;
+        if (claimed < RESTOCK_BATCH) break;
+      }
       line({ level: 'info', scope: JOB_NAMES.notifyRestocked, queued });
     },
     [JOB_NAMES.purgePendingAccounts]: async () => {

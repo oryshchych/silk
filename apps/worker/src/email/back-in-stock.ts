@@ -6,7 +6,7 @@
 import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 
-import { buildUnsubscribeToken } from '@store/core/account-alerts';
+import { buildUnsubscribeToken, rearmIfSoldOut } from '@store/core/account-alerts';
 import type { Reader } from '@store/db/types';
 
 import type { EmailSender } from './resend.ts';
@@ -75,8 +75,10 @@ export async function handleBackInStock(
     name_uk: string;
     name_en: string;
     size: string;
+    buyable: boolean;
   }>(
-    sql`SELECT n.email, n.locale, p.slug, p.name_uk, p.name_en, s.label AS size
+    sql`SELECT n.email, n.locale, p.slug, p.name_uk, p.name_en, s.label AS size,
+               (v.is_active AND v.stock_quantity - v.reserved_quantity > 0) AS buyable
           FROM stock_notifications n
           JOIN product_variants v ON v.id = n.variant_id
           JOIN products p ON p.id = v.product_id
@@ -85,6 +87,11 @@ export async function handleBackInStock(
   );
   const row = result.rows[0];
   if (row === undefined) return;
+  // The size sold out again between the claim and now: back to waiting, no mail for a size that is gone.
+  if (!row.buyable) {
+    await rearmIfSoldOut(deps.reader, parsed.data.alertId);
+    return;
+  }
   // Throws without a strong secret: the job fails into the dead-letter queue, nothing is sent.
   const token = buildUnsubscribeToken(deps.authSecret, parsed.data.alertId);
   const locale: EmailLocale = row.locale === 'en' ? 'en' : 'uk';

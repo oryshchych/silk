@@ -6,7 +6,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { routing } from './i18n/routing';
 import { stripDefaultLocalePrefix } from './lib/locale-redirect';
 import { clientAddress, UNKNOWN_CLIENT } from './lib/client-address';
-import { isAccountAuthPath, isAccountPath } from './lib/account-path';
+import { isAccountAuthPath, isAccountPath, isUnsubscribePath } from './lib/account-path';
 import { isAdminAuthPath, isAdminPath } from './lib/admin-path';
 import { customerCookieName } from './lib/account/cookies';
 import { SESSION_COOKIE } from './lib/admin/cookies';
@@ -58,6 +58,9 @@ const adminLimiter = createRateLimiter({ limit: 300, windowMs: 60_000 });
 const accountAuthLimiter = createRateLimiter({ limit: 30, windowMs: 60_000 });
 const accountAuthGlobalLimiter = createRateLimiter({ limit: 600, windowMs: 60_000, maxKeys: 1 });
 const accountLimiter = createRateLimiter({ limit: 300, windowMs: 60_000 });
+// The unsubscribe link: its own buckets, so a flood there cannot lock anyone out of the credential forms.
+const unsubscribeLimiter = createRateLimiter({ limit: 30, windowMs: 60_000 });
+const unsubscribeGlobalLimiter = createRateLimiter({ limit: 600, windowMs: 60_000, maxKeys: 1 });
 // Reverse proxies that append to X-Forwarded-For and are trusted (Traefik: 1).
 const trustedHops = env.TRUSTED_PROXY_HOPS ?? 1;
 let unknownClientLoggedAt = Number.NEGATIVE_INFINITY;
@@ -161,8 +164,19 @@ function handleAccount(request: NextRequest): NextResponse | null {
   const client = clientAddress(request.headers.get('x-forwarded-for'), trustedHops);
   if (client === UNKNOWN_CLIENT) noteUnknownClient();
   const authPath = isAccountAuthPath(pathname);
-  const clientVerdict = (authPath ? accountAuthLimiter : accountLimiter).check(client);
   const tries = request.method !== 'GET' && request.method !== 'HEAD';
+  if (isUnsubscribePath(pathname)) {
+    const own = unsubscribeLimiter.check(client);
+    const verdict = own.allowed && tries ? unsubscribeGlobalLimiter.check(GLOBAL_KEY) : own;
+    if (verdict.allowed) return null;
+    return accountHeaders(
+      new NextResponse('Too many requests', {
+        status: 429,
+        headers: { 'Retry-After': String(verdict.retryAfterSeconds) },
+      }),
+    );
+  }
+  const clientVerdict = (authPath ? accountAuthLimiter : accountLimiter).check(client);
   const verdict =
     authPath && tries && clientVerdict.allowed
       ? accountAuthGlobalLimiter.check(GLOBAL_KEY)
