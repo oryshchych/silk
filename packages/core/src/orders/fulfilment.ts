@@ -26,11 +26,17 @@ import {
   paymentAttempts,
   promoCodeRedemptions,
   refundOperations,
+  shipmentOperations,
   stockReservations,
 } from '@store/db/schema';
 import type { Tx } from '@store/db/types';
 
-import { OrderNotCancellableError, OrderNotShippableError, StockDriftError } from '../errors.ts';
+import {
+  OrderHasWaybillError,
+  OrderNotCancellableError,
+  OrderNotShippableError,
+  StockDriftError,
+} from '../errors.ts';
 import { enqueueSaleReceipt } from '../fiscal/receipts.ts';
 import { acquireLocks } from '../locks/acquire-locks.ts';
 import { canTransition } from './transitions.ts';
@@ -56,7 +62,7 @@ async function lockedOrder(tx: Tx, orderId: string): Promise<Order | undefined> 
 }
 
 /** Sum of the refunds that hold budget: pending, in_flight, unknown and succeeded. */
-async function heldRefundTotal(tx: Tx, orderId: string): Promise<number> {
+export async function heldRefundTotal(tx: Tx, orderId: string): Promise<number> {
   const [held] = await tx
     .select({ sum: sql<number>`coalesce(sum(${refundOperations.amount}), 0)::int` })
     .from(refundOperations)
@@ -267,6 +273,23 @@ export async function cancelOrder(
   }
   if (!canTransition(order.status, 'cancelled')) {
     throw new OrderNotCancellableError(`the order is ${order.status}`);
+  }
+  // A parcel that exists (or is being made) at the carrier carries this order's data and a COD
+  // amount: cancelling now would leave it travelling. Resolve the waybill first.
+  const [liveShipment] = await tx
+    .select({ id: shipmentOperations.id })
+    .from(shipmentOperations)
+    .where(
+      and(
+        eq(shipmentOperations.orderId, order.id),
+        inArray(shipmentOperations.state, ['pending', 'in_flight', 'unknown', 'succeeded']),
+      ),
+    )
+    .limit(1);
+  if (liveShipment !== undefined) {
+    if (input.expiredOnly === true)
+      return { orderId: order.id, changed: false, from: order.status };
+    throw new OrderHasWaybillError();
   }
   const releaseReason = input.expiredOnly === true ? 'expired' : 'cancelled';
 

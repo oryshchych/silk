@@ -415,7 +415,8 @@
       "ORDER_PAYMENT_OPEN": "The order has a payment in progress. Wait for it to finish or cancel the order before editing.",
       "WAYBILL_NOT_ALLOWED": "A waybill cannot be made now (check the delivery method, the status, the recipient name and whether one already exists).",
       "WAYBILL_IN_PROGRESS": "A waybill is already being made or needs checking.",
-      "WAYBILL_NOT_CONFIGURED": "The carrier or the sender profile is not configured."
+      "WAYBILL_NOT_CONFIGURED": "The carrier or the sender profile is not configured.",
+      "ORDER_HAS_WAYBILL": "The order has a waybill (or one is being made). Resolve the waybill before cancelling or editing the order."
     },
     "editor": {
       "newTitle": "New product",
@@ -772,8 +773,8 @@
       "waybill": "Nova Poshta waybill",
       "waybillNumber": "Waybill number",
       "tracking": "Track",
-      "printWaybill": "Print waybill",
-      "printSticker": "Print sticker",
+      "printWaybill": "Print waybill (PDF, new tab)",
+      "printSticker": "Print sticker (PDF, new tab)",
       "createWaybill": "Create waybill",
       "waybillCreated": "The waybill was created and the buyer is being emailed.",
       "waybillUnknown": "The carrier did not answer. A waybill MAY exist: check the carrier's portal before doing anything else.",

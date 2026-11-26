@@ -19,7 +19,13 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const limiter = createRateLimiter({ limit: 60, windowMs: 10 * 60_000 });
-const HEADERS = { 'Cache-Control': 'private, no-store', 'X-Robots-Tag': 'noindex, nofollow' };
+const HEADERS = {
+  'Cache-Control': 'private, no-store',
+  'X-Robots-Tag': 'noindex, nofollow',
+  // A relayed file is never sniffed into something else, and never runs script in this origin.
+  'X-Content-Type-Options': 'nosniff',
+  'Content-Security-Policy': 'sandbox',
+};
 const refuse = (status: number, code: string): Response =>
   Response.json({ ok: false, code }, { status, headers: HEADERS });
 

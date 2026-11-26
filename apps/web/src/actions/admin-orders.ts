@@ -1,6 +1,7 @@
 'use server';
 
 import { writeAudit } from '@store/core/audit';
+import type { WaybillCarrier } from '@store/payments/shipping';
 import { cancelOrder, shipOrder } from '@store/core/fulfilment';
 import { advanceOrder, addOrderNote, ADMIN_SOURCE } from '@store/core/orders-admin';
 import { editOrderItems } from '@store/core/orders-admin-edit';
@@ -270,12 +271,15 @@ export async function refundOrderAction(input: unknown) {
  * calls `save` a second time for the order.
  */
 export async function createWaybillAction(input: unknown) {
-  const carrier = await getWaybillCarrier();
+  // Built after the permission check (inside `run`), used again after the commit.
+  const holder: { carrier: WaybillCarrier | null } = { carrier: null };
   const begun = await adminAction({
     permission: 'orders.waybill',
     schema: orderIdSchema,
     input,
     run: async ({ tx, input: parsed, session, audit }) => {
+      holder.carrier = await getWaybillCarrier();
+      const carrier = holder.carrier;
       if (carrier === null) throw new WaybillNotConfiguredError();
       const started = await beginWaybill(tx, { orderId: parsed.orderId });
       await audit({
@@ -287,8 +291,9 @@ export async function createWaybillAction(input: unknown) {
       return { ...started, userId: session.userId, orderId: parsed.orderId };
     },
   });
-  if (!begun.ok || carrier === null) return begun;
-  const result = await carrier.createWaybill(begun.data.request);
+  const sender = holder.carrier;
+  if (!begun.ok || sender === null) return begun;
+  const result = await sender.createWaybill(begun.data.request);
   const db = await getDb();
   const settled = await db.transaction(async (tx) => {
     const done = await completeWaybill(tx, {

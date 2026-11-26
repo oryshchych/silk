@@ -978,5 +978,16 @@ describe('0013_shipment_one_live', () => {
     );
     await make('succeeded');
     await expect(make('pending')).rejects.toMatchObject({ code: '23505' });
+    // A live operation of ANOTHER order is not in the way.
+    const { id: other } = await one<{ id: string }>(
+      app,
+      `INSERT INTO orders (order_number, customer_email, customer_phone, customer_name, delivery_method, subtotal, total)
+       VALUES ($1, 'a@b.co', '+380501112233', 'n', 'np_warehouse', 100, 100) RETURNING id`,
+      [`SH-2026-${stamp.slice(-5)}9`],
+    );
+    await app.query(
+      `INSERT INTO shipment_operations (order_id, carrier, state) VALUES ($1, 'nova_poshta', 'pending')`,
+      [other],
+    );
   });
 });

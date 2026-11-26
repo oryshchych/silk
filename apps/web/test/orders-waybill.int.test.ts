@@ -25,7 +25,8 @@ const state: {
   signedIn: boolean;
   handle: Db | null;
   carrier: NovaPoshtaWaybill | null;
-} = vi.hoisted(() => ({ role: 'manager', signedIn: true, handle: null, carrier: null }));
+  builds: number;
+} = vi.hoisted(() => ({ role: 'manager', signedIn: true, handle: null, carrier: null, builds: 0 }));
 
 async function wired() {
   const { createAdminAction: create } = await import('../src/lib/admin/action');
@@ -113,6 +114,7 @@ afterAll(async () => {
 beforeEach(() => {
   state.role = 'manager';
   state.signedIn = true;
+  state.builds = 0;
   state.carrier = new NovaPoshtaWaybill({
     apiKey: FAKE_NP_KEY,
     baseUrl: fake.baseUrl,
@@ -149,7 +151,7 @@ async function place(): Promise<string> {
       }),
   );
   await handle.pool.query(
-    "UPDATE orders SET delivery_method = 'np_warehouse', delivery_settlement_ref = 'city-1', delivery_warehouse_ref = 'wh-1', status = 'confirmed' WHERE id = $1",
+    "UPDATE orders SET delivery_method = 'np_warehouse', delivery_settlement_ref = 'city-1', delivery_warehouse_ref = 'wh-1', status = 'confirmed', payment_status = 'paid', captured_total = total WHERE id = $1",
     [placed.orderId],
   );
   return placed.orderId;
@@ -292,8 +294,10 @@ describe('the print route', () => {
       expect(response.status).toBe(200);
       expect(response.headers.get('content-type')).toBe('application/pdf');
       expect(response.headers.get('cache-control')).toBe('private, no-store');
+      expect(response.headers.get('x-content-type-options')).toBe('nosniff');
+      expect(response.headers.get('content-security-policy')).toBe('sandbox');
       expect(Buffer.from(await response.arrayBuffer())).toEqual(
-        Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2d, 0xff, 0xfe, 0x00, 0x80]),
+        Buffer.concat([Buffer.from('%PDF-'), Buffer.from([0xff, 0xfe, 0x00, 0x80])]),
       );
       expect(JSON.stringify([...response.headers.entries()])).not.toContain(FAKE_NP_KEY);
     }

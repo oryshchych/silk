@@ -297,3 +297,10 @@ export class WaybillNotConfiguredError extends DomainError {
     super('WAYBILL_NOT_CONFIGURED', 'The carrier is not configured');
   }
 }
+
+/** A waybill exists or is being made: cancelling or editing the order would leave the carrier with stale data. */
+export class OrderHasWaybillError extends DomainError {
+  constructor() {
+    super('ORDER_HAS_WAYBILL', 'The order has a waybill (or one is being made): resolve it first');
+  }
+}

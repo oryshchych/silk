@@ -18,9 +18,15 @@ export interface FakeNovaPoshta {
   /** Documents created so far (ttn by our reference): proof that a lost answer still made one. */
   documents: Map<string, string>;
   printHits: string[];
+  /** How the print endpoint behaves next (reset restores `ok`). */
+  setPrintMode: (mode: PrintMode) => void;
+  /** Requests that reached `/leak`: a redirect that was followed (it would carry the key). */
+  leakHits: string[];
   reset: () => void;
   close: () => Promise<void>;
 }
+
+export type PrintMode = 'ok' | 'redirect' | 'html' | 'badmagic' | 'huge' | 'endless' | 'slow';
 
 export type FakeReply =
   | { kind: 'ok'; cost?: string }
@@ -46,6 +52,8 @@ export async function startFakeNovaPoshta(): Promise<FakeNovaPoshta> {
   const calls: FakeNovaPoshta['calls'] = [];
   const documents = new Map<string, string>();
   const printHits: string[] = [];
+  const leakHits: string[] = [];
+  let printMode: PrintMode = 'ok';
   let counter = 0;
   const defaultSave = (): FakeReply => ({ kind: 'ok' });
   let saveHandler: (properties: Record<string, unknown>) => FakeReply = defaultSave;
@@ -54,6 +62,11 @@ export async function startFakeNovaPoshta(): Promise<FakeNovaPoshta> {
   const server: Server = createServer((req, res) => {
     void (async () => {
       const url = req.url ?? '';
+      if (req.method === 'GET' && url.startsWith('/leak')) {
+        leakHits.push(url);
+        res.writeHead(200).end('leaked');
+        return;
+      }
       if (req.method === 'GET' && url.startsWith('/orders/')) {
         const match =
           /^\/orders\/(printDocument|printMarking100x100)\/orders\[\]\/(\d+)\/type\/pdf\/apiKey\/(.+)$/.exec(
@@ -64,8 +77,38 @@ export async function startFakeNovaPoshta(): Promise<FakeNovaPoshta> {
           return;
         }
         printHits.push(`${match[1] ?? ''}:${match[2] ?? ''}`);
+        switch (printMode) {
+          case 'redirect':
+            res.writeHead(302, { Location: '/leak?from=print' }).end();
+            return;
+          case 'html':
+            res.writeHead(200, { 'Content-Type': 'text/html' }).end('<script>alert(1)</script>');
+            return;
+          case 'badmagic':
+            res.writeHead(200, { 'Content-Type': 'application/pdf' }).end('<html>not a pdf</html>');
+            return;
+          case 'huge':
+            res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Length': '99999999' });
+            res.end('%PDF-1.4');
+            return;
+          case 'endless': {
+            res.writeHead(200, { 'Content-Type': 'application/pdf' });
+            res.write('%PDF-1.4');
+            const timer = setInterval(() => res.write(Buffer.alloc(512 * 1024, 0x41)), 1);
+            res.on('close', () => {
+              clearInterval(timer);
+            });
+            return;
+          }
+          case 'slow':
+            res.writeHead(200, { 'Content-Type': 'application/pdf' });
+            res.write('%PDF-1.4');
+            return;
+          case 'ok':
+            break;
+        }
         res.writeHead(200, { 'Content-Type': 'application/pdf' });
-        res.end(Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2d, 0xff, 0xfe, 0x00, 0x80]));
+        res.end(Buffer.concat([Buffer.from('%PDF-'), Buffer.from([0xff, 0xfe, 0x00, 0x80])]));
         return;
       }
       const body = record(JSON.parse((await readBody(req)) || '{}'));
@@ -149,11 +192,17 @@ export async function startFakeNovaPoshta(): Promise<FakeNovaPoshta> {
     },
     documents,
     printHits,
+    leakHits,
+    setPrintMode: (mode) => {
+      printMode = mode;
+    },
     reset: () => {
       saveHandler = defaultSave;
       documents.clear();
       calls.length = 0;
       printHits.length = 0;
+      leakHits.length = 0;
+      printMode = 'ok';
     },
     close: async () => {
       server.closeAllConnections();

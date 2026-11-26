@@ -246,9 +246,11 @@ export class NovaPoshtaWaybill implements WaybillCarrier {
         signal: AbortSignal.timeout(this.config.timeoutMs ?? 15_000),
       });
       if (!response.ok) return null;
-      const type = response.headers.get('content-type') ?? '';
-      if (!type.toLowerCase().startsWith('application/pdf')) return null;
-      return await readBytesCapped(response, MAX_PDF_BYTES);
+      // Exactly a PDF, by header AND by its first bytes: an HTML page or a script is never relayed.
+      const type = (response.headers.get('content-type') ?? '').split(';')[0]?.trim().toLowerCase();
+      if (type !== 'application/pdf') return null;
+      const bytes = await readBytesCapped(response, MAX_PDF_BYTES);
+      return bytes.subarray(0, 5).toString('latin1') === '%PDF-' ? bytes : null;
     } catch {
       return null;
     }

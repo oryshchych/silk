@@ -17,10 +17,13 @@ import {
 
 import { setCartItem, startCheckout } from '../src/cart/cart.ts';
 import {
+  OrderHasWaybillError,
   WaybillInProgressError,
   WaybillNotAllowedError,
   WaybillNotConfiguredError,
 } from '../src/errors.ts';
+import { cancelOrder } from '../src/orders/fulfilment.ts';
+import { editOrderItems } from '../src/orders-admin/edit-items.ts';
 import { createOrder } from '../src/orders/create-order.ts';
 import {
   beginWaybill,
@@ -99,6 +102,12 @@ async function place(
     sql`UPDATE orders SET delivery_method = 'np_warehouse', delivery_settlement_ref = 'city-1', delivery_warehouse_ref = 'wh-1',
                           delivery_warehouse_name = 'Відділення 1', status = 'confirmed' WHERE id = ${placed.orderId}`,
   );
+  // A card order is paid by the time it gets a waybill (the rule is the same as for shipping).
+  if ((overrides.provider ?? 'mono') === 'mono') {
+    await admin.db.execute(
+      sql`UPDATE orders SET payment_status = 'paid', captured_total = total WHERE id = ${placed.orderId}`,
+    );
+  }
   return placed.orderId;
 }
 
@@ -385,5 +394,194 @@ describe('races (separate connections)', () => {
         sql`INSERT INTO shipment_operations (order_id, carrier, state) VALUES (${orderId}, 'nova_poshta', 'pending')`,
       ),
     ).rejects.toThrow();
+  });
+});
+
+describe('review round 1 (#74): the order lifecycle around a waybill', () => {
+  const cancel = async (orderId: string, expiredOnly = false) =>
+    await admin.db.transaction(
+      async (tx) =>
+        await cancelOrder(tx, { orderId, source: 'admin', reason: 'test cancel', expiredOnly }),
+    );
+
+  it('B1(A): an order with a succeeded waybill cannot be cancelled; nothing changes', async () => {
+    const orderId = await place({ provider: 'cod' });
+    await run(orderId);
+    await expect(cancel(orderId)).rejects.toBeInstanceOf(OrderHasWaybillError);
+    expect(
+      (await rows<{ status: string }>(sql`SELECT status FROM orders WHERE id = ${orderId}`))[0]
+        ?.status,
+    ).toBe('confirmed');
+    expect((await ops(orderId))[0]?.state).toBe('succeeded');
+  });
+
+  it.each(['in_flight', 'unknown'])(
+    'B1: a %s operation also blocks the cancellation (and the expiry path is a no-op)',
+    async (state) => {
+      const orderId = await place();
+      await admin.db.execute(sql`UPDATE orders SET status = 'pending' WHERE id = ${orderId}`);
+      await admin.db.execute(
+        sql`INSERT INTO shipment_operations (order_id, carrier, state) VALUES (${orderId}, 'nova_poshta', ${state}::operation_state)`,
+      );
+      await expect(cancel(orderId)).rejects.toBeInstanceOf(OrderHasWaybillError);
+      expect((await cancel(orderId, true)).changed).toBe(false);
+    },
+  );
+
+  it('B1(C): an answer that arrives for an order cancelled meanwhile is settled, nobody is emailed, the owner is alerted', async () => {
+    const orderId = await place();
+    const begun = await admin.db.transaction(async (tx) => await beginWaybill(tx, { orderId }));
+    const result = await carrier.createWaybill(begun.request);
+    // Forced past the guard (a manual SQL change): the re-check is the second line of defence.
+    await admin.db.execute(sql`UPDATE orders SET status = 'cancelled' WHERE id = ${orderId}`);
+    const done = await admin.db.transaction(
+      async (tx) =>
+        await completeWaybill(tx, { operationId: begun.operationId, result, actorUserId: USER }),
+    );
+    expect(done).toMatchObject({ state: 'succeeded', changed: true });
+    expect(
+      await rows(sql`SELECT 1 FROM outbox WHERE topic = 'email.waybill-created'`),
+    ).toHaveLength(0);
+    expect(
+      await rows(
+        sql`SELECT 1 FROM outbox WHERE topic = 'alert.waybill-for-cancelled-order' AND dedup_key = ${`waybill-cancelled:${orderId}`}`,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it.each(['in_flight', 'unknown', 'succeeded'])(
+    'B2: editing items is refused while a %s waybill exists',
+    async (state) => {
+      const orderId = await place();
+      const [item] = await rows<{ id: string }>(
+        sql`SELECT id FROM order_items WHERE order_id = ${orderId}`,
+      );
+      await admin.db.execute(
+        sql`INSERT INTO shipment_operations (order_id, carrier, state) VALUES (${orderId}, 'nova_poshta', ${state}::operation_state)`,
+      );
+      await expect(
+        admin.db.transaction(
+          async (tx) =>
+            await editOrderItems(tx, {
+              orderId,
+              changes: [{ itemId: item?.id ?? '', quantity: 1 }],
+              reason: 'try edit',
+              actorUserId: USER,
+            }),
+        ),
+      ).rejects.toBeInstanceOf(OrderHasWaybillError);
+    },
+  );
+
+  it('S1: a card order must be paid and not partly refunded, like shipping', async () => {
+    const orderId = await place();
+    await admin.db.execute(
+      sql`UPDATE orders SET payment_status = 'pending', captured_total = 0 WHERE id = ${orderId}`,
+    );
+    await expect(
+      admin.db.transaction(async (tx) => await beginWaybill(tx, { orderId })),
+    ).rejects.toBeInstanceOf(WaybillNotAllowedError);
+    await admin.db.execute(
+      sql`UPDATE orders SET payment_status = 'paid', captured_total = total WHERE id = ${orderId}`,
+    );
+    await admin.db.execute(
+      sql`INSERT INTO payment_attempts (order_id, attempt_number, provider, amount, state, status, captured_amount, external_id) SELECT id, 1, 'mono', total, 'succeeded', 'paid', total, 'inv-wb' FROM orders WHERE id = ${orderId}`,
+    );
+    await admin.db.execute(
+      sql`INSERT INTO refund_operations (order_id, payment_attempt_id, amount, state) SELECT ${orderId}::uuid, id, 1000, 'pending'::operation_state FROM payment_attempts WHERE order_id = ${orderId}`,
+    );
+    await expect(
+      admin.db.transaction(async (tx) => await beginWaybill(tx, { orderId })),
+    ).rejects.toBeInstanceOf(WaybillNotAllowedError);
+    await admin.db.execute(
+      sql`UPDATE refund_operations SET state = 'failed' WHERE order_id = ${orderId}`,
+    );
+    expect((await run(orderId)).done.state).toBe('succeeded');
+    expect((await orderTtn(orderId))?.ttn).toMatch(/^\d{14}$/);
+  });
+
+  it('S2 and S3: the COD amount is the total minus what was received, with shipping and a discount in the maths', async () => {
+    const orderId = await place({ provider: 'cod', quantity: 2 });
+    // subtotal 259 800, a discount of 10 000, shipping 7 000, 2 000 already received.
+    await admin.db.execute(
+      sql`UPDATE order_items SET line_discount = 10000, line_total = unit_price * quantity - 10000 WHERE order_id = ${orderId}`,
+    );
+    await admin.db.execute(
+      sql`UPDATE orders SET discount_total = 10000, shipping_total = 7000, total = subtotal - 10000 + 7000, captured_total = 2000 WHERE id = ${orderId}`,
+    );
+    await run(orderId);
+    const save = fake.calls.find((c) => c.model === 'InternetDocument');
+    expect(save?.properties['BackwardDeliveryData']).toEqual([
+      { PayerType: 'Recipient', CargoType: 'Money', RedeliveryString: '2548.00' },
+    ]);
+    // The declared value is the goods after the discount.
+    expect(save?.properties['Cost']).toBe('2498.00');
+  });
+
+  it('S2: a COD order that already received everything collects nothing; one that received MORE is refused', async () => {
+    const paid = await place({ provider: 'cod' });
+    await admin.db.execute(sql`UPDATE orders SET captured_total = total WHERE id = ${paid}`);
+    await run(paid);
+    expect(
+      fake.calls.find((c) => c.model === 'InternetDocument')?.properties['BackwardDeliveryData'],
+    ).toBeUndefined();
+    const over = await place({ provider: 'cod' });
+    await admin.db.execute(sql`UPDATE orders SET captured_total = total + 100 WHERE id = ${over}`);
+    await expect(
+      admin.db.transaction(async (tx) => await beginWaybill(tx, { orderId: over })),
+    ).rejects.toBeInstanceOf(WaybillNotAllowedError);
+  });
+
+  it('"nothing was made" is refused while the call may still be running, and attach is refused for a cancelled order', async () => {
+    const orderId = await place();
+    const begun = await admin.db.transaction(async (tx) => await beginWaybill(tx, { orderId }));
+    await expect(
+      admin.db.transaction(
+        async (tx) =>
+          await resolveWaybill(tx, { orderId, resolution: { kind: 'none' }, actorUserId: USER }),
+      ),
+    ).rejects.toBeInstanceOf(WaybillInProgressError);
+    await admin.db.execute(
+      sql`UPDATE shipment_operations SET created_at = now() - interval '5 minutes' WHERE id = ${begun.operationId}`,
+    );
+    expect(
+      (
+        await admin.db.transaction(
+          async (tx) =>
+            await resolveWaybill(tx, { orderId, resolution: { kind: 'none' }, actorUserId: USER }),
+        )
+      ).changed,
+    ).toBe(true);
+    const other = await place();
+    await admin.db.execute(
+      sql`INSERT INTO shipment_operations (order_id, carrier, state) VALUES (${other}, 'nova_poshta', 'unknown')`,
+    );
+    await admin.db.execute(sql`UPDATE orders SET status = 'cancelled' WHERE id = ${other}`);
+    await expect(
+      admin.db.transaction(
+        async (tx) =>
+          await resolveWaybill(tx, {
+            orderId: other,
+            resolution: { kind: 'attach', ttn: '59000000000077' },
+            actorUserId: USER,
+          }),
+      ),
+    ).rejects.toBeInstanceOf(WaybillNotAllowedError);
+  });
+
+  it('completeWaybill reports the real state of an operation that was already settled', async () => {
+    const orderId = await place();
+    fake.onSave(() => ({ kind: 'hang' }));
+    const first = await run(orderId);
+    expect(first.done.state).toBe('unknown');
+    const again = await admin.db.transaction(
+      async (tx) =>
+        await completeWaybill(tx, {
+          operationId: first.begun.operationId,
+          result: { state: 'failed', error: 'late' },
+          actorUserId: USER,
+        }),
+    );
+    expect(again).toMatchObject({ changed: false, state: 'unknown' });
   });
 });

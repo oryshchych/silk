@@ -15,7 +15,7 @@
  *
  * Lock order (ADR-22): orders (3) only.
  */
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, or, sql } from 'drizzle-orm';
 
 import {
   orderItems,
@@ -37,6 +37,7 @@ import {
   WaybillNotAllowedError,
   WaybillNotConfiguredError,
 } from '../errors.ts';
+import { heldRefundTotal } from '../orders/fulfilment.ts';
 import { acquireLocks } from '../locks/acquire-locks.ts';
 import { ADMIN_SOURCE } from '../orders-admin/workflow.ts';
 
@@ -104,6 +105,19 @@ export async function beginWaybill(tx: Tx, input: { orderId: string }): Promise<
     throw new WaybillNotAllowedError(`the order is ${order.status}`);
   }
   if (order.ttn !== null) throw new WaybillNotAllowedError('the order already has a waybill');
+  // The same rule as shipping: money that was returned (or is being) is not money the order holds.
+  const isCod = order.paymentProvider === 'cod';
+  if (!isCod) {
+    if (order.paymentStatus !== 'paid') throw new WaybillNotAllowedError('the order is not paid');
+    const held = await heldRefundTotal(tx, order.id);
+    if (order.capturedTotal - held < order.total) {
+      throw new WaybillNotAllowedError('a refund covers part of the captured amount');
+    }
+  }
+  // Cash on delivery: the carrier collects what the buyer still owes (anything already paid, a gift
+  // card or a part payment, is not collected again).
+  const toCollect = order.total - order.capturedTotal;
+  if (toCollect < 0) throw new WaybillNotAllowedError('more was received than the order costs');
   const live = await tx
     .select({ state: shipmentOperations.state })
     .from(shipmentOperations)
@@ -160,7 +174,7 @@ export async function beginWaybill(tx: Tx, input: { orderId: string }): Promise<
     declaredCost: subtract(money(order.subtotal), money(order.discountTotal)),
     description: 'Одяг',
     payer: order.shippingPaidBy === 'sender' ? 'sender' : 'recipient',
-    cashOnDelivery: order.paymentProvider === 'cod' ? money(order.total) : null,
+    cashOnDelivery: isCod && toCollect > 0 ? money(toCollect) : null,
     day: kyivDay(),
   };
   const [operation] = await tx
@@ -206,7 +220,10 @@ export async function completeWaybill(
   if (operation === undefined) throw new WaybillNotAllowedError('no such operation');
   if (operation.state !== 'in_flight') {
     return {
-      state: operation.state === 'succeeded' ? 'succeeded' : 'failed',
+      state:
+        operation.state === 'succeeded' || operation.state === 'unknown'
+          ? operation.state
+          : 'failed',
       changed: false,
       ttn: operation.ttn,
     };
@@ -230,13 +247,32 @@ export async function completeWaybill(
       lastError: null,
     })
     .where(eq(shipmentOperations.id, operation.id));
+  // The order may have changed while the call was out (nothing cancels an order with a live waybill
+  // any more, but the check is cheap and the cost of being wrong is a parcel for a cancelled
+  // order): settle the operation, tell nobody outside, raise an alert for the owner.
+  const [current] = await tx
+    .select({ status: orders.status })
+    .from(orders)
+    .where(eq(orders.id, operation.orderId));
+  const cancelled = current?.status === 'cancelled';
   await recordWaybill(tx, {
     orderId: operation.orderId,
     ttn: result.ttn,
     cost: result.cost,
     actorUserId: input.actorUserId,
-    comment: 'created at the carrier',
+    comment: cancelled ? 'created at the carrier for a cancelled order' : 'created at the carrier',
+    notify: !cancelled,
   });
+  if (cancelled) {
+    await tx
+      .insert(outbox)
+      .values({
+        topic: 'alert.waybill-for-cancelled-order',
+        payload: { orderId: operation.orderId },
+        dedupKey: `waybill-cancelled:${operation.orderId}`,
+      })
+      .onConflictDoNothing();
+  }
   return { state: 'succeeded', changed: true, ttn: result.ttn };
 }
 
@@ -248,6 +284,8 @@ async function recordWaybill(
     cost: number | null;
     actorUserId: string | null;
     comment: string;
+    /** Tell the buyer (the email goes through the outbox); false for a cancelled order. */
+    notify: boolean;
   },
 ): Promise<void> {
   await tx
@@ -263,6 +301,7 @@ async function recordWaybill(
     source: ADMIN_SOURCE,
     comment: input.comment,
   });
+  if (!input.notify) return;
   await tx
     .insert(outbox)
     .values({
@@ -296,6 +335,21 @@ export async function resolveWaybill(
     );
   if (open === undefined) return { changed: false, ttn: null };
   if (input.resolution.kind === 'none') {
+    // "Nothing was made" is only believable once the call cannot still be running: an unknown
+    // result, or an in-flight one older than the carrier timeout (judged by Postgres time).
+    const [stale] = await tx
+      .select({ id: shipmentOperations.id })
+      .from(shipmentOperations)
+      .where(
+        and(
+          eq(shipmentOperations.id, open.id),
+          or(
+            eq(shipmentOperations.state, 'unknown'),
+            sql`${shipmentOperations.createdAt} < now() - interval '2 minutes'`,
+          ),
+        ),
+      );
+    if (stale === undefined) throw new WaybillInProgressError();
     await tx
       .update(shipmentOperations)
       .set({ state: 'failed', lastError: 'confirmed with the carrier: no document was made' })
@@ -303,6 +357,11 @@ export async function resolveWaybill(
     return { changed: true, ttn: null };
   }
   const { ttn } = input.resolution;
+  const [target] = await tx
+    .select({ status: orders.status })
+    .from(orders)
+    .where(eq(orders.id, input.orderId));
+  if (target?.status === 'cancelled') throw new WaybillNotAllowedError('the order is cancelled');
   if (!isWaybillNumber(ttn)) throw new WaybillNotAllowedError('a waybill number has 14 digits');
   const [taken] = await tx.select({ id: orders.id }).from(orders).where(eq(orders.ttn, ttn));
   if (taken !== undefined)
@@ -317,6 +376,7 @@ export async function resolveWaybill(
     cost: null,
     actorUserId: input.actorUserId,
     comment: 'entered by hand after checking the carrier',
+    notify: true,
   });
   return { changed: true, ttn };
 }

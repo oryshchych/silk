@@ -156,7 +156,9 @@ describe('createWaybill against the local Nova Poshta', () => {
 describe('print', () => {
   it('returns the PDF bytes untouched and keeps the key on the server', async () => {
     const pdf = await carrier.print('59000000000001', 'document');
-    expect(pdf).toEqual(Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2d, 0xff, 0xfe, 0x00, 0x80]));
+    expect(pdf).toEqual(
+      Buffer.concat([Buffer.from('%PDF-'), Buffer.from([0xff, 0xfe, 0x00, 0x80])]),
+    );
     expect(await carrier.print('59000000000001', 'marking')).not.toBeNull();
     expect(fake.printHits).toEqual([
       'printDocument:59000000000001',
@@ -184,5 +186,30 @@ describe('print', () => {
     const url = dead.printBaseUrl;
     await dead.close();
     expect(await make({ printBaseUrl: url }).print('59000000000001', 'document')).toBeNull();
+  });
+});
+
+describe('print guards', () => {
+  it('a redirect is an error: the key never follows it', async () => {
+    fake.setPrintMode('redirect');
+    expect(await carrier.print('59000000000001', 'document')).toBeNull();
+    expect(fake.leakHits).toEqual([]);
+  });
+
+  it.each([
+    ['an HTML page', 'html' as const],
+    ['a body that is not a PDF (no %PDF- bytes)', 'badmagic' as const],
+  ])('%s is never relayed', async (_name, mode) => {
+    fake.setPrintMode(mode);
+    expect(await carrier.print('59000000000001', 'document')).toBeNull();
+  });
+
+  it('an answer that declares more than the cap, an endless one and a stalled one are null, within the timeout', async () => {
+    for (const mode of ['huge', 'endless', 'slow'] as const) {
+      fake.setPrintMode(mode);
+      const started = performance.now();
+      expect(await carrier.print('59000000000001', 'document'), mode).toBeNull();
+      expect(performance.now() - started, mode).toBeLessThan(2500);
+    }
   });
 });
