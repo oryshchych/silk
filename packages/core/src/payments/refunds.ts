@@ -421,6 +421,11 @@ async function applySucceeded(
   const [before] = await tx.select().from(orders).where(eq(orders.id, orderId));
   if (before === undefined) throw new Error(`order ${orderId} vanished`);
   const refunded = add(money(before.refundedTotal), amount);
+  // A typed refusal BEFORE the update: `orders_refund_lte_captured` is only the last line, and its
+  // raw error would reach an admin as a 500 (adminAction maps domain errors only).
+  if (refunded > before.capturedTotal) {
+    throw new RefundBudgetError('the refunds would exceed what was captured');
+  }
   const next = refunded >= before.capturedTotal ? 'refunded' : 'partially_refunded';
   // orders_refund_lte_captured is the database's last line: it fails the transaction on overshoot.
   await tx
