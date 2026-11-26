@@ -1115,7 +1115,85 @@ describe('0017_review_moderation', () => {
   });
 });
 
-describe('0018_returns_flow', () => {
+describe('0016_email_token_checks', () => {
+  it('a link cannot expire before it was made or be used before it existed (pinned by constraint name)', async () => {
+    const { id: user } = await one<{ id: string }>(
+      app,
+      `INSERT INTO auth_users (email) VALUES ('checks016@example.test') RETURNING id`,
+    );
+    await expect(
+      app.query(
+        `INSERT INTO auth_email_tokens (user_id, purpose, expires_at, created_at)
+         VALUES ($1, 'verify_email', now() - interval '1 hour', now())`,
+        [user],
+      ),
+    ).rejects.toMatchObject({ code: '23514', constraint: 'auth_email_tokens_expiry' });
+    await expect(
+      app.query(
+        `INSERT INTO auth_email_tokens (user_id, purpose, expires_at, created_at, used_at)
+         VALUES ($1, 'verify_email', now() + interval '1 hour', now(), now() - interval '1 day')`,
+        [user],
+      ),
+    ).rejects.toMatchObject({ code: '23514', constraint: 'auth_email_tokens_used_after_created' });
+    await app.query(
+      `INSERT INTO auth_email_tokens (user_id, purpose, expires_at) VALUES ($1, 'verify_email', now() + interval '1 hour')`,
+      [user],
+    );
+  });
+});
+
+describe('0017_review_moderation constraints and 0018_review_indexes', () => {
+  it('a review text is at most 2000 characters and a review is never approved and refused at once (by constraint name)', async () => {
+    const { id: category } = await one<{ id: string }>(
+      app,
+      `INSERT INTO categories (slug, name_uk, name_en, size_system) VALUES ('rv-cat', 'c', 'c', 'apparel') RETURNING id`,
+    );
+    const { id: product } = await one<{ id: string }>(
+      app,
+      `INSERT INTO products (slug, sku, brand, category_id, name_uk, name_en, base_price)
+       VALUES ('rv-p', 'rv-sku', 'b', $1, 'p', 'p', 100) RETURNING id`,
+      [category],
+    );
+    const { id: customer } = await one<{ id: string }>(
+      app,
+      `INSERT INTO customers (email) VALUES ('rv@example.test') RETURNING id`,
+    );
+    await expect(
+      app.query(
+        `INSERT INTO reviews (product_id, customer_id, rating, body) VALUES ($1, $2, 5, $3)`,
+        [product, customer, 'x'.repeat(2001)],
+      ),
+    ).rejects.toMatchObject({ code: '23514', constraint: 'reviews_text_length' });
+    await expect(
+      app.query(
+        `INSERT INTO reviews (product_id, customer_id, rating, admin_reply) VALUES ($1, $2, 5, $3)`,
+        [product, customer, 'x'.repeat(2001)],
+      ),
+    ).rejects.toMatchObject({ code: '23514', constraint: 'reviews_text_length' });
+    await expect(
+      app.query(
+        `INSERT INTO reviews (product_id, customer_id, rating, is_approved, rejected_at) VALUES ($1, $2, 5, true, now())`,
+        [product, customer],
+      ),
+    ).rejects.toMatchObject({ code: '23514', constraint: 'reviews_not_both' });
+    await app.query(
+      `INSERT INTO reviews (product_id, customer_id, rating, body) VALUES ($1, $2, 5, $3)`,
+      [product, customer, 'x'.repeat(2000)],
+    );
+  });
+
+  it('the moderation queue index excludes refused reviews and the daily cap has an index led by the customer', async () => {
+    const { rows } = await app.query<{ indexname: string; indexdef: string }>(
+      `SELECT indexname, indexdef FROM pg_indexes
+        WHERE indexname IN ('reviews_pending_idx', 'reviews_customer_created_idx') ORDER BY 1`,
+    );
+    const byName = new Map(rows.map((row) => [row.indexname, row.indexdef]));
+    expect(byName.get('reviews_pending_idx')).toContain('rejected_at IS NULL');
+    expect(byName.get('reviews_customer_created_idx')).toContain('(customer_id, created_at)');
+  });
+});
+
+describe('0019_returns_flow', () => {
   it('a return has at most one refund operation (partial unique index) and the stock history accepts the reason `return`', async () => {
     const { id: order } = await one<{ id: string }>(
       app,

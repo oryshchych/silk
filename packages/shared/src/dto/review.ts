@@ -1,6 +1,6 @@
 /**
  * Reviews as served. Explicit field lists (zod drops unknown keys): the PUBLIC view has no customer id,
- * no e-mail, no order id, no moderation data; the ADMIN view adds what a moderator needs.
+ * no e-mail, no order id, no moderation data; the ADMIN view adds what a moderator needs (never the customer's e-mail: moderation does not need it, and the `content` role sees no customer data).
  */
 import { z } from 'zod';
 
@@ -30,7 +30,6 @@ export const adminReviewDto = z.object({
   productId: z.uuid(),
   productName: z.string(),
   productSlug: z.string(),
-  customerEmail: z.string(),
   rating: z.number().int().min(1).max(5),
   title: z.string().nullable(),
   body: z.string().nullable(),

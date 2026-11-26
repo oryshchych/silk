@@ -49,7 +49,7 @@ confirmed TOTP before a session counts; so must anyone who enrolled one.
 | `customers.manage` | owner, admin, manager | Set a customer's tags and internal note |
 | `customers.export` | owner, admin | Download the customers CSV (email and phone: personal data; every download audited) |
 | `returns.manage` | owner, admin, manager | Read return requests (with the customer's e-mail), approve, refuse, record the physical receipt (the ONLY step that puts units back on the shelf) and close a return without a refund; the refund itself needs `orders.refund` |
-| `reviews.moderate` | owner, admin, content | Read customer reviews (with the reviewer's e-mail), approve, refuse and reply; every decision recomputes the product's rating and fit counters and is audited |
+| `reviews.moderate` | owner, admin, content | Read customer reviews (text, rating, size, fit: never the reviewer's e-mail, so the `content` role sees no customer data), approve, refuse and reply; every decision recomputes the product's rating and fit counters and is audited |
 | `orders.confirm_payment` | owner, admin, manager | Record a received bank transfer (the confirmed source of a transfer payment, ADR-4) |
 | `media.upload` | owner, admin, content | Upload and edit product images |
 | `catalog.import` | owner, admin | CSV / XLSX import |

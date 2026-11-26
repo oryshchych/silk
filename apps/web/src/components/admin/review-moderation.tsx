@@ -27,7 +27,7 @@ export function ReviewModeration({ review }: { review: AdminReviewDto }) {
   return (
     <div className="flex flex-col gap-2">
       <p className="text-sm text-text-muted">
-        {review.productName} · {review.customerEmail} · {review.createdAt.slice(0, 10)}
+        {review.productName} · {review.createdAt.slice(0, 10)}
         {review.sizeBought === null ? '' : ` · ${review.sizeBought}`}
       </p>
       <p className="font-medium">

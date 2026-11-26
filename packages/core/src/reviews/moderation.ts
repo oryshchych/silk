@@ -4,7 +4,7 @@
  * same transaction, so the numbers the page and the JSON-LD show can never drift from the visible
  * reviews. A refused review stays (the buyer cannot resubmit it) but is never shown.
  */
-import { and, eq, sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { reviews } from '@store/db/schema';
@@ -23,7 +23,12 @@ export const reviewReplySchema = z.object({
   reply: z
     .string()
     .max(4000)
-    .transform((value) => value.replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, '').trim())
+    .transform((value) =>
+      value
+        .replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, '')
+        .replace(/[\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g, '')
+        .trim(),
+    )
     .pipe(z.string().max(2000))
     .transform((value) => (value === '' ? null : value)),
 });
@@ -57,7 +62,6 @@ export async function listReviewsForModeration(
     product_id: string;
     name: string;
     slug: string;
-    email: string;
     rating: number;
     title: string | null;
     body: string | null;
@@ -68,9 +72,9 @@ export async function listReviewsForModeration(
     admin_reply: string | null;
     created_at: Date;
   }>(
-    sql`SELECT r.id, r.product_id, p.name_uk AS name, p.slug, c.email, r.rating, r.title, r.body, r.size_bought,
+    sql`SELECT r.id, r.product_id, p.name_uk AS name, p.slug, r.rating, r.title, r.body, r.size_bought,
                r.fit_feedback, r.is_approved AS approved, r.rejected_at IS NOT NULL AS rejected, r.admin_reply, r.created_at
-          FROM reviews r JOIN products p ON p.id = r.product_id JOIN customers c ON c.id = r.customer_id
+          FROM reviews r JOIN products p ON p.id = r.product_id
          WHERE ${condition} ORDER BY r.created_at, r.id LIMIT ${limit}`,
   );
   return result.rows.map((row) =>
@@ -79,7 +83,6 @@ export async function listReviewsForModeration(
       productId: row.product_id,
       productName: row.name,
       productSlug: row.slug,
-      customerEmail: row.email,
       rating: row.rating,
       title: row.title,
       body: row.body,
@@ -99,16 +102,31 @@ export interface Decision {
   to: 'approved' | 'rejected';
 }
 
+/**
+ * Serialises everything that changes which reviews of ONE product are approved, and recomputes its counters.
+ * Per REVIEW is not enough: two moderators deciding DIFFERENT reviews of one product would each recompute from a
+ * snapshot taken before the other committed, and the second would overwrite the counters without the first
+ * decision. The lock is per product and is taken before the review row is read or changed; each statement after
+ * it sees what the previous holder committed (READ COMMITTED).
+ */
+async function lockProductReviews(tx: Tx, productId: string): Promise<void> {
+  await tx.execute(
+    sql`SELECT pg_advisory_xact_lock(hashtextextended(${`review-product:${productId}`}, 0))`,
+  );
+}
+
 /** Approve or refuse. Returns what changed so the action can audit and invalidate the product's cache. */
 export async function decideReview(
   tx: Tx,
   moderatorUserId: string,
   input: z.output<typeof reviewDecisionSchema>,
 ): Promise<Decision> {
-  // One moderator at a time per review: two decisions on one review queue, they do not interleave.
-  await tx.execute(
-    sql`SELECT pg_advisory_xact_lock(hashtextextended(${`review-decision:${input.id}`}, 0))`,
-  );
+  const [header] = await tx
+    .select({ productId: reviews.productId })
+    .from(reviews)
+    .where(eq(reviews.id, input.id));
+  if (header === undefined) throw new AdminNotFoundError('review');
+  await lockProductReviews(tx, header.productId);
   const [row] = await tx
     .select({
       productId: reviews.productId,
@@ -133,17 +151,21 @@ export async function decideReview(
   return { productId: row.productId, changed: true, from, to };
 }
 
+/** Sets or clears the shop's reply. `changed` is false when the text is the same as before. */
 export async function replyToReview(
   tx: Tx,
   moderatorUserId: string,
   input: z.output<typeof reviewReplySchema>,
-): Promise<{ productId: string }> {
-  const updated = await tx
+): Promise<{ productId: string; changed: boolean }> {
+  const [row] = await tx
+    .select({ productId: reviews.productId, reply: reviews.adminReply })
+    .from(reviews)
+    .where(eq(reviews.id, input.id));
+  if (row === undefined) throw new AdminNotFoundError('review');
+  if ((row.reply ?? null) === input.reply) return { productId: row.productId, changed: false };
+  await tx
     .update(reviews)
     .set({ adminReply: input.reply, moderatedByUserId: moderatorUserId })
-    .where(and(eq(reviews.id, input.id)))
-    .returning({ productId: reviews.productId });
-  const row = updated[0];
-  if (row === undefined) throw new AdminNotFoundError('review');
-  return { productId: row.productId };
+    .where(eq(reviews.id, input.id));
+  return { productId: row.productId, changed: true };
 }

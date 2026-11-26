@@ -1,5 +1,5 @@
 {
-  "id": "4696634a-c4a7-45bf-a2d9-0c224e262338",
+  "id": "bc0c29b3-4314-4925-b230-a6e89d888bf0",
   "prevId": "6874b76c-9211-4136-b88e-90d4b7dea839",
   "version": "7",
   "dialect": "postgresql",
@@ -6738,18 +6738,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "received_at": {
-          "name": "received_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "refund_operation_id": {
-          "name": "refund_operation_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -6766,22 +6754,6 @@
         }
       },
       "indexes": {
-        "return_requests_refund_op_uq": {
-          "name": "return_requests_refund_op_uq",
-          "columns": [
-            {
-              "expression": "refund_operation_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"return_requests\".\"refund_operation_id\" IS NOT NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "return_requests_number_uq": {
           "name": "return_requests_number_uq",
           "columns": [
@@ -6870,30 +6842,12 @@
           ],
           "onDelete": "set null",
           "onUpdate": "no action"
-        },
-        "return_requests_refund_operation_id_refund_operations_id_fk": {
-          "name": "return_requests_refund_operation_id_refund_operations_id_fk",
-          "tableFrom": "return_requests",
-          "tableTo": "refund_operations",
-          "columnsFrom": [
-            "refund_operation_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "return_requests_refund_nonneg": {
-          "name": "return_requests_refund_nonneg",
-          "value": "\"return_requests\".\"refund_amount\" IS NULL OR \"return_requests\".\"refund_amount\" >= 0"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.reviews": {
@@ -7044,7 +6998,28 @@
             }
           ],
           "isUnique": false,
-          "where": "\"reviews\".\"is_approved\" = false",
+          "where": "\"reviews\".\"is_approved\" = false AND \"reviews\".\"rejected_at\" IS NULL",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "reviews_customer_created_idx": {
+          "name": "reviews_customer_created_idx",
+          "columns": [
+            {
+              "expression": "customer_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -7595,7 +7570,7 @@
       "checkConstraints": {
         "stock_adjustments_reason": {
           "name": "stock_adjustments_reason",
-          "value": "\"stock_adjustments\".\"reason\" IN ('receipt', 'writeoff', 'stocktake', 'correction', 'import', 'return')"
+          "value": "\"stock_adjustments\".\"reason\" IN ('receipt', 'writeoff', 'stocktake', 'correction', 'import')"
         },
         "stock_adjustments_adds_up": {
           "name": "stock_adjustments_adds_up",

@@ -191,18 +191,27 @@ describe('submitting', () => {
     expect(input({ title: '  ', body: '' })).toMatchObject({ title: null, body: null });
   });
 
-  it('the database refuses an over-long body and a review that is approved and refused at once', async () => {
+  it('the database refuses an over-long body, an over-long reply and a review that is approved and refused at once (by constraint name)', async () => {
     const [row] = await handle.db.select().from(reviews).limit(1);
+    const id = row?.id ?? '';
     await expect(
-      handle.db.execute(
-        sql`UPDATE reviews SET body = ${'x'.repeat(2001)} WHERE id = ${row?.id ?? ''}`,
-      ),
-    ).rejects.toThrow();
+      handle.pool.query(`UPDATE reviews SET body = $1 WHERE id = $2`, ['x'.repeat(2001), id]),
+    ).rejects.toMatchObject({ code: '23514', constraint: 'reviews_text_length' });
     await expect(
-      handle.db.execute(
-        sql`UPDATE reviews SET is_approved = true, rejected_at = now() WHERE id = ${row?.id ?? ''}`,
+      handle.pool.query(`UPDATE reviews SET admin_reply = $1 WHERE id = $2`, [
+        'x'.repeat(2001),
+        id,
+      ]),
+    ).rejects.toMatchObject({ code: '23514', constraint: 'reviews_text_length' });
+    await expect(
+      handle.pool.query(
+        `UPDATE reviews SET is_approved = true, rejected_at = now() WHERE id = $1`,
+        [id],
       ),
-    ).rejects.toThrow();
+    ).rejects.toMatchObject({ code: '23514', constraint: 'reviews_not_both' });
+    // The boundary itself is allowed.
+    await handle.pool.query(`UPDATE reviews SET body = $1 WHERE id = $2`, ['x'.repeat(2000), id]);
+    await handle.pool.query(`UPDATE reviews SET body = $1 WHERE id = $2`, ['Fits well', id]);
   });
 });
 
@@ -339,5 +348,97 @@ describe('moderation, counters and what the page shows', () => {
     expect(displayName('  Iryna  ', null)).toBe('Iryna');
     expect(displayName(null, 'Kovalenko')).toBeNull();
     expect(displayName('Ірина', 'ґанзі')).toBe('Ірина Ґ.');
+  });
+});
+
+describe('moderation under concurrency, privacy and the reply path', () => {
+  it('RACE: moderators deciding DIFFERENT reviews of one product on separate connections keep the counters equal to the approved rows', async () => {
+    const people = await Promise.all(
+      Array.from(
+        { length: 6 },
+        async (_, i) => await customer(`race${String(i)}@example.test`, null, null),
+      ),
+    );
+    const ids: string[] = [];
+    for (const [i, person] of people.entries()) {
+      const inserted = await handle.db.execute<{ id: string }>(
+        sql`INSERT INTO reviews (product_id, customer_id, rating, fit_feedback)
+            VALUES (${productId}, ${person.customerId}, ${(i % 5) + 1}, ${i % 2 === 0 ? 'true_to_size' : 'small'}::fit_feedback)
+            RETURNING id`,
+      );
+      ids.push(inserted.rows[0]?.id ?? '');
+    }
+    for (const decision of ['approve', 'reject', 'approve'] as const) {
+      const barrier = new Barrier(ids.length);
+      const pools = ids.map(() => world.connect(1));
+      await Promise.all(
+        ids.map(async (id, i) => {
+          await barrier.wait();
+          await pools[i]?.db.transaction(
+            async (tx) => await decideReview(tx, MODERATOR, { id, decision }),
+          );
+        }),
+      );
+      const truth = await handle.db.execute<{ n: number; avg: number | null; fit: number }>(
+        sql`SELECT count(*)::int AS n, avg(rating)::real AS avg,
+                   count(*) FILTER (WHERE fit_feedback = 'true_to_size')::int AS fit
+              FROM reviews WHERE product_id = ${productId} AND is_approved`,
+      );
+      const now = await counters();
+      expect(now.count, decision).toBe(truth.rows[0]?.n);
+      expect(now.fitTrue, decision).toBe(truth.rows[0]?.fit);
+      expect(now.avg ?? null, decision).toBe(truth.rows[0]?.avg ?? null);
+    }
+  });
+
+  it('the moderation queue carries no customer e-mail for ANY role (one DTO, no such key)', async () => {
+    const queue = await listReviewsForModeration(handle.db, 'approved');
+    expect(queue.length).toBeGreaterThan(0);
+    expect(Object.keys(queue[0] ?? {}).sort()).toEqual([
+      'adminReply',
+      'body',
+      'createdAt',
+      'fit',
+      'id',
+      'productId',
+      'productName',
+      'productSlug',
+      'rating',
+      'sizeBought',
+      'status',
+      'title',
+    ]);
+    expect(JSON.stringify(queue)).not.toContain('@example');
+  });
+
+  it('a reply with the same text changes nothing; a reply on a PENDING or REFUSED review never reaches the public read', async () => {
+    const e = await customer('reply@example.test', 'Eva', 'Z');
+    const row = await handle.db.execute<{ id: string }>(
+      sql`INSERT INTO reviews (product_id, customer_id, rating, body) VALUES (${productId}, ${e.customerId}, 4, 'pending text') RETURNING id`,
+    );
+    const id = row.rows[0]?.id ?? '';
+    expect(
+      await handle.db.transaction(
+        async (tx) => await replyToReview(tx, MODERATOR, { id, reply: 'secret shop reply' }),
+      ),
+    ).toMatchObject({ changed: true });
+    expect(
+      await handle.db.transaction(
+        async (tx) => await replyToReview(tx, MODERATOR, { id, reply: 'secret shop reply' }),
+      ),
+    ).toMatchObject({ changed: false });
+    const shown = JSON.stringify(await listApprovedReviews(handle.db, productId));
+    expect(shown).not.toContain('secret shop reply');
+    expect(shown).not.toContain('pending text');
+    await reject(id);
+    expect(JSON.stringify(await listApprovedReviews(handle.db, productId))).not.toContain(
+      'secret shop reply',
+    );
+  });
+
+  it('a title cannot hold a line break; bidi overrides and zero-width characters are stripped from title and body', () => {
+    const parsed = input({ title: 'Gr\neat\u202Eevil\u200B', body: 'a\nb\u2066c\u200Bd' });
+    expect(parsed.title).toBe('Greatevil');
+    expect(parsed.body).toBe('a\nbcd');
   });
 });
