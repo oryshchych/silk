@@ -596,7 +596,12 @@ export async function runAdminSmoke({
         cookie(contentToken),
         '/admin/reviews',
       );
-      const after = await (await fetch(base + reviewPath)).text();
+      // `revalidateTag(tag, 'max')` serves the stale page once while it refreshes: fetch until it shows the text.
+      let after = await (await fetch(base + reviewPath)).text();
+      for (let i = 0; i < 20 && !after.includes(pendingReview.body ?? 'x-no-body'); i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        after = await (await fetch(base + reviewPath)).text();
+      }
       const nowApproved = (await db.select().from(reviews)).find(
         (row) => row.id === pendingReview.id,
       );
@@ -622,7 +627,11 @@ export async function runAdminSmoke({
         cookie(contentToken),
         '/admin/reviews',
       );
-      const gone = await (await fetch(base + reviewPath)).text();
+      let gone = await (await fetch(base + reviewPath)).text();
+      for (let i = 0; i < 20 && gone.includes(pendingReview.body ?? 'x-no-body'); i += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        gone = await (await fetch(base + reviewPath)).text();
+      }
       check(
         'reviews: refusing it again removes the text from the product page',
         rejected.body.includes('"ok":true') && !gone.includes(pendingReview.body ?? 'x-no-body'),
