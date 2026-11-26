@@ -569,3 +569,104 @@ describe('sitemap rows', () => {
     expect(categories).not.toContain('archive-old');
   });
 });
+
+describe('feed rows', () => {
+  it('one row per active variant of a visible, indexable product, with the right availability', async () => {
+    const { listFeedVariants } = await import('../src/catalog/feed.ts');
+    const rows = await listFeedVariants(db, null, 1000);
+    const visible = new Set(await listVisibleProductSlugs(db));
+    expect(rows.length).toBeGreaterThan(0);
+    for (const r of rows) expect(visible.has(r.slug), r.slug).toBe(true);
+    const expected = await db.execute(
+      sql`SELECT count(*)::int AS n FROM product_variants v JOIN products p ON p.id = v.product_id
+           WHERE v.is_active AND p.slug = ANY(${sql.raw(`ARRAY[${[...visible].map((s) => `'${s}'`).join(',')}]::text[]`)})`,
+    );
+    expect(rows.length).toBe(Number(expected.rows[0]?.['n']));
+    const aurora = rows.filter((r) => r.slug === 'aurora');
+    expect(aurora.map((r) => `${r.size}:${r.color}:${String(r.available)}`).sort()).toEqual([
+      '75B:Білий:false',
+      '75B:Чорний:true',
+      '80B:Чорний:true',
+    ]);
+    // Every variant of a product shares the product id (the feed's item_group_id).
+    expect(new Set(aurora.map((r) => r.productId)).size).toBe(1);
+    expect(aurora.every((r) => r.category === 'Білизна > Бюстгальтери')).toBe(true);
+  });
+
+  it('never carries a cost price or a stock count', async () => {
+    const { listFeedVariants } = await import('../src/catalog/feed.ts');
+    const text = JSON.stringify(await listFeedVariants(db, null, 1000));
+    expect(text).not.toContain(String(SECRET_COST));
+    expect(text).not.toMatch(/cost|stock|reserved/i);
+  });
+
+  it('pages by keyset without a gap or a repeat', async () => {
+    const { listFeedVariants } = await import('../src/catalog/feed.ts');
+    const all = await listFeedVariants(db, null, 1000);
+    const seen: string[] = [];
+    let after: string | null = null;
+    for (;;) {
+      const page = await listFeedVariants(db, after, 3);
+      if (page.length === 0) break;
+      seen.push(...page.map((r) => r.variantId));
+      after = page.at(-1)?.variantId ?? null;
+    }
+    expect(seen).toEqual(all.map((r) => r.variantId));
+    expect(new Set(seen).size).toBe(seen.length);
+  });
+
+  it('leaves out an inactive variant, a noindex product and an unservable slug', async () => {
+    const { listFeedVariants } = await import('../src/catalog/feed.ts');
+    const before = (await listFeedVariants(db, null, 1000)).length;
+    await db.execute(
+      sql`UPDATE product_variants SET is_active = false WHERE sku = 'aurora-75B-white'`,
+    );
+    expect((await listFeedVariants(db, null, 1000)).length).toBe(before - 1);
+    await db.execute(
+      sql`UPDATE product_variants SET is_active = true WHERE sku = 'aurora-75B-white'`,
+    );
+    await db
+      .update(products)
+      .set({ noindex: true })
+      .where(sql`slug = 'aurora'`);
+    const without = await listFeedVariants(db, null, 1000);
+    expect(without.some((r) => r.slug === 'aurora')).toBe(false);
+    await db
+      .update(products)
+      .set({ noindex: false })
+      .where(sql`slug = 'aurora'`);
+    await db.execute(sql`UPDATE products SET slug = 'Бюст?' WHERE slug = 'aurora'`);
+    expect((await listFeedVariants(db, null, 1000)).some((r) => r.slug === 'Бюст?')).toBe(false);
+    await db.execute(sql`UPDATE products SET slug = 'aurora' WHERE slug = 'Бюст?'`);
+    expect((await listFeedVariants(db, null, 1000)).length).toBe(before);
+  });
+
+  it('prefers the photo of the variant colour, then the product order, and keeps https or relative urls only', async () => {
+    const { listFeedVariants } = await import('../src/catalog/feed.ts');
+    const [product] = await db
+      .select({ id: products.id })
+      .from(products)
+      .where(sql`slug = 'aurora'`);
+    const colorRows = await db.execute(sql`SELECT id FROM colors WHERE slug = 'white'`);
+    const whiteId = String(colorRows.rows[0]?.['id']);
+    // The last test of the file: it owns this product's photos.
+    await db.execute(sql`DELETE FROM product_images WHERE product_id = ${product?.id ?? ''}`);
+    await db.insert(productImages).values([
+      { productId: product?.id ?? '', url: 'https://m.example/plain.jpg', sortOrder: 0 },
+      {
+        productId: product?.id ?? '',
+        url: 'https://m.example/white.jpg',
+        colorId: whiteId,
+        sortOrder: 1,
+      },
+      { productId: product?.id ?? '', url: 'javascript:alert(1)', sortOrder: 2 },
+    ]);
+    const rows = (await listFeedVariants(db, null, 1000)).filter((r) => r.slug === 'aurora');
+    const white = rows.find((r) => r.color === 'Білий');
+    const black = rows.find((r) => r.color === 'Чорний');
+    expect(white?.image).toBe('https://m.example/white.jpg');
+    expect(white?.additionalImages).toEqual(['https://m.example/plain.jpg']);
+    expect(black?.image).toBe('https://m.example/plain.jpg');
+    await db.execute(sql`DELETE FROM product_images WHERE product_id = ${product?.id ?? ''}`);
+  });
+});

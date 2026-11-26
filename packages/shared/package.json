@@ -11,6 +11,7 @@
     "./cache-tags": "./src/cache-tags.ts",
     "./schema-org": "./src/schema-org.ts",
     "./sitemap-xml": "./src/sitemap-xml.ts",
+    "./product-feed": "./src/product-feed.ts",
     "./dto/serialize": "./src/dto/serialize.ts",
     "./dto/catalog": "./src/dto/catalog.ts",
     "./dto/order": "./src/dto/order.ts",
