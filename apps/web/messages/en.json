@@ -393,7 +393,7 @@
       "ADMIN_TOO_MANY_VARIANTS": "At most 200 variants can be created at once.",
       "ADMIN_DUPLICATE": "This entry already exists.",
       "STOCK_BELOW_ZERO": "The stock cannot be negative.",
-      "STOCK_BELOW_RESERVED": "The stock cannot be lower than what is reserved for orders. Cancel or release the orders first.",
+      "STOCK_BELOW_RESERVED": "The stock cannot be lower than what is reserved for orders. Open the variant's history to see which orders hold the reservation, then cancel or ship them.",
       "STOCK_ABOVE_MAX": "The stock exceeds the maximum.",
       "STOCK_REQUEST_REUSED": "This request was already used for another variant.",
       "STOCK_VARIANT_NOT_FOUND": "Variant not found.",
@@ -641,7 +641,11 @@
       "change": "Change",
       "before": "Before",
       "after": "After",
-      "by": "By"
+      "by": "By",
+      "reservedBy": "Reserved by orders",
+      "reservedHint": "A count below the reserved quantity is refused. Cancel or ship these orders first.",
+      "noReservations": "No order holds this variant.",
+      "reservedQty": "{count} pcs"
     },
     "orders": {
       "title": "Orders",

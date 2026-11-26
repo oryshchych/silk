@@ -835,9 +835,6 @@ export const paymentAttempts = pgTable('payment_attempts', {
   uniqueIndex('payment_attempts_external_uq').on(t.provider, t.externalId)
     .where(sql`${t.externalId} IS NOT NULL`),
   index('payment_attempts_order_idx').on(t.orderId, t.createdAt),
-  /** Для воркера звірки незавершених спроб */
-  index('payment_attempts_open_idx').on(t.createdAt)
-    .where(sql`${t.state} IN ('pending', 'in_flight', 'unknown')`),
   /** Rotation order of the reconcile job: least recently asked first, never asked before all. */
   index('payment_attempts_reconcile_idx')
     .on(sql`${t.lastReconciledAt} NULLS FIRST`, t.createdAt, t.id)
@@ -1719,6 +1716,10 @@ export const fiscalDocuments = pgTable('fiscal_documents', {
   check('fiscal_docs_kind', sql`${t.kind} IN ('sale', 'return')`),
   check('fiscal_docs_return_has_parent', sql`
     ${t.kind} <> 'return' OR ${t.parentDocumentId} IS NOT NULL
+  `),
+  /** A return receipt always points at the refund it returns (owner queue Q42): the database says it. */
+  check('fiscal_docs_return_has_refund', sql`
+    ${t.kind} <> 'return' OR ${t.refundOperationId} IS NOT NULL
   `),
 ]);
 

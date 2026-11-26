@@ -277,10 +277,16 @@ describe('0004_integrity — складені FK', () => {
   });
 
   it('чек повернення не посилається на чек продажу чужого замовлення', async () => {
+    // Since 0014 a return names its refund; one of order A's own keeps the parent link the only fault.
+    const { id: refundA } = await one<{ id: string }>(
+      app,
+      `INSERT INTO refund_operations (order_id, amount) VALUES ($1, 50) RETURNING id`,
+      [ids.orderA],
+    );
     await expectFkViolation(
-      `INSERT INTO fiscal_documents (order_id, kind, amount, parent_document_id)
-       VALUES ($1, 'return', 5000, $2)`,
-      [ids.orderA, ids.saleB],
+      `INSERT INTO fiscal_documents (order_id, kind, amount, parent_document_id, refund_operation_id)
+       VALUES ($1, 'return', 5000, $2, $3)`,
+      [ids.orderA, ids.saleB, refundA],
     );
   });
 
@@ -988,6 +994,50 @@ describe('0013_shipment_one_live', () => {
     await app.query(
       `INSERT INTO shipment_operations (order_id, carrier, state) VALUES ($1, 'nova_poshta', 'pending')`,
       [other],
+    );
+  });
+});
+
+describe('0014_q42_fiscal_check_drop_open_idx', () => {
+  it('the superseded index is gone and a return receipt must name its refund', async () => {
+    const gone = await app.query(
+      `SELECT 1 FROM pg_indexes WHERE indexname = 'payment_attempts_open_idx'`,
+    );
+    expect(gone.rowCount).toBe(0);
+    // The rotation index that replaced it stays.
+    expect(
+      (
+        await app.query(
+          `SELECT 1 FROM pg_indexes WHERE indexname = 'payment_attempts_reconcile_idx'`,
+        )
+      ).rowCount,
+    ).toBe(1);
+    const stamp = String(Date.now());
+    const { id: order } = await one<{ id: string }>(
+      app,
+      `INSERT INTO orders (order_number, customer_email, customer_phone, customer_name, delivery_method, subtotal, total)
+       VALUES ($1, 'a@b.co', '+380501112233', 'n', 'pickup', 100, 100) RETURNING id`,
+      [`FC-2026-${stamp.slice(-6)}`],
+    );
+    const { id: sale } = await one<{ id: string }>(
+      app,
+      `INSERT INTO fiscal_documents (order_id, kind, amount) VALUES ($1, 'sale', 100) RETURNING id`,
+      [order],
+    );
+    await expect(
+      app.query(
+        `INSERT INTO fiscal_documents (order_id, kind, parent_document_id, amount) VALUES ($1, 'return', $2, 50)`,
+        [order, sale],
+      ),
+    ).rejects.toMatchObject({ code: '23514', constraint: 'fiscal_docs_return_has_refund' });
+    const { id: refund } = await one<{ id: string }>(
+      app,
+      `INSERT INTO refund_operations (order_id, amount) VALUES ($1, 50) RETURNING id`,
+      [order],
+    );
+    await app.query(
+      `INSERT INTO fiscal_documents (order_id, kind, parent_document_id, refund_operation_id, amount) VALUES ($1, 'return', $2, $3, 50)`,
+      [order, sale, refund],
     );
   });
 });
