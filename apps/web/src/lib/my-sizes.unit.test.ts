@@ -10,13 +10,22 @@ const bra = (label: string, available: boolean, colorSlug = 'black'): SizedVaria
 });
 
 describe('saved sizes cookie', () => {
-  it('round-trips and survives odd labels', () => {
-    const value = formatSizesCookie({ bra: '75B', apparel: 'One size' });
-    expect(parseSizesCookie(value)).toEqual({ bra: '75B', apparel: 'One size' });
-    expect(parseSizesCookie(formatSizesCookie({ bra: null, apparel: 'M' }))).toEqual({
+  // What the browser holds: the framework percent-encodes the value it is given, once.
+  const onTheWire = (value: string): string => encodeURIComponent(value);
+
+  it('round-trips through the framework encoding and survives odd labels', () => {
+    const wire = onTheWire(formatSizesCookie({ bra: '75B', apparel: 'One size' }));
+    expect(wire).toBe('bra%3A75B%7Capparel%3AOne%20size');
+    expect(parseSizesCookie(wire)).toEqual({ bra: '75B', apparel: 'One size' });
+    expect(parseSizesCookie(onTheWire(formatSizesCookie({ bra: null, apparel: 'M' })))).toEqual({
       bra: null,
       apparel: 'M',
     });
+  });
+
+  it('a double-encoded value (the old bug) reads as none, never as a wrong size', () => {
+    const twice = encodeURIComponent(onTheWire(formatSizesCookie({ bra: '75B', apparel: 'M' })));
+    expect(parseSizesCookie(twice)).toEqual({ bra: null, apparel: null });
   });
 
   it('reads garbage, markup, over-long and undecodable values as "none"', () => {

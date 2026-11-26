@@ -7,6 +7,7 @@
  * is sent anywhere).
  */
 import { buildUnsubscribeToken } from '../packages/core/src/account/unsubscribe-token.ts';
+import { parseSizesCookie } from '../apps/web/src/lib/my-sizes.ts';
 import { buildEmailToken } from '../packages/core/src/customer-auth/tokens.ts';
 import { createDb } from '../packages/db/src/client.ts';
 import { absorb, actionIds, cookieHeader, type Jar } from './smoke-http.ts';
@@ -488,10 +489,25 @@ export async function runAccountSmoke(ctx: Context): Promise<void> {
         newClient(),
         '/account/profile',
       );
+      // The WIRE value of the real Set-Cookie must read back as the saved size (it was once double-encoded).
+      const wire = /silk_sizes=([^;]+)/.exec(saved.setCookie)?.[1];
       check(
-        'saving sizes sets the readable silk_sizes cookie',
-        saved.body.includes('"ok":true') && /silk_sizes=/.test(saved.setCookie),
-        brief(saved),
+        'saving sizes sets a silk_sizes cookie that the browser-side parser reads back as the saved size',
+        saved.body.includes('"ok":true') && parseSizesCookie(wire).apparel === size.label,
+        { wire, label: size.label },
+      );
+      const refused = await act(
+        'reorderAction',
+        { orderNumber: orderOfA.order_number },
+        new Map(),
+        newClient(),
+        '/account/orders',
+        { Origin: 'https://evil.example', 'X-Forwarded-Host': 'evil.example' },
+      );
+      check(
+        'reorder: a refused call (foreign Origin) sets no cart cookie',
+        !/silk_cart/.test(refused.setCookie),
+        brief(refused),
       );
       const homeHtml = await (await fetch(`${base}/`)).text();
       const productPath = /href="(\/product\/[^"]+)"/.exec(homeHtml)?.[1] ?? '/';

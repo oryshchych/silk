@@ -152,6 +152,26 @@ describe('orders: IDOR between two customers', () => {
         }),
     );
     expect(done).toEqual({ added: 1, skipped: 0 });
+    // IDEMPOTENT: a repeat, and two PARALLEL calls on separate connections, leave the ordered quantity.
+    const barrier = new Barrier(3);
+    const pools = [world.connect(1), world.connect(1), world.connect(1)];
+    await Promise.all(
+      pools.map(async (pool) => {
+        await barrier.wait();
+        await pool.db.transaction(
+          async (tx) =>
+            await reorderMyOrder(tx, {
+              customerId: a.customerId,
+              orderNumber: numberA,
+              cartToken: token,
+            }),
+        );
+      }),
+    );
+    const quantities = await handle.db.execute<{ quantity: number }>(
+      sql`SELECT i.quantity FROM cart_items i JOIN carts c ON c.id = i.cart_id WHERE c.token = ${token}`,
+    );
+    expect(quantities.rows.map((row) => row.quantity)).toEqual([1]);
     await handle.db.execute(
       sql`UPDATE product_variants SET is_active = false WHERE id = ${world.fixture.variantIds[0]}`,
     );
@@ -335,6 +355,14 @@ describe('profile, sizes, newsletter', () => {
       .from(newsletterSubscribers)
       .where(eq(newsletterSubscribers.email, 'a@example.test'));
     expect(after?.unsubscribedAt).not.toBeNull();
+    expect((await getProfile(handle.db, a.customerId))?.acceptsMarketing).toBe(false);
+    // The mirror drifted (a withdrawal elsewhere): asking again repairs both sides, it is not skipped.
+    await handle.db.execute(
+      sql`UPDATE customers SET accepts_marketing = true WHERE id = ${a.customerId}`,
+    );
+    expect(
+      await handle.db.transaction(async (tx) => await setNewsletter(tx, a, { subscribe: false })),
+    ).toBe(true);
     expect((await getProfile(handle.db, a.customerId))?.acceptsMarketing).toBe(false);
     // B's choice is separate.
     expect((await getProfile(handle.db, b.customerId))?.acceptsMarketing).toBe(false);

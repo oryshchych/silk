@@ -138,7 +138,17 @@ export async function setNewsletter(
     .select({ email: customers.email, locale: customers.locale, on: customers.acceptsMarketing })
     .from(customers)
     .where(eq(customers.id, who.customerId));
-  if (customer === undefined || customer.on === input.subscribe) return false;
+  if (customer === undefined) return false;
+  // `newsletter_subscribers` is the source of truth (the future mailer reads it); the flag on the
+  // customer mirrors it. Nothing is skipped unless BOTH already say what was asked.
+  const [subscriber] = await tx
+    .select({
+      active: sql<boolean>`${newsletterSubscribers.confirmedAt} IS NOT NULL AND ${newsletterSubscribers.unsubscribedAt} IS NULL`,
+    })
+    .from(newsletterSubscribers)
+    .where(eq(newsletterSubscribers.email, customer.email));
+  if (customer.on === input.subscribe && (subscriber?.active ?? false) === input.subscribe)
+    return false;
   await tx
     .update(customers)
     .set({ acceptsMarketing: input.subscribe })
