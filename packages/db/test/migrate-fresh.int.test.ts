@@ -1282,6 +1282,8 @@ describe('0021 and 0022: legal_documents', () => {
       locale: 'uk',
       version: String(n),
       status,
+      // A distinct start per row: two published versions of one document cannot share an instant.
+      start: new Date(Date.UTC(2020, 0, 1) + n * 1000).toISOString(),
       stamp: status === 'published' ? new Date().toISOString() : null,
     });
   };
