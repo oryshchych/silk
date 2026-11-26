@@ -645,7 +645,8 @@
       "reservedBy": "Reserved by orders",
       "reservedHint": "A count below the reserved quantity is refused. Cancel or ship these orders first.",
       "noReservations": "No order holds this variant.",
-      "reservedQty": "{count} pcs"
+      "reservedQty": "{count} pcs",
+      "reservedCount": "Reserved for orders: {count} pcs."
     },
     "orders": {
       "title": "Orders",

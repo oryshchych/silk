@@ -180,3 +180,29 @@ export async function listReservingOrders(
     expires: row.expires,
   }));
 }
+
+export interface ReservationView {
+  /** The reserved quantity: the same number the stock list shows to every role that opens it. */
+  reserved: number;
+  /** The orders behind it, or null for a role that may not see orders (`orders.view`). */
+  orders: ReservingOrderRow[] | null;
+}
+
+/**
+ * What a role may see of a variant's reservation. The quantity is stock data (`admin.view`); the
+ * order numbers, statuses and times are order data and need `orders.view`: for any other role the
+ * orders are not even read.
+ */
+export async function reservationView(
+  db: Reader,
+  variantId: string,
+  canSeeOrders: boolean,
+): Promise<ReservationView> {
+  const counted = await db.execute<{ reserved: number }>(
+    sql`SELECT reserved_quantity AS reserved FROM product_variants WHERE id = ${variantId}`,
+  );
+  return {
+    reserved: counted.rows[0]?.reserved ?? 0,
+    orders: canSeeOrders ? await listReservingOrders(db, variantId) : null,
+  };
+}

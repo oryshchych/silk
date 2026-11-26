@@ -1,4 +1,4 @@
-import { listReservingOrders, listStockHistory } from '@store/core/admin-stock-read';
+import { listStockHistory, reservationView } from '@store/core/admin-stock-read';
 import { can } from '@store/core/auth-permissions';
 import { getTranslations } from 'next-intl/server';
 import { cookies } from 'next/headers';
@@ -21,8 +21,10 @@ export default async function StockHistoryPage({
   const t = await getTranslations({ locale, namespace: 'admin.stock' });
   const db = await getDb();
   const rows = await listStockHistory(db, id.data, 50);
-  const reserving = await listReservingOrders(db, id.data);
+  // Order numbers, statuses and times are order data: only a role with `orders.view` receives them.
   const canOpenOrders = can(session.role, 'orders.view');
+  const reservation = await reservationView(db, id.data, canOpenOrders);
+  const reserving = reservation.orders ?? [];
   const header = 'px-3 py-2 text-left font-medium';
   const cell = 'px-3 py-2 align-top';
   return (
@@ -36,7 +38,9 @@ export default async function StockHistoryPage({
           {t('reservedBy')}
         </h2>
         <p className="text-text-muted">{t('reservedHint')}</p>
-        {reserving.length === 0 ? (
+        {reservation.orders === null ? (
+          <p className="mt-2">{t('reservedCount', { count: reservation.reserved })}</p>
+        ) : reserving.length === 0 ? (
           <p className="mt-2">{t('noReservations')}</p>
         ) : (
           <ul className="mt-2 space-y-1">

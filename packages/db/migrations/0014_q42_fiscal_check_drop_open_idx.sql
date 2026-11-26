@@ -1,7 +1,8 @@
 DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM "fiscal_documents" WHERE "kind" = 'return' AND "refund_operation_id" IS NULL) THEN
-    RAISE EXCEPTION '0014: a return receipt has no refund operation; resolve it by hand before migrating';
+    RAISE EXCEPTION '0014: a return receipt has no refund operation; resolve it by hand before migrating'
+      USING DETAIL = (SELECT string_agg("id"::text, ',') FROM "fiscal_documents" WHERE "kind" = 'return' AND "refund_operation_id" IS NULL);
   END IF;
 END
 $$;

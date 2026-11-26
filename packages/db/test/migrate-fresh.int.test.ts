@@ -1012,12 +1012,11 @@ describe('0014_q42_fiscal_check_drop_open_idx', () => {
         )
       ).rowCount,
     ).toBe(1);
-    const stamp = String(Date.now());
     const { id: order } = await one<{ id: string }>(
       app,
       `INSERT INTO orders (order_number, customer_email, customer_phone, customer_name, delivery_method, subtotal, total)
        VALUES ($1, 'a@b.co', '+380501112233', 'n', 'pickup', 100, 100) RETURNING id`,
-      [`FC-2026-${stamp.slice(-6)}`],
+      ['FC-2026-014014'],
     );
     const { id: sale } = await one<{ id: string }>(
       app,

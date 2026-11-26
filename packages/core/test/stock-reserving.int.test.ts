@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { DbHandle } from '@store/db/client';
 
 import { setCartItem, startCheckout } from '../src/cart/cart.ts';
-import { listReservingOrders } from '../src/catalog-admin/stock-read.ts';
+import { listReservingOrders, reservationView } from '../src/catalog-admin/stock-read.ts';
 import { createOrder } from '../src/orders/create-order.ts';
 import { cancelOrder } from '../src/orders/fulfilment.ts';
 import { adjustStock, StockBelowReservedError } from '../src/stock/adjust-stock.ts';
@@ -111,5 +111,26 @@ describe('the orders behind a reservation', () => {
     expect(await listReservingOrders(admin.db, v1, 2)).toHaveLength(2);
     expect(await listReservingOrders(admin.db, v1, -5)).toHaveLength(1);
     expect(await listReservingOrders(admin.db, v1, 100_000)).toHaveLength(3);
+  });
+});
+
+describe('what a role may see of a reservation', () => {
+  it('a role without orders.view gets the quantity only: the orders are not read for it', async () => {
+    const a = await place(2);
+    await place(1);
+    const content = await reservationView(admin.db, v1, false);
+    expect(content).toEqual({ reserved: 3, orders: null });
+    expect(JSON.stringify(content)).not.toContain(a);
+    expect(JSON.stringify(content)).not.toMatch(/LS-\d{4}-/);
+    const manager = await reservationView(admin.db, v1, true);
+    expect(manager.reserved).toBe(3);
+    expect(manager.orders?.map((row) => row.orderId)).toContain(a);
+  });
+
+  it('an unknown variant has no reservation', async () => {
+    expect(await reservationView(admin.db, '00000000-0000-4000-8000-00000000dead', false)).toEqual({
+      reserved: 0,
+      orders: null,
+    });
   });
 });

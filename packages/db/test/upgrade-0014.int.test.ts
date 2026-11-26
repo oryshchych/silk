@@ -1,7 +1,8 @@
 /**
- * The upgrade path of 0014 (one live shipment operation per order): a database at 0013 that ALREADY
- * holds two live operations for one order fails the migration with a readable message (the guard at
- * the top of the file), stays at 0013, and applies once the duplicates are resolved.
+ * The upgrade path of 0014 (owner queue Q42): it drops the superseded `payment_attempts_open_idx`
+ * and adds `CHECK fiscal_docs_return_has_refund` (a return receipt names its refund). A database at
+ * 0013 that ALREADY holds a return receipt without a refund operation fails the migration with the
+ * guard's message (naming the offending rows), stays at 0013, and applies once they are resolved.
  */
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -95,6 +96,8 @@ async function order(email: string): Promise<string> {
   return rows[0]?.id ?? '';
 }
 
+let orphanId = '';
+
 describe('0014 over a database that already holds a return receipt without a refund', () => {
   it('is at 0013 before the test: the old index is there, the check is not', async () => {
     expect(await hasOpenIndex()).toBe(true);
@@ -107,10 +110,11 @@ describe('0014 over a database that already holds a return receipt without a ref
       `INSERT INTO fiscal_documents (order_id, kind, amount) VALUES ($1, 'sale', 100) RETURNING id`,
       [o],
     );
-    await upgradeRoot.query(
-      `INSERT INTO fiscal_documents (order_id, kind, parent_document_id, amount) VALUES ($1, 'return', $2, 50)`,
+    const { rows: orphan } = await upgradeRoot.query<{ id: string }>(
+      `INSERT INTO fiscal_documents (order_id, kind, parent_document_id, amount) VALUES ($1, 'return', $2, 50) RETURNING id`,
       [o, sale[0]?.id],
     );
+    orphanId = orphan[0]?.id ?? '';
     const failure: unknown = await runMigrations(migrateUrl).then(
       () => null,
       (error: unknown) => error,
@@ -119,6 +123,10 @@ describe('0014 over a database that already holds a return receipt without a ref
     expect(cause instanceof Error ? cause.message : '').toContain(
       '0014: a return receipt has no refund',
     );
+    // The message names the offending rows (DETAIL).
+    const detail: unknown =
+      typeof cause === 'object' && cause !== null && 'detail' in cause ? cause.detail : '';
+    expect(detail).toContain(orphanId);
     expect(await hasOpenIndex()).toBe(true);
     expect(await hasCheck()).toBe(false);
     await upgradeRoot.query(
