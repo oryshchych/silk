@@ -495,15 +495,27 @@ export async function runAdminSmoke({
     const orderList = async (token: string) => await get('/admin/orders', cookie(token));
     const orderCard = async (token: string) =>
       await get(`/admin/orders/${order.id}`, cookie(token));
+    const ordersPage = await orderList(managerToken);
+    const managerCard = await orderCard(managerToken);
     check(
-      'orders: a manager lists and opens an order; a content role gets 404 on both',
-      (await orderList(managerToken)).html.includes(orderNumber) &&
-        (await orderCard(managerToken)).status === 200 &&
-        (await orderList(contentToken)).status === 404 &&
-        (await orderCard(contentToken)).status === 404,
+      'orders: a manager lists and opens an order',
+      ordersPage.status === 200 &&
+        ordersPage.html.includes(orderNumber) &&
+        managerCard.status === 200 &&
+        managerCard.html.includes(orderNumber),
+    );
+    // The pages stream behind the loading boundary, so a `notFound()` may arrive as a 200 shell that
+    // carries the not-found marker: what matters is that no order data is in the response.
+    const hidden = (page: { status: number; html: string }): boolean =>
+      !page.html.includes(orderNumber) &&
+      !page.html.includes('Smoke Buyer') &&
+      (page.status === 404 || page.html.includes('NEXT_HTTP_ERROR_FALLBACK;404'));
+    check(
+      'orders: a content role gets the not-found page, with no order data, for the list and the card',
+      hidden(await orderList(contentToken)) && hidden(await orderCard(contentToken)),
     );
     const costHeading = /<th[^>]*>Собівартість<\/th>/;
-    const managerOrder = await orderCard(managerToken);
+    const managerOrder = managerCard;
     const adminOrder = await orderCard(adminToken);
     check(
       'orders: the card shows the unit cost to an admin and neither the column, the value nor the buyer IP to a manager',
