@@ -13,8 +13,13 @@ export interface MySizes {
 
 const LABEL = /^[\p{L}\p{N} .+/-]{1,20}$/u;
 
+/**
+ * The cookie VALUE as given to `cookies().set`, which percent-encodes it itself: the wire value is
+ * `bra%3A75B%7Capparel%3AM` and the browser's `document.cookie` shows exactly that, so the parser
+ * decodes ONCE. (Encoding here too once made the value double-encoded and the hint never appeared.)
+ */
 export function formatSizesCookie(sizes: MySizes): string {
-  return encodeURIComponent(`bra:${sizes.bra ?? ''}|apparel:${sizes.apparel ?? ''}`);
+  return `bra:${sizes.bra ?? ''}|apparel:${sizes.apparel ?? ''}`;
 }
 
 /** The saved sizes of a cookie value; anything malformed reads as "none". */

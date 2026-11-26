@@ -46,8 +46,9 @@ const order = z.object({ orderNumber: z.string().min(1).max(40) });
 export async function reorderAction(
   input: unknown,
 ): Promise<CustomerActionResult<{ added: number; skipped: number }>> {
-  const token = await ensureCartToken();
   const result = await customerAction(input, order, async (tx, who, data) => {
+    // Only now (Origin, session, limit and input are accepted) is a cart cookie minted.
+    const token = await ensureCartToken();
     const done = await reorderMyOrder(tx, {
       customerId: who.customer.customerId,
       orderNumber: data.orderNumber,

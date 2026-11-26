@@ -5,7 +5,7 @@
  */
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 
-import { orderItems, orders, productVariants, products } from '@store/db/schema';
+import { cartItems, carts, orderItems, orders, productVariants, products } from '@store/db/schema';
 import type { Reader, Tx } from '@store/db/types';
 import { accountOrderRowDto, type AccountOrderRowDto } from '@store/shared/dto/account';
 import { customerOrderDto, type CustomerOrderDto } from '@store/shared/dto/order';
@@ -122,11 +122,18 @@ export async function reorderMyOrder(
       skipped += 1;
       continue;
     }
+    // "At least what was ordered", never "plus again": a repeat, a second tab or a retry changes
+    // nothing (adding would multiply the quantity up to the cart limit).
+    const [existing] = await tx
+      .select({ quantity: cartItems.quantity })
+      .from(cartItems)
+      .innerJoin(carts, eq(carts.id, cartItems.cartId))
+      .where(and(eq(carts.token, input.cartToken), eq(cartItems.variantId, line.variantId)));
     await setCartItem(tx, {
       cartToken: input.cartToken,
       variantId: line.variantId,
-      quantity: line.quantity,
-      mode: 'add',
+      quantity: Math.max(existing?.quantity ?? 0, line.quantity),
+      mode: 'set',
     });
     added += 1;
   }

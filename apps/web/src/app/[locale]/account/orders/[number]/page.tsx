@@ -1,4 +1,5 @@
 import { getMyOrder } from '@store/core/account-orders';
+import { claimGuestOrders } from '@store/core/customer-auth';
 import type { Metadata } from 'next';
 import { getTranslations } from 'next-intl/server';
 import { notFound } from 'next/navigation';
@@ -29,11 +30,12 @@ export default async function AccountOrderPage({ params }: Props) {
       title={(t) => t('section.orders')}
     >
       {async ({ locale, customer }) => {
-        const order = await getMyOrder(
-          await getDb(),
-          customer.customerId,
-          decodeURIComponent(number),
-        );
+        const db = await getDb();
+        // A deep link to an order placed as a guest with this verified address works before the list was opened.
+        await db.transaction(async (tx) => {
+          await claimGuestOrders(tx, { customerId: customer.customerId, email: customer.email });
+        });
+        const order = await getMyOrder(db, customer.customerId, decodeURIComponent(number));
         if (order === null) notFound();
         return (
           <div className="flex flex-col gap-4">
