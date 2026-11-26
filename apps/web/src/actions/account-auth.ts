@@ -6,7 +6,8 @@ import {
   requestPasswordReset,
   requestRegistration,
 } from '@store/core/customer-auth';
-import { logoutCustomer } from '@store/core/customer-session';
+import { mySizeLabels } from '@store/core/account-profile';
+import { logoutCustomer, resolveCustomerSession } from '@store/core/customer-session';
 import type { ClientInfo } from '@store/core/auth';
 import { cookies, headers } from 'next/headers';
 import { redirect } from 'next/navigation';
@@ -16,6 +17,7 @@ import { requestOriginOk } from '@/lib/admin/bound-action';
 import { authConfig, cookiesAreSecure } from '@/lib/admin/config';
 import { customerCookieName, customerCookieOptions } from '@/lib/account/cookies';
 import { currentCustomer } from '@/lib/account/session';
+import { SIZES_COOKIE, formatSizesCookie } from '@/lib/my-sizes';
 import { getDb } from '@/lib/db';
 import { href, paths } from '@/lib/paths';
 import { createRateLimiter, type RateLimiter } from '@/lib/rate-limit';
@@ -99,6 +101,20 @@ export async function customerLoginAction(input: unknown): Promise<AccountFormSt
   if (!result.ran) return { status: 'error', code: 'rateLimited' };
   if (!result.value.ok) return { status: 'error', code: 'invalid' };
   await setSession(result.value.token, result.value.expiresAt);
+  // The saved sizes travel to the browser for the "your size" hint on product pages.
+  const session = await resolveCustomerSession(db, config, result.value.token);
+  if (session !== null) {
+    const labels = await mySizeLabels(db, session.customerId);
+    if (labels.bra !== null || labels.apparel !== null) {
+      (await cookies()).set(SIZES_COOKIE, formatSizesCookie(labels), {
+        httpOnly: false,
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 60 * 60 * 24 * 30,
+        secure: await cookiesAreSecure(),
+      });
+    }
+  }
   redirect(href(parsed.data.locale, paths.account));
 }
 
@@ -178,6 +194,7 @@ export async function customerLogoutAction(input: unknown): Promise<void> {
     }
     const store = await cookies();
     store.delete({ name: customerCookieName(await cookiesAreSecure()), path: '/' });
+    store.delete({ name: SIZES_COOKIE, path: '/' });
   }
   redirect(href(chosen, '/account/login'));
 }

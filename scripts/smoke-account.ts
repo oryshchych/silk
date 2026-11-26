@@ -6,6 +6,7 @@
  * The mailed link is rebuilt from the token id in the database, exactly as the worker does (nothing
  * is sent anywhere).
  */
+import { parseSizesCookie } from '../apps/web/src/lib/my-sizes.ts';
 import { buildEmailToken } from '../packages/core/src/customer-auth/tokens.ts';
 import { createDb } from '../packages/db/src/client.ts';
 import { absorb, actionIds, cookieHeader, type Jar } from './smoke-http.ts';
@@ -320,6 +321,206 @@ export async function runAccountSmoke(ctx: Context): Promise<void> {
       !afterOut.html.includes(email) && afterOut.html.includes('/account/login'),
       brief(afterOut),
     );
+
+    // 5b. The account's own data, with TWO customers: orders, the 404 for someone else's order, saved
+    // sizes that never reach the shared product page, addresses, the newsletter, ownership of an address.
+    const signUp = async (address: string): Promise<Jar> => {
+      await act(
+        'registerAction',
+        { email: address, locale: 'uk' },
+        new Map(),
+        newClient(),
+        '/account/register',
+      );
+      await act(
+        'setPasswordAction',
+        { token: await mailedToken(address), password: PASSWORD, locale: 'uk' },
+        new Map(),
+        newClient(),
+        '/account/set-password',
+      );
+      const jarOf: Jar = new Map();
+      await act(
+        'customerLoginAction',
+        { email: address, password: PASSWORD, locale: 'uk' },
+        jarOf,
+        newClient(),
+      );
+      return jarOf;
+    };
+    const emailA = `own-a-${stamp}@example.test`;
+    const emailB = `own-b-${stamp}@example.test`;
+    // Two seeded guest orders: one placed with A's address, one with B's, BEFORE the accounts exist.
+    const { rows: seeded } = await handle.pool.query<{ id: string; order_number: string }>(
+      `SELECT id, order_number FROM orders WHERE customer_id IS NULL ORDER BY created_at LIMIT 2`,
+    );
+    const [orderOfA, orderOfB] = seeded;
+    if (orderOfA === undefined || orderOfB === undefined)
+      throw new Error('the seed has no guest orders');
+    await handle.pool.query(`UPDATE orders SET customer_email = $1 WHERE id = $2`, [
+      emailA,
+      orderOfA.id,
+    ]);
+    await handle.pool.query(`UPDATE orders SET customer_email = $1 WHERE id = $2`, [
+      emailB,
+      orderOfB.id,
+    ]);
+    const jarA = await signUp(emailA);
+    const jarB = await signUp(emailB);
+    const listA = await page('/account/orders', jarA);
+    check(
+      "orders: A sees the order placed with A's verified address and not B's",
+      listA.html.includes(orderOfA.order_number) && !listA.html.includes(orderOfB.order_number),
+      brief(listA),
+    );
+    const detailA = await page(`/account/orders/${orderOfA.order_number}`, jarA);
+    check(
+      'orders: A opens their own order',
+      detailA.status === 200 && detailA.html.includes(orderOfA.order_number),
+      brief(detailA),
+    );
+    const idor = await page(`/account/orders/${orderOfB.order_number}`, jarA);
+    const missing = await page('/account/orders/LS-2026-999999', jarA);
+    check(
+      "IDOR: B's order number gives A the same 404 as a number that does not exist",
+      idor.status === 404 && missing.status === 404 && !idor.html.includes(emailB),
+      { idor: idor.status, missing: missing.status },
+    );
+    check(
+      'the order page has no cost, admin note or other customer data',
+      !/unitCost|unit_cost|adminNote|admin_note|accessTokenHash/.test(detailA.html),
+    );
+    check('an anonymous visitor gets no order list', (await page('/account/orders')).status >= 300);
+
+    // Actions: no session, foreign Origin, ownership.
+    const noSession = await act(
+      'addAddressAction',
+      { deliveryMethod: 'ukrposhta' },
+      new Map(),
+      newClient(),
+      '/account/addresses',
+    );
+    check(
+      'an address action without a session is refused before the body is read',
+      noSession.body.includes('"code":"unauthorized"'),
+      brief(noSession),
+    );
+    const foreignAct = await act(
+      'setNewsletterAction',
+      { subscribe: true },
+      jarA,
+      newClient(),
+      '/account/profile',
+      { Origin: 'https://evil.example', 'X-Forwarded-Host': 'evil.example' },
+    );
+    check(
+      'a customer action with a foreign Origin is refused',
+      foreignAct.body.includes('"code":"error"'),
+      brief(foreignAct),
+    );
+    const address = {
+      deliveryMethod: 'ukrposhta',
+      recipientName: 'Тест Покупець',
+      phone: '0501234567',
+      street: 'Хрещатик',
+      house: '1',
+      postcode: '01001',
+      isDefault: true,
+    };
+    const added = await act('addAddressAction', address, jarA, newClient(), '/account/addresses');
+    check('A saves an address', added.body.includes('"ok":true'), brief(added));
+    const idMatch = /"value":"([0-9a-f-]{36})"/.exec(added.body);
+    const addressId = idMatch?.[1] ?? '';
+    const foreignDelete = await act(
+      'deleteAddressAction',
+      { id: addressId },
+      jarB,
+      newClient(),
+      '/account/addresses',
+    );
+    check(
+      "IDOR: B cannot delete A's address (not found)",
+      foreignDelete.body.includes('"code":"notFound"') && addressId !== '',
+      brief(foreignDelete),
+    );
+    const listAddr = await page('/account/addresses', jarB);
+    check("B's address book does not show A's street", !listAddr.html.includes('Хрещатик'));
+    const ownDelete = await act(
+      'deleteAddressAction',
+      { id: addressId },
+      jarA,
+      newClient(),
+      '/account/addresses',
+    );
+    check('A deletes their own address', ownDelete.body.includes('"ok":true'), brief(ownDelete));
+    const subscribed = await act(
+      'setNewsletterAction',
+      { subscribe: true },
+      jarA,
+      newClient(),
+      '/account/profile',
+    );
+    const { rows: consent } = await handle.pool.query<{
+      source: string | null;
+      confirmed: boolean;
+    }>(
+      `SELECT source, confirmed_at IS NOT NULL AS confirmed FROM newsletter_subscribers WHERE email = $1`,
+      [emailA],
+    );
+    check(
+      'newsletter: the consent row records the source and the time',
+      subscribed.body.includes('"ok":true') &&
+        consent[0]?.source === 'account' &&
+        consent[0].confirmed,
+      consent,
+    );
+
+    // Saved sizes: the cookie is set, the shared product page does not change.
+    const { rows: sizeRows } = await handle.pool.query<{ id: string; label: string }>(
+      `SELECT id, label FROM sizes WHERE system = 'apparel' ORDER BY sort_order LIMIT 1`,
+    );
+    const size = sizeRows[0];
+    if (size !== undefined) {
+      const saved = await act(
+        'saveSizesAction',
+        { braSizeId: null, apparelSizeId: size.id },
+        jarA,
+        newClient(),
+        '/account/profile',
+      );
+      // The WIRE value of the real Set-Cookie must read back as the saved size (it was once double-encoded).
+      const wire = /silk_sizes=([^;]+)/.exec(saved.setCookie)?.[1];
+      check(
+        'saving sizes sets a silk_sizes cookie that the browser-side parser reads back as the saved size',
+        saved.body.includes('"ok":true') && parseSizesCookie(wire).apparel === size.label,
+        { wire, label: size.label },
+      );
+      const refused = await act(
+        'reorderAction',
+        { orderNumber: orderOfA.order_number },
+        new Map(),
+        newClient(),
+        '/account/orders',
+        { Origin: 'https://evil.example', 'X-Forwarded-Host': 'evil.example' },
+      );
+      check(
+        'reorder: a refused call (foreign Origin) sets no cart cookie',
+        !/silk_cart/.test(refused.setCookie),
+        brief(refused),
+      );
+      const homeHtml = await (await fetch(`${base}/`)).text();
+      const productPath = /href="(\/product\/[^"]+)"/.exec(homeHtml)?.[1] ?? '/';
+      const anon = await fetch(base + productPath);
+      const signed = await fetch(base + productPath, {
+        headers: { Cookie: cookieHeader(jarA) },
+      });
+      const [anonHtml, signedHtml] = [await anon.text(), await signed.text()];
+      check(
+        'CACHE: the product page is byte-identical for a signed-in visitor with saved sizes (no personal markup)',
+        anonHtml === signedHtml && !signedHtml.includes(emailA),
+        { same: anonHtml === signedHtml, signedCache: signed.headers.get('x-nextjs-cache') },
+      );
+    }
 
     // 6. Limits: mails and sign-in attempts from one client run out.
     const hammer = newClient();
