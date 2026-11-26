@@ -3,11 +3,19 @@
  * visitor gets. One READY and one INCOMPLETE product are written straight into the database; the
  * report must call the first ready and the second not, and the real storefront HTML in BOTH
  * languages must show the first one's title, description, name, composition and photo alt text,
- * and the second one's fallbacks without a photo. The category text is saved the way the editor does
- * (a real server action through a content editor's session) and must then appear on the category page.
+ * and the second one's fallbacks without a photo. The admin screen is fetched with real sessions of
+ * every role we can mint without a second factor: anonymous is sent to the login, manager and
+ * content read it (private, no-store, noindex) and see no cost, and a hostile product name is
+ * shown as text.
  */
-import { beginLogin, createAdminUser } from '../packages/core/src/auth/service.ts';
-import { readContentReadiness } from '../packages/core/src/content-readiness/read.ts';
+import {
+  beginLogin,
+  confirmTotpEnrolment,
+  createAdminUser,
+  startTotpEnrolment,
+} from '../packages/core/src/auth/service.ts';
+import { codeAt, stepOf } from '../packages/core/src/auth/totp.ts';
+import { readContentReadiness } from '../packages/core/src/content-readiness/report.ts';
 import { createDb } from '../packages/db/src/client.ts';
 import { categories } from '../packages/db/src/schema.ts';
 import { actionIds } from './smoke-http.ts';
@@ -28,7 +36,8 @@ interface Context {
 }
 
 const PASSWORD = 'smoke-content-password-0123456789';
-const HOSTILE = '<script>alert("smoke")</script>';
+const HOSTILE = '<script>alert("smoke")</script>"><svg onload=alert(1)>';
+const COST = '4242424';
 
 export async function runContentSmoke({
   base,
@@ -108,7 +117,7 @@ export async function runContentSmoke({
     const config = { secret: authSecret };
     const client = { ip: '198.51.100.88', userAgent: 'smoke-content' };
     const tokens: Record<string, string> = {};
-    for (const role of ['content'] as const) {
+    for (const role of ['manager', 'content'] as const) {
       const email = `${role}-content-${suffix}@example.test`;
       await db.transaction(async (tx) => {
         await createAdminUser(tx, { email, password: PASSWORD, role });
@@ -128,7 +137,7 @@ export async function runContentSmoke({
       method: 'POST',
       redirect: 'manual',
       headers: {
-        'Next-Action': ids['updateCategoryAction'] ?? '',
+        'Next-Action': ids['updateCategoryContentAction'] ?? '',
         'Content-Type': 'text/plain;charset=UTF-8',
         'X-Forwarded-For': nextClient(),
         Origin: siteOrigin,
@@ -138,14 +147,48 @@ export async function runContentSmoke({
       body: JSON.stringify([
         {
           categoryId,
-          seoTextUk: `<p>${filler('Smoke uk text', 260)}</p>`,
-          seoTextEn: `<p>${filler('Smoke en text', 260)}</p>`,
+          // Plain paragraphs, the way a person types them: the action turns them into <p>.
+          seoTextUk: `${filler('Smoke uk text', 260)}\n\nДругий абзац українською.`,
+          seoTextEn: `${filler('Smoke en text', 260)}\n\nSecond paragraph in English.`,
+          descriptionUk: '',
+          descriptionEn: '',
+          metaTitleUk: '',
+          metaTitleEn: '',
+          metaDescriptionUk: '',
+          metaDescriptionEn: '',
+          noindex: false,
         },
       ]),
     });
     check(
       'content: a content editor saves the category text through the real action',
       updated.status === 200,
+    );
+    // Its editor page: a content editor opens it (both locales, real text, the SEO text field); a manager gets a 404.
+    for (const [locale, text] of [
+      ['uk', 'Тексти категорії'],
+      ['en', 'Texts of the category'],
+    ] as const) {
+      const editor = await get(`/admin/categories/${categoryId}`, {
+        Cookie: `admin_session=${tokens['content'] ?? ''}; admin_locale=${locale}`,
+      });
+      check(
+        `content: the category editor (${locale}) renders real text and the SEO text field, private no-store`,
+        editor.status === 200 &&
+          editor.html.includes(text) &&
+          editor.html.includes('name="seoTextUk"') &&
+          editor.html.includes('Smoke uk text') &&
+          !editor.html.includes('admin.categoryEditor.') &&
+          !editor.html.includes('MISSING_MESSAGE') &&
+          editor.cache.includes('no-store'),
+      );
+    }
+    const managerEditor = await get(`/admin/categories/${categoryId}`, {
+      Cookie: `admin_session=${tokens['manager'] ?? ''}`,
+    });
+    check(
+      'content: a manager (no categories.edit) is not given the category editor form',
+      !managerEditor.html.includes('name="seoTextUk"'),
     );
 
     // 2. The storefront agrees, in both languages. The proxy's set of visible product slugs reloads
@@ -182,11 +225,101 @@ export async function runContentSmoke({
       check(
         `content: the category page (${locale}) shows the SEO text the report counted`,
         cat.status === 200 &&
-          cat.html.includes(filler(locale === 'uk' ? 'Smoke uk text' : 'Smoke en text', 260)),
+          cat.html.includes(
+            `<p>${filler(locale === 'uk' ? 'Smoke uk text' : 'Smoke en text', 260)}</p>`,
+          ),
       );
     }
 
     // 3. The admin screen, by role.
+    const anonymous = await get('/admin/content-readiness');
+    check(
+      'content: the screen sends an anonymous visitor to the login, never indexed',
+      anonymous.status === 307 &&
+        new URL(anonymous.location ?? 'x:', base).pathname === '/admin/login' &&
+        anonymous.robots.includes('noindex'),
+    );
+    for (const role of ['manager', 'content'] as const) {
+      for (const locale of ['uk', 'en'] as const) {
+        const page = await get('/admin/content-readiness', {
+          Cookie: `admin_session=${tokens[role] ?? ''}; admin_locale=${locale}`,
+        });
+        const title = locale === 'uk' ? 'Готовність контенту' : 'Content readiness';
+        check(
+          `content: the screen (${role}, ${locale}) renders real text, private no-store, with the editor link, no cost, escaped names`,
+          page.status === 200 &&
+            page.html.includes(title) &&
+            !page.html.includes('MISSING_MESSAGE') &&
+            !/admin\.contentReadiness\./.test(page.html) &&
+            page.cache.includes('private') &&
+            page.cache.includes('no-store') &&
+            page.robots.includes('noindex') &&
+            page.html.includes(`/admin/products/${bad}`) &&
+            page.html.includes('&lt;script&gt;alert(&quot;smoke&quot;)') &&
+            !page.html.includes(HOSTILE) &&
+            !page.html.includes('<svg onload') &&
+            !page.html.includes(COST),
+        );
+      }
+    }
+
+    // The owner (second factor), a forged cookie, a pending sign-in and a POST.
+    const ownerEmail = `owner-content-${suffix}@example.test`;
+    await db.transaction(async (tx) => {
+      await createAdminUser(tx, { email: ownerEmail, password: PASSWORD, role: 'owner' });
+    });
+    const pendingOwner = await db.transaction(
+      async (tx) => await beginLogin(tx, config, { email: ownerEmail, password: PASSWORD, client }),
+    );
+    if (!pendingOwner.ok) throw new Error('smoke owner could not sign in');
+    const enrol = await db.transaction(
+      async (tx) => await startTotpEnrolment(tx, config, { token: pendingOwner.token }),
+    );
+    if (enrol === null) throw new Error('smoke owner enrolment failed');
+    const ownerFull = await db.transaction(
+      async (tx) =>
+        await confirmTotpEnrolment(tx, config, {
+          token: pendingOwner.token,
+          code: codeAt(enrol.secret, stepOf(Date.now())),
+          client,
+        }),
+    );
+    if (!ownerFull.ok) throw new Error('smoke owner could not finish enrolment');
+    const ownerPage = await get('/admin/content-readiness', {
+      Cookie: `admin_session=${ownerFull.token}`,
+    });
+    check(
+      'content: the owner reads the screen too (200, private no-store, noindex)',
+      ownerPage.status === 200 &&
+        ownerPage.cache.includes('no-store') &&
+        ownerPage.robots.includes('noindex') &&
+        !ownerPage.html.includes(COST),
+    );
+    const forged = await get('/admin/content-readiness', { Cookie: 'admin_session=forged-token' });
+    const pending = await get('/admin/content-readiness', {
+      Cookie: `admin_session=${pendingOwner.token}`,
+    });
+    check(
+      'content: a forged cookie and a sign-in that is not finished get no report',
+      forged.status === 307 &&
+        !forged.html.includes('/admin/products/') &&
+        !pending.html.includes('/admin/products/'),
+    );
+    const posted = await fetch(`${base}/admin/content-readiness`, {
+      method: 'POST',
+      redirect: 'manual',
+      headers: {
+        'X-Forwarded-For': nextClient(),
+        Cookie: `admin_session=${tokens['content'] ?? ''}`,
+        Origin: siteOrigin,
+        'X-Forwarded-Host': new URL(siteOrigin).host,
+      },
+      body: 'x',
+    });
+    check(
+      'content: a POST to the screen costs no more than a GET (the shared computation) and is no error',
+      posted.status !== 500 && !(await posted.text()).includes(COST),
+    );
   } finally {
     await close();
   }

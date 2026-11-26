@@ -15,7 +15,8 @@ import { createDb } from '@store/db/client';
 
 import { safeMediaUrl } from '../src/catalog/media-url.ts';
 import { visibleProduct } from '../src/catalog/sql.ts';
-import { readContentReadiness, URL_SAFE_PATTERN } from '../src/content-readiness/read.ts';
+import { URL_SAFE_PATTERN } from '../src/content-readiness/read.ts';
+import { readContentReadiness } from '../src/content-readiness/report.ts';
 import { addProduct, filler, seedDictionaries } from './content-fixture.ts';
 
 let testDb: TestDatabase;
@@ -346,6 +347,35 @@ describe('categories', () => {
   });
 });
 
+describe('views: the filter runs before the page is cut', () => {
+  it('"needs work" pages together hold EVERY active product that needs work, and no draft', async () => {
+    const pageSize = 4;
+    const first = await readContentReadiness(handle.db, { show: 'todo', pageSize });
+    expect(first.pages).toBeGreaterThan(2);
+    const skus: string[] = [];
+    for (let page = 1; page <= first.pages; page += 1) {
+      const view = await readContentReadiness(handle.db, { show: 'todo', page, pageSize });
+      expect(view.products.length).toBeLessThanOrEqual(pageSize);
+      skus.push(...view.products.map((p) => p.sku));
+    }
+    const wanted = report.products
+      .filter((p) => p.isActive && (!p.ready || !p.live))
+      .map((p) => p.sku)
+      .sort();
+    expect(skus.sort()).toEqual(wanted);
+    expect(first.matchingProducts).toBe(wanted.length);
+    expect(skus).not.toContain('SKU-draft');
+  });
+  it('the drafts view holds the draft whatever the page size; a page past the end is the last page', async () => {
+    const drafts = await readContentReadiness(handle.db, { show: 'drafts', pageSize: 1 });
+    expect(drafts.products.map((p) => p.sku)).toEqual(['SKU-draft']);
+    expect(drafts.matchingProducts).toBe(1);
+    const past = await readContentReadiness(handle.db, { show: 'todo', page: 999, pageSize: 4 });
+    expect(past.page).toBe(past.pages);
+    expect(past.products.length).toBeGreaterThan(0);
+  });
+});
+
 describe('the gate and the totals', () => {
   it('fails while any active product or active category has a blocker; names the checks', () => {
     expect(report.gatePassed).toBe(false);
@@ -481,6 +511,10 @@ describe('a large catalogue', () => {
       expect(result.totals.photos).toBe(15_000);
       expect(result.products).toHaveLength(2000);
       expect(result.productsTruncated).toBe(true);
+      expect(result.matchingProducts).toBe(5000);
+      const view = await readContentReadiness(h.db, { show: 'todo', page: 3, pageSize: 100 });
+      expect(view.products).toHaveLength(100);
+      expect(view.pages).toBe(50);
       expect(result.photoProblems).toHaveLength(500);
       expect(queries).toBeLessThanOrEqual(5);
       expect(seconds).toBeLessThan(10);

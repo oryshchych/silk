@@ -17,6 +17,7 @@ const actions = await import('./admin-taxonomy');
 const EXPECTED: Record<string, keyof typeof PERMISSIONS> = {
   createCategoryAction: 'categories.edit',
   updateCategoryAction: 'categories.edit',
+  updateCategoryContentAction: 'categories.edit',
   moveCategoryAction: 'categories.edit',
   saveColorAction: 'dictionaries.edit',
   saveSizeAction: 'dictionaries.edit',

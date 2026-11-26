@@ -33,7 +33,8 @@ confirmed TOTP before a session counts; so must anyone who enrolled one.
 | `catalog.create` | owner, admin | Create a product (a draft: it needs a price) |
 | `catalog.edit` | owner, admin, content | Product text, SEO fields, structure, variant SKU/barcode/active |
 | `categories.edit` | owner, admin, content | Create, edit and move categories |
-| `dictionaries.edit` | owner, admin | Colours, sizes, attributes and their values |
+| `dictionaries.edit` | owner, admin | Edit the texts of a category (SEO text, description, search snippet) | `categories.edit` | `updateCategoryContentAction` (`actions/admin-taxonomy.ts`) from `/admin/categories/<id>` (`requirePermission('categories.edit')`): the SEO text is plain paragraphs or HTML, escaped or sanitised on write (`categoryTextToHtml`) and sanitised again on render |
+| Colours, sizes, attributes and their values |
 | `catalog.price` | owner, admin | Price, old price, promo price of products and variants |
 | `catalog.cost.view` | owner, admin | See `cost_price` / `unit_cost_snapshot` anywhere (screens, exports) |
 | `catalog.publish` | owner, admin, content | Publish or unpublish a product |
@@ -78,6 +79,7 @@ confirmed TOTP before a session counts; so must anyone who enrolled one.
 | Upload a product photo | `media.upload` | `POST /admin/upload/product-image` (`app/admin/upload/product-image/route.ts`): its own route, see "Uploads" below |
 | Edit a photo's alt text, colour, order; delete it | `media.upload` | `updateProductImageAction`, `deleteProductImageAction` |
 | Preview and commit a CSV import | `catalog.import` | `previewImportAction` (writes nothing), `commitImportAction` (`actions/admin-import.ts`): a column the role may not write (price without `catalog.price`, cost without `catalog.cost.view`) turns the row into an error; each written row has its own audit row |
+| Read the content readiness report (what is missing before launch) | `admin.view` | `/admin/content-readiness` (`requirePermission`); `readContentReadiness` takes a `Reader`, its DTO (`dto/content-readiness.ts`) has no cost, price or customer field in any shape, so every role gets the same shape; `private, no-store` and `noindex` from the admin proxy; staff text is escaped by React; the CLI form (`pnpm content:check`) runs in a `READ ONLY` transaction, takes the URL only from the environment and refuses a production-looking database outside a production process |
 | Download the product CSV | `catalog.export` | `GET /admin/export/products` (`app/admin/export/products/route.ts`): the cost column only for `catalog.cost.view`, every export audited |
 | Change a quantity or take a line off an unshipped order | `orders.edit` | `editOrderItemsAction`: refused while an online payment is open, after a fiscal receipt, and for a shipped or cancelled order; the audit row records the lines that really changed |
 | Refund (full or part) | `orders.refund` | `refundOrderAction`: the amount is reserved and audited in one transaction, the provider is called after the commit; a client request id makes a double submit of a partial refund one refund |

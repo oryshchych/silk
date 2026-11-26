@@ -94,6 +94,11 @@ const report = (over: Partial<ContentReadinessDto> = {}): ContentReadinessDto =>
   },
   acceptance: [{ id: 'active_products', ok: false, actual: 1, expected: 40 }],
   gatePassed: false,
+  show: 'all',
+  page: 1,
+  pageSize: 2000,
+  pages: 1,
+  matchingProducts: 1,
   products: [
     {
       id: '0193f0a4-7c3e-7000-8000-000000000001',

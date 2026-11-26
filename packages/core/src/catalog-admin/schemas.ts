@@ -148,6 +148,20 @@ export const updateCategorySchema = z.object({
   sortOrder: z.number().int().min(0).max(100_000).optional(),
 });
 
+/** The texts of a category (its content editor): needs `categories.edit`. The SEO text is normalised by the action. */
+export const updateCategoryContentSchema = z.object({
+  categoryId: id,
+  descriptionUk: optionalText(5_000),
+  descriptionEn: optionalText(5_000),
+  seoTextUk: z.string().max(40_000).refine(noNul, 'no NUL byte'),
+  seoTextEn: z.string().max(40_000).refine(noNul, 'no NUL byte'),
+  metaTitleUk: optionalText(200),
+  metaTitleEn: optionalText(200),
+  metaDescriptionUk: optionalText(400),
+  metaDescriptionEn: optionalText(400),
+  noindex: z.boolean(),
+});
+
 export const moveCategorySchema = z.object({
   categoryId: id,
   parentId: id.nullable(),
