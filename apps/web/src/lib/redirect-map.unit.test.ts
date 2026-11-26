@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { canHaveRedirect, createRedirectMap } from './redirect-map';
+import { canHaveRedirect, createRedirectMap, isSafeRedirectTarget } from './redirect-map';
 
 const rows = [
   { fromPath: '/product/old', toPath: '/product/new', statusCode: 301 as const },
@@ -90,5 +90,124 @@ describe('createRedirectMap', () => {
       onError: () => undefined,
     });
     expect(await map.lookup('/product/old')).toBeNull();
+  });
+});
+
+describe('createRedirectMap: 410 and hit counting', () => {
+  const table = [
+    { fromPath: '/product/old', toPath: '/product/new', statusCode: 301 as const },
+    { fromPath: '/product/gone', toPath: '/', statusCode: 410 as const },
+  ];
+
+  it('serves a 410 row as a hit with status 410', async () => {
+    const map = createRedirectMap(() => Promise.resolve(table));
+    expect(await map.lookup('/product/gone')).toEqual({ to: '/', status: 410 });
+  });
+
+  it('counts only paths of the table, so counters cannot grow with client input', async () => {
+    const flushHits = vi.fn<(hits: ReadonlyMap<string, number>) => Promise<void>>(() =>
+      Promise.resolve(),
+    );
+    const map = createRedirectMap(() => Promise.resolve(table), { flushHits, flushAt: 3 });
+    await map.lookup('/product/old');
+    for (let i = 0; i < 1000; i++) map.noteHit(`/product/random-${String(i)}`);
+    expect(flushHits).not.toHaveBeenCalled();
+    map.noteHit('/product/old');
+    map.noteHit('/product/old');
+    map.noteHit('/product/gone');
+    await Promise.resolve();
+    expect(flushHits).toHaveBeenCalledTimes(1);
+    expect([...(flushHits.mock.calls[0]?.[0] ?? new Map())]).toEqual([
+      ['/product/old', 2],
+      ['/product/gone', 1],
+    ]);
+  });
+
+  it('flushes on the timer, and keeps the counts when the write fails (retry on the timer only)', async () => {
+    vi.useFakeTimers();
+    try {
+      let fail = true;
+      const written: [string, number][] = [];
+      const flushHits = vi.fn((hits: ReadonlyMap<string, number>) => {
+        if (fail) return Promise.reject(new Error('db down'));
+        written.push(...hits);
+        return Promise.resolve();
+      });
+      const map = createRedirectMap(() => Promise.resolve(table), {
+        flushHits,
+        flushMs: 1000,
+        flushAt: 2,
+        onError: () => undefined,
+      });
+      await map.lookup('/product/old');
+      map.noteHit('/product/old');
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(flushHits).toHaveBeenCalledTimes(1);
+      // During the outage more hits do not trigger a query each.
+      for (let i = 0; i < 20; i++) map.noteHit('/product/old');
+      expect(flushHits.mock.calls.length).toBeLessThanOrEqual(2);
+      fail = false;
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(written.reduce((sum, [, n]) => sum + n, 0)).toBe(21);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('redirect targets', () => {
+  it('accepts a site path and refuses anything that could leave the site or split a header', () => {
+    for (const ok of ['/', '/product/new', '/en/category/a-b', '/product/a%20b']) {
+      expect(isSafeRedirectTarget(ok), ok).toBe(true);
+    }
+    for (const bad of [
+      '//evil.example',
+      '\\\\evil.example',
+      '/\\evil.example',
+      'https://evil.example/x',
+      'product/new',
+      '/a\r\nSet-Cookie: x=1',
+      '/a\nb',
+      `/${'a'.repeat(500)}`,
+      '',
+    ]) {
+      expect(isSafeRedirectTarget(bad), JSON.stringify(bad)).toBe(false);
+    }
+  });
+
+  it('never serves a row with an unsafe target, and reports it', async () => {
+    const errors: unknown[] = [];
+    const map = createRedirectMap(
+      () =>
+        Promise.resolve([
+          { fromPath: '/product/a', toPath: '//evil.example', statusCode: 301 as const },
+          { fromPath: '/product/b', toPath: '/product/ok', statusCode: 301 as const },
+          { fromPath: '/product/c', toPath: 'https://evil.example/x', statusCode: 302 as const },
+        ]),
+      { onError: (error) => errors.push(error) },
+    );
+    expect(await map.lookup('/product/a')).toBeNull();
+    expect(await map.lookup('/product/c')).toBeNull();
+    expect(await map.lookup('/product/b')).toEqual({ to: '/product/ok', status: 301 });
+    expect(errors).toHaveLength(1);
+  });
+
+  it('with the default options a flush happens at the 100th pending hit, not before', async () => {
+    const flushHits = vi.fn<(hits: ReadonlyMap<string, number>) => Promise<void>>(() =>
+      Promise.resolve(),
+    );
+    const map = createRedirectMap(
+      () =>
+        Promise.resolve([
+          { fromPath: '/product/a', toPath: '/product/b', statusCode: 301 as const },
+        ]),
+      { flushHits },
+    );
+    await map.lookup('/product/a');
+    for (let i = 0; i < 99; i++) map.noteHit('/product/a');
+    expect(flushHits).not.toHaveBeenCalled();
+    map.noteHit('/product/a');
+    expect(flushHits).toHaveBeenCalledTimes(1);
+    expect(flushHits.mock.calls[0]?.[0].get('/product/a')).toBe(100);
   });
 });

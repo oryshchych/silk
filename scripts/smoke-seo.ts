@@ -118,6 +118,38 @@ export async function runSeoSmoke({
 }
 
 /**
+ * A POST (a server action posts to the page URL) to a slug that does not exist must not render and
+ * cache a page per slug, as a GET would not: the disk must not grow with what a client invents.
+ */
+export async function runPostFloodSmoke({
+  base,
+  check,
+  storedFiles,
+}: SeoSmokeContext): Promise<void> {
+  const before = storedFiles();
+  const statuses = new Set<number>();
+  for (let i = 0; i < 150; i++) {
+    for (const path of [
+      `/product/postnope-${String(i)}`,
+      `/en/product/postnope-${String(i)}`,
+      `/category/postnope-${String(i)}`,
+    ]) {
+      const response = await fetch(`${base}${path}`, { method: 'POST', redirect: 'manual' });
+      await response.arrayBuffer();
+      statuses.add(response.status);
+    }
+  }
+  check(
+    'POSTs to 450 invented product and category paths store nothing in .next',
+    storedFiles() === before,
+  );
+  check(
+    'and they answer 404 or 405, never a page',
+    [...statuses].every((s) => s === 404 || s === 405),
+  );
+}
+
+/**
  * Trackers and consent, as the server sends them: the primary HTML of every public page names no
  * tracker host and carries no script for one (the scripts are added by the browser only after the
  * visitor accepts), while the identifiers do reach the page as runtime data.

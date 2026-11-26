@@ -7,6 +7,8 @@
  */
 import { actionIds } from './smoke-http.ts';
 import { createDb } from '../packages/db/src/client.ts';
+import { redirects } from '../packages/db/src/schema.ts';
+import { recordGone } from '../packages/core/src/catalog-admin/redirects.ts';
 import {
   beginLogin,
   confirmTotpEnrolment,
@@ -618,6 +620,12 @@ export async function runAdminSmoke({
     // A changed slug answers 301 at the old address, for both locales.
     const oldSlug = original?.slug ?? '';
     const newSlug = `renamed-${suffix}`;
+    // A page that is gone for good (a 410 row written before the rename below, whose cache
+    // invalidation makes this instance reload the table).
+    const goneSlug = `gone-${suffix}`;
+    await db.transaction(async (tx) => {
+      await recordGone(tx, { kind: 'product', slug: goneSlug });
+    });
     const renamed = await form(
       'updateProductContentAction',
       { productId: target.id, slug: newSlug },
@@ -678,6 +686,40 @@ export async function runAdminSmoke({
     check(
       'catalog: the 301 of a published product is cacheable for a short time only',
       oldPage.cache.includes('max-age=300') && !oldPage.cache.includes('immutable'),
+    );
+
+    const gone = await get(`/product/${goneSlug}`);
+    const goneEn = await get(`/en/product/${goneSlug}`);
+    check(
+      'redirects: a path recorded as gone answers 410 (not 404), in both locales, with a short cache',
+      gone.status === 410 &&
+        goneEn.status === 410 &&
+        gone.html === 'Gone' &&
+        gone.cache.includes('max-age=300'),
+    );
+    // Hits are counted in memory and written in batches: 250 requests make at least one full batch.
+    // Fewer than the batch size (100 pending in all): nothing may be written yet, which an UPDATE per
+    // request would have done at once.
+    for (let i = 0; i < 90; i++) await get(`/product/${newSlug}`);
+    const early = await db
+      .select({ from: redirects.fromPath, n: redirects.hitCount })
+      .from(redirects);
+    check(
+      'redirects: below the batch size nothing is written yet (counted in memory, not per request)',
+      early.find((row) => row.from === `/product/${newSlug}`)?.n === 0,
+    );
+    for (let i = 0; i < 160; i++) await get(`/product/${newSlug}`);
+    let counted = 0;
+    for (let i = 0; i < 40 && counted < 100; i++) {
+      const rows = await db
+        .select({ from: redirects.fromPath, n: redirects.hitCount })
+        .from(redirects);
+      counted = rows.find((row) => row.from === `/product/${newSlug}`)?.n ?? 0;
+      if (counted < 100) await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    check(
+      'redirects: hit_count counts served redirects (batched, not per request)',
+      counted >= 100 && counted <= 250,
     );
 
     // The price change reaches the storefront within a revalidation, and touches only that product.
