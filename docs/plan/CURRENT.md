@@ -54,7 +54,6 @@ Infra: staging `https://staging.damazla.com` (basic auth), Hetzner CAX11, Dokplo
 ## Caveats
 
 - Local smoke shows 18 unrelated FAILs on a stale dev database; CI is authoritative
-
 ## Deviations from the plan
 - `hit_count` is counted in process and written in batches, not through the outbox (ADR-14 amendment)
 - Sitemaps and feeds are route handlers (Next 16 emits no index for `generateSitemaps`); feeds stream live, no `feeds:rebuild` job
