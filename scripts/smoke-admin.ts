@@ -321,14 +321,14 @@ export async function runAdminSmoke({
     const postEn = await get(`/en/blog/${blogSlug}`, { Cookie: 'silk_cart=anything; other=1' });
     const postUkAgain = await get(`/blog/${blogSlug}`, { Cookie: 'visitor=different' });
     check(
-      'blog: a published post is 200 with Article JSON-LD, a self canonical, a hreflang pair and no noindex',
+      'blog: a published post is 200 with Article JSON-LD, a self canonical, a hreflang pair and an index robots meta',
       postUk.status === 200 &&
         postUk.html.includes('"@type":"Article"') &&
         postUk.html.includes('rel="canonical"') &&
         postUk.html.includes('hreflang="en"') &&
         postUk.html.includes('hreflang="uk"') &&
-        !/name="robots"[^>]*noindex/.test(postUk.html) &&
-        !postUk.robots.includes('noindex') &&
+        // The page's own robots meta says index (the `X-Robots-Tag` header is noindex outside production on EVERY page).
+        /<meta name="robots" content="index, follow"/.test(postUk.html) &&
         postEn.status === 200 &&
         postEn.html.includes('"inLanguage":"en"'),
     );
