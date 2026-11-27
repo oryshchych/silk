@@ -9,12 +9,22 @@ Phase 11 marketing features: what each does, who it may mail, and where the cons
   would need consent copy and a schema change: owner queue Q89.
 - **When:** the cart changed at least 2 hours and at most 72 hours ago, has items, was not converted, and the customer
   placed no order (by account or by address) since the cart last changed.
+- **Per customer:** at most one cart reminder per customer per 7 days (`CUSTOMER_REMINDER_CAP_DAYS`), whatever number of carts
+  they left; the newest cart wins. Claims are serialised by one advisory lock so two workers cannot race the cap, and the
+  candidate carts are locked with SKIP LOCKED: a cart held by an open checkout waits for the next 15-minute run and never
+  stalls the batch.
 - **Once:** `carts.abandoned_email_sent_at` is set by one conditional UPDATE and never cleared; the outbox row has the dedup
   key `cart-reminder:<cart id>`; the provider call carries an idempotency key. Two workers cannot claim one cart.
-- **At send time** the handler re-reads the facts (converted, ordered since, consent withdrawn, goods sold out) and sends
-  nothing when any holds. The mail shows no price. It carries the unsubscribe link.
+- **At send time** the handler re-reads the facts and sends nothing when any holds: converted, an order since the cart's last
+  activity (the instant recorded in the queue row, because the claim itself bumps `updated_at` through the touch trigger; an
+  order committed after the claim counts), the cart changed since the claim (`carts.version` recorded in the queue row), the
+  claim older than 24 hours (`REMINDER_SEND_WINDOW_HOURS`, a stuck relay), consent withdrawn, goods sold out. The quantity shown
+  is capped at the stock. The mail shows no price. It carries the unsubscribe link.
 - **Job** `carts.remind-abandoned` every 15 minutes (Kyiv zone), topic `email.cart-reminder` (queue in `OUTBOX_TOPICS`).
 - **Unsubscribe link:** `/unsubscribe/marketing?t=<subscriber id>.<HMAC>` (key derived from `AUTH_SECRET`, purpose
   `marketing-unsubscribe`). Opening it changes nothing; the button POSTs. It sets `newsletter_subscribers.unsubscribed_at`
   and clears the customer flag, with one audit row naming the subscriber id (never the address).
-- Not built: a `List-Unsubscribe` header (the sender interface carries no custom headers yet).
+- Not built: a `List-Unsubscribe` and `List-Unsubscribe-Post` header (the sender interface carries no custom headers yet):
+  owner queue Q90.
+- Mixed-case addresses: `customers.email` is lower-cased by a CHECK, and the claim joins `newsletter_subscribers` on it;
+  every writer of a subscriber row must lower-case the address (slice C), or that row never matches (a safe failure).

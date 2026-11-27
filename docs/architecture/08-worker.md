@@ -9,7 +9,7 @@
 | `orders:reconcile-totals` | щогодини | Звірка `discount_total` із сумою `line_discount` (ADR-15) |
 | `fiscal:issue-receipt` | черга | Пробиття чека після оплати, з ретраями (ADR-16). Реалізовано: тема outbox `fiscal.issue-receipt`, 20 повторів у pg-boss і до 12 спроб на документ, потім `failed` + `alert.fiscal-failed` |
 | `fiscal:reconcile` | 06:00 щодня | Звірка еквайрингу з виданими чеками, алерт про розбіжності (реалізовано як `fiscal.reconcile`: перевіряє ЛИШЕ наші записи: оплачені або відправлені COD замовлення без виданого чека через годину, оплачені карткою без жодного виданого чека продажу та відкриті чеки повернення; звірка з розрахунками еквайра ще не зроблена) |
-| `cart:abandoned-reminder` | щогодини | Один лист на кошик, не повторюється |
+| `cart:abandoned-reminder` | кожні 15 хвилин (`carts.remind-abandoned`) | Один лист на кошик, не повторюється |
 | `stock:notify-subscribers` | при поповненні | Розсилка «товар з'явився» |
 | `reports:refresh-views` | щогодини | Матеріалізовані в'юшки для звітів |
 | `feeds:rebuild` | 04:00 щодня | Google/Facebook фіди. **Phase 6 deviation:** the feeds are streamed live from the database by `/feed/google.xml` and `/feed/facebook.csv` (keyset batches, at most 8 open streams and 2 database reads at once, a 120 s deadline, `s-maxage=3600`), so no rebuild job exists; a snapshot job is only worth adding if the live read becomes a load problem |

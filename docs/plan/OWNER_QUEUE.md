@@ -34,6 +34,7 @@ Only what needs the owner's own hands (credentials, accounts, a setting in an ex
 | ID | Raised | Item | Default applied |
 |---|---|---|---|
 | Q89 | 2026-11-27 | The abandoned-cart reminder can reach only signed-in customers who gave marketing consent: a guest cart has no address until the last checkout step. Mailing guests would need an address captured earlier (a field with its own consent text, probably a schema change) and a legal view of reminding someone who never subscribed | Only consenting signed-in customers get the one reminder (`docs/MARKETING.md`); no guest address is collected. Revisit after launch with real abandonment numbers |
+| Q90 | 2026-11-27 | Gmail and Yahoo bulk-sender rules want `List-Unsubscribe` and `List-Unsubscribe-Post` (one-click) headers on marketing mail before real volume; the email sender interface carries no custom headers and the worker is not deployed yet (Q31) | Not built. Build it with the worker deployment (Q31): extend `EmailMessage` with headers, send the signed `/unsubscribe/marketing` link and a POST endpoint for the one-click form |
 
 ## Deferred by phase 10 (default applied; the owner can overrule)
 

@@ -13,7 +13,9 @@ import type { Reader } from '@store/db/types';
 import type { EmailSender } from './resend.ts';
 import { escapeHtml, oneLine, shell, type EmailLocale, type RenderedEmail } from './templates.ts';
 
-const payload = z.object({ cartId: z.uuid() }).strict();
+const payload = z
+  .object({ cartId: z.uuid(), activeAt: z.iso.datetime(), version: z.number().int().min(0) })
+  .strict();
 
 export class CartReminderEmailError extends Error {
   constructor(reason: string) {
@@ -79,7 +81,7 @@ export async function handleCartReminder(
 ): Promise<void> {
   const parsed = payload.safeParse(message.payload);
   if (!parsed.success) throw new CartReminderEmailError('malformed payload');
-  const reminder = await readCartReminder(deps.reader, parsed.data.cartId);
+  const reminder = await readCartReminder(deps.reader, parsed.data);
   if (reminder === null) return;
   // Throws without a strong secret: the job fails into the dead-letter queue, nothing is sent.
   const token = buildMarketingUnsubscribeToken(deps.authSecret, reminder.subscriberId);
