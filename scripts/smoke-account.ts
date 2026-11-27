@@ -760,11 +760,15 @@ export async function runAccountSmoke(ctx: Context): Promise<void> {
       noBox.body.includes('"code":"consent"'),
       brief(noBox),
     );
-    const { rows: subscriberIds } = await handle.pool.query<{ id: string }>(
-      `SELECT id FROM newsletter_subscribers WHERE email = $1`,
+    const { rows: subscriberIds } = await handle.pool.query<{ id: string; nonce: string }>(
+      `SELECT id, request_nonce::text AS nonce FROM newsletter_subscribers WHERE email = $1`,
       [subscriber],
     );
-    const confirmToken = buildConfirmToken(ctx.authSecret, subscriberIds[0]?.id ?? '');
+    const confirmToken = buildConfirmToken(
+      ctx.authSecret,
+      subscriberIds[0]?.id ?? '',
+      subscriberIds[0]?.nonce ?? '',
+    );
     const confirmPage = await page(`/en/newsletter/confirm?t=${encodeURIComponent(confirmToken)}`);
     const { rows: afterGet } = await handle.pool.query<{ confirmed: boolean }>(
       `SELECT confirmed_at IS NOT NULL AS confirmed FROM newsletter_subscribers WHERE email = $1`,

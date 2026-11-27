@@ -2,9 +2,11 @@
 
 import { unsubscribeByToken } from '@store/core/account-alerts';
 import {
+  canonicalMailbox,
   confirmSubscription,
-  subscribeSchema,
+  mailboxDomain,
   requestSubscription,
+  subscribeSchema,
   unsubscribeMarketingByToken,
 } from '@store/core/marketing';
 import { z } from 'zod';
@@ -72,13 +74,23 @@ export async function subscribeNewsletterAction(input: unknown): Promise<Subscri
   if (raw.success && raw.data.website !== undefined && raw.data.website !== '') {
     return { status: 'sent' };
   }
+  // Origin and the client limits come BEFORE any validation, so every attempt is metered.
+  if (!(await requestOriginOk())) return { status: 'error', code: 'invalid' };
+  if (!(await checkLimit(limiters.newsletter)).allowed) {
+    return { status: 'error', code: 'rateLimited' };
+  }
+  const global = limiters.newsletterGlobal.check('all');
+  if (!global.allowed) return { status: 'error', code: 'rateLimited' };
   const parsed = subscribeSchema.safeParse(input);
   if (!parsed.success) {
     const missingConsent = parsed.error.issues.some((issue) => issue.path[0] === 'consent');
     return { status: 'error', code: missingConsent ? 'consent' : 'invalid' };
   }
-  if (!(await requestOriginOk())) return { status: 'error', code: 'invalid' };
-  if (!(await checkLimit(limiters.newsletter)).allowed) {
+  // The mailbox and domain caps answer like the client cap: nothing says which limit was hit.
+  if (
+    !limiters.newsletterDomain.check(mailboxDomain(parsed.data.email)).allowed ||
+    !limiters.newsletterMailbox.check(canonicalMailbox(parsed.data.email)).allowed
+  ) {
     return { status: 'error', code: 'rateLimited' };
   }
   const db = await getDb();

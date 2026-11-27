@@ -65,7 +65,7 @@ export async function handleNewsletterConfirm(
   const pending = await readPendingSubscriber(deps.reader, parsed.data.subscriberId);
   if (pending === null) return;
   // Throws without a strong secret: the job fails into the dead-letter queue, nothing is sent.
-  const token = buildConfirmToken(deps.authSecret, parsed.data.subscriberId);
+  const token = buildConfirmToken(deps.authSecret, parsed.data.subscriberId, pending.nonce);
   const base = deps.siteUrl.replace(/\/+$/, '');
   const prefix = pending.locale === 'en' ? '/en' : '';
   await deps.sender.send({

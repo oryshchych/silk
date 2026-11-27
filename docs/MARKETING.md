@@ -33,14 +33,27 @@ Phase 11 marketing features: what each does, who it may mail, and where the cons
 
 - **Subscribe:** `/newsletter` (footer link), a form with an email field and an UNTICKED consent box whose wording is
   versioned (`NEWSLETTER_CONSENT_VERSION`, `messages/*.json` `newsletter.consent`). A request creates or re-opens a PENDING
-  `newsletter_subscribers` row (`confirmed_at` empty) and queues `email.newsletter-confirm`. It stores no consent.
-- **Same answer for everyone:** new, pending, subscribed and previously unsubscribed addresses all get "check your inbox"
-  (nobody learns who is on the list). At most one confirmation mail per subscriber per hour (the outbox dedup key carries the
-  database hour); a hidden honeypot field is answered as a success and stores nothing; 5 requests per 10 minutes per client.
-- **Confirm:** `/newsletter/confirm?t=<id>.<expiry>.<HMAC>` (key purpose `newsletter-confirm`, valid 48 hours). Opening the link
-  changes nothing; the button POSTs. It confirms a PENDING row only, so an old link cannot re-subscribe someone who
-  unsubscribed since; it also sets the account flag when a customer with that address exists.
+  `newsletter_subscribers` row (`confirmed_at` and `unsubscribed_at` empty) and may queue `email.newsletter-confirm`. It
+  stores no consent.
+- **The link belongs to one request generation.** `request_nonce` (migration 0024) is signed into the link and compared in
+  the confirm UPDATE together with `unsubscribed_at IS NULL`. Every confirmation, every unsubscribe (the mailed link and the
+  account toggle) and every re-open after an unsubscribe rotates it, so a consumed link, a link from before an unsubscribe
+  and a link of an earlier request are dead. A pending repeat keeps the generation (the mail in the inbox stays valid).
+- **Same answer, same work for everyone:** new, pending, subscribed and previously unsubscribed addresses all get "check
+  your inbox", and the same statements run in every state (only the values written and the gated outbox and audit inserts
+  differ). One confirmation mail per pending subscriber per hour (`confirm_mail_queued_at`), except that a re-open after an
+  unsubscribe sends at once (a new generation). A hidden honeypot is answered as a success and stores nothing.
+- **Limits** (in process memory, per instance; the shared limiter is phase 12): 5 requests per 10 minutes per client, 300
+  per minute in total, 60 per 10 minutes per mail domain, 3 per hour per canonical mailbox (plus tag dropped). Every
+  attempt is metered before validation. Next step before real volume: Turnstile on the form, and a warning log when the
+  global cap passes half.
+- **Confirm:** `/newsletter/confirm?t=<id>.<nonce>.<expiry>.<HMAC>` (key purpose `newsletter-confirm`, valid 48 hours, the
+  database clock decides). Opening the link changes nothing; the button POSTs.
+- **The newsletter consent covers the newsletter only.** Confirming never switches on `customers.accepts_marketing`, which
+  gates the abandoned-cart reminder (owner queue Q91 has the alternative). Withdrawing by the unsubscribe link switches the
+  flag off too; the account toggle manages both.
 - **Consent evidence:** `confirmed_at` is the consent time, `unsubscribed_at` its end; audit rows `marketing.subscription_requested`
-  and `marketing.subscription_confirmed` carry the wording version, the source and the language, never the address or an IP.
-- **Unsubscribe:** the signed `/unsubscribe/marketing` link of slice B (every marketing mail carries it).
-- Not built: sending campaigns (no mailer for bulk mail yet), a subscribers screen in the admin, bounce handling.
+  (only when a mail is queued or the state changes) and `marketing.subscription_confirmed` carry the wording version, the
+  source and the language, never the address or an IP.
+- One spelling per mailbox: addresses are lower-cased once and the schema forbids upper case (`newsletter_email_lower`).
+- Not built: sending campaigns (no bulk mailer), a subscribers screen in the admin, bounce handling.

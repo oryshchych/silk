@@ -24,6 +24,12 @@ export const limiters = {
   promoCart: createRateLimiter({ limit: 30, windowMs: 60 * 60_000 }),
   /** Newsletter requests: each one can send a mail to a stranger, so few per client. */
   newsletter: createRateLimiter({ limit: 5, windowMs: 10 * 60_000 }),
+  /** All newsletter requests together (one key): rotating clients cannot turn the form into a mail cannon. */
+  newsletterGlobal: createRateLimiter({ limit: 300, windowMs: 60_000, maxKeys: 1 }),
+  /** Per mail domain: a campaign against one company or provider shows up as one domain. */
+  newsletterDomain: createRateLimiter({ limit: 60, windowMs: 10 * 60_000 }),
+  /** Per canonical mailbox (plus tag dropped): `victim+1@` to `victim+9@` is one mailbox, a few a day at most. */
+  newsletterMailbox: createRateLimiter({ limit: 3, windowMs: 60 * 60_000 }),
   /** Placing orders: a person needs a handful, a script needs hundreds. */
   place: createRateLimiter({ limit: 10, windowMs: 10 * 60_000 }),
   /** COD per (phone, client): the series of fake cash-on-delivery orders (ADR-3). */
