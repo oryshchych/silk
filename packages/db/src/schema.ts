@@ -1151,7 +1151,8 @@ export const blogPosts = pgTable('blog_posts', {
   contentEn: text('content_en'),
   coverUrl: text('cover_url'),
   author: varchar('author', { length: 160 }),
-  tags: text('tags').array(),
+  /** Lower-case words joined by hyphens, at most ten (`blog_tags_valid`); never NULL, so a query needs no coalesce. */
+  tags: text('tags').array().notNull().default(sql`'{}'::text[]`),
   metaTitleUk: varchar('meta_title_uk', { length: 200 }),
   metaTitleEn: varchar('meta_title_en', { length: 200 }),
   metaDescriptionUk: varchar('meta_description_uk', { length: 400 }),
@@ -1162,6 +1163,19 @@ export const blogPosts = pgTable('blog_posts', {
 }, (t) => [
   uniqueIndex('blog_slug_uq').on(t.slug),
   index('blog_published_idx').on(t.publishedAt),
+  index('blog_tags_idx').using('gin', t.tags),
+  check('blog_slug_format', sql`${t.slug} ~ '^[a-z0-9]+(-[a-z0-9]+)*$' AND length(${t.slug}) <= 120`),
+  // Per element (the function checks one dimension, no NULL element, each tag a word-with-hyphens of at most 40, at most ten).
+  check('blog_tags_valid', sql`blog_tags_ok(${t.tags})`),
+  // `/blog/tag` is the tag index path: a post with this address would shadow it.
+  check('blog_slug_reserved', sql`${t.slug} <> 'tag'`),
+  // A published post has a body in at least one language (the reads hide it otherwise; the database says it too).
+  check('blog_published_has_body', sql`
+    ${t.publishedAt} IS NULL OR btrim(coalesce(${t.contentUk}, '')) <> '' OR btrim(coalesce(${t.contentEn}, '')) <> ''
+  `),
+  check('blog_content_length', sql`
+    char_length(coalesce(${t.contentUk}, '')) <= 100000 AND char_length(coalesce(${t.contentEn}, '')) <= 100000
+  `),
 ]);
 
 /** 301-редіректи. Зміна slug в адмінці автоматично створює запис */

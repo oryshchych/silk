@@ -47,6 +47,7 @@ export const PERMISSIONS = {
   'promo.view': ['owner', 'admin', 'manager'],
   'promo.manage': ['owner', 'admin'],
   'banners.edit': ['owner', 'admin', 'content'],
+  'blog.edit': ['owner', 'admin', 'content'],
 } as const satisfies Record<string, readonly AdminRole[]>;
 
 export type Permission = keyof typeof PERMISSIONS;

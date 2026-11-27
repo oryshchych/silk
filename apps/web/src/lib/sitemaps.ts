@@ -107,6 +107,28 @@ export async function openSitemap(
           })),
       ),
     ).join('');
+    const { listBlogForSitemap } = await import('@store/core/blog');
+    const blog = await listBlogForSitemap(db);
+    const stamp = (date: Date): string => date.toISOString().replace(/\.\d+Z$/, 'Z');
+    // The index in both languages; a post only in the languages it has a body in (a hreflang pair only when both).
+    const blogXml =
+      legalUrlEntries(
+        siteUrl,
+        paths.blog,
+        (['uk', 'en'] as const).map((locale) => ({
+          locale,
+          lastmod: blog[0] === undefined ? '' : stamp(blog[0].lastmod),
+        })),
+      ) +
+      blog
+        .map((post) =>
+          legalUrlEntries(
+            siteUrl,
+            paths.blogPost(post.slug),
+            post.locales.map((locale) => ({ locale, lastmod: stamp(post.lastmod) })),
+          ),
+        )
+        .join('');
     const body =
       URLSET_OPEN +
       urlEntries(siteUrl, { path: paths.home, lastmod: null }) +
@@ -114,6 +136,7 @@ export async function openSitemap(
         .map((c) => urlEntries(siteUrl, { path: slugPath('category', c.slug), lastmod: c.lastmod }))
         .join('') +
       legalXml +
+      blogXml +
       URLSET_CLOSE;
     return new ReadableStream({
       start(controller) {

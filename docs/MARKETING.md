@@ -82,3 +82,42 @@ Phase 11 marketing features: what each does, who it may mail, and where the cons
 - **Deploy note:** migrations 0025 and 0026 are forward-only and drop what they must (0025 clears every picture reference and
   switches every old row off; 0026 clears a bad picture whole, a bad link, and switches off an incomplete banner). Snapshot the
   `banners` table before applying them on staging or production.
+
+## Blog (posts and tags)
+
+- **Admin:** `/admin/marketing/blog` (`blog.edit`: owner, admin, content). A post has titles, excerpt, a Markdown body, meta text
+  in both languages, an author name (empty: the shop), up to ten tags (lower-case words joined by hyphens) and a publication
+  time. Buttons: Save, Publish now, Back to draft, Delete. The address (slug) is set once at creation: it is a public URL.
+  Migration 0028 adds the slug and tag CHECKs, a GIN index on tags and `NOT NULL DEFAULT '{}'` for tags.
+- **Public:** `/blog` (index, `?page=`), `/blog/tag/<tag>` and `/blog/<slug>`, in both languages. A post is public when its
+  publication time has passed BY THE DATABASE CLOCK and it has a body in the language asked, so a post written in one language
+  appears in that language only, with a self canonical and NO hreflang pair (a pair exists only when both languages have a body).
+- **Indexing and structured data:** the post page is ISR (`revalidate = 300`), indexable, with a canonical, `Article` and
+  `BreadcrumbList` JSON-LD (headline, dates, language, author as a person or the shop, tags as keywords). No image is declared:
+  posts have no cover picture yet (owner queue Q94). The index is indexed on its first page only; tag pages are followed, not indexed.
+  Posts are in `pages.xml` of the sitemap (per language, with the pair only when both exist); the footer links to the blog.
+- **Cache-safe and bounded:** the pages read nothing about the visitor (pinned by `blog.unit.test.ts`), so every visitor gets the
+  same bytes. Cache keys are a locale, a word the proxy gate already checked and a clamped page. The proxy answers an unknown
+  address, a draft, a post without a body in this language and a word of the wrong shape with the shared 404 BEFORE the route
+  (`knownBlogPages`, refreshed once a minute and on every admin change), so nothing a client types can become a page cache
+  entry. Admin changes expire the `blog` and `blog:<slug>` tags at once (`updateTag`).
+- **Safe text:** the body is stored as Markdown and rendered and sanitised when read (allowlist of tags, vetted links, no script or
+  handler); the audit row of a change never holds the text (a body or an excerpt is recorded as "changed").
+- **Size ceiling:** the whole text of a post travels in ONE request that the proxy caps at 64 KB, so the form counts the serialised
+  bytes of all its text fields (both languages together, a Cyrillic character is two bytes: about 28 000 characters in all) and
+  refuses to save above `POST_FORM_MAX_BYTES` (60 000), in both languages of the admin; the schema refuses the same measure on the
+  server. The global proxy limit is deliberately not raised.
+- **Description of a post:** the meta description, else the excerpt, else the first paragraph of the body (about 155 characters),
+  never the site-wide sentence. A tag page has hreflang and a language switch only when the tag is in use in both languages. A
+  page number past the last one is a 404 and never gets a cache key (the count is read first, one key per list).
+- **Timing:** a scheduled post goes live in about 62 seconds after its time (the proxy's address set refreshes every 60 seconds); the
+  sitemap is immediate; the lists and counts can lag up to 5 minutes (the data cache TTL); an admin change is immediate (`updateTag`).
+- **Database rules (0028 and 0029):** slug format and the reserved address `tag`; tags checked PER ELEMENT by the function
+  `blog_tags_ok` (one dimension, no NULL, each a word with hyphens of at most 40, at most ten); a published post has text in some
+  language. Both migrations stop with the ids of the rows that break a rule, and a failed run rolls back completely: fix the listed
+  rows by id and run `pnpm db:migrate` again (also in `docs/DEVELOPMENT.md`). 0028 takes an ACCESS EXCLUSIVE lock for a full
+  scan (it relies on a tiny table); 0029 adds its constraints `NOT VALID` and validates them. Snapshot `blog_posts` before applying.
+- Markdown fidelity (also in the editor hint): `##` and `###` headings, bold, italic, lists, quotes and links; a link address with
+  parentheses, `#` as a heading and pictures are not supported.
+- Not built: a cover picture and inline pictures, comments, related posts and automatic internal links, a feed, numbered-page
+  self canonicals (page 2 and later are noindex with a canonical to page 1).

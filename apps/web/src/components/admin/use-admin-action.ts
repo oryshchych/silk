@@ -72,6 +72,9 @@ const BANNER_CODES = [
   'BANNER_TOO_MANY',
 ] as const;
 
+/** Blog failures are worded in the blog namespace (reaches only roles that may edit the blog). */
+const BLOG_CODES = ['BLOG_NOT_FOUND', 'BLOG_SLUG_TAKEN', 'BLOG_EMPTY', 'BLOG_TIME'] as const;
+
 export type ActionOutcome = { ok: true; data?: unknown } | { ok: false; code: string };
 export interface FormMessage {
   kind: 'ok' | 'error';
@@ -86,6 +89,7 @@ export function useAdminAction() {
   const t = useTranslations('admin.errors');
   const promo = useTranslations('admin.promo.errors');
   const banner = useTranslations('admin.banners.errors');
+  const blog = useTranslations('admin.blog.errors');
   const [message, setMessage] = useState<FormMessage | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -102,6 +106,7 @@ export function useAdminAction() {
       } else {
         const promoCode = PROMO_CODES.find((code) => code === result.code);
         const bannerCode = BANNER_CODES.find((code) => code === result.code);
+        const blogCode = BLOG_CODES.find((code) => code === result.code);
         const known = KNOWN_CODES.find((code) => code === result.code) ?? 'GENERIC';
         setMessage({
           kind: 'error',
@@ -110,7 +115,9 @@ export function useAdminAction() {
               ? promo(promoCode)
               : bannerCode !== undefined
                 ? banner(bannerCode)
-                : t(known),
+                : blogCode !== undefined
+                  ? blog(blogCode)
+                  : t(known),
         });
       }
     });

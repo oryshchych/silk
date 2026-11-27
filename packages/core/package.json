@@ -87,7 +87,8 @@
     "./legal-company": "./src/legal/company.ts",
     "./promo-admin": "./src/promo-admin/index.ts",
     "./marketing": "./src/marketing/index.ts",
-    "./banners": "./src/banners/index.ts"
+    "./banners": "./src/banners/index.ts",
+    "./blog": "./src/blog/index.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"

@@ -268,6 +268,54 @@ export function buildFaqPage(
   };
 }
 
+export interface ArticleInput {
+  url: string;
+  headline: string;
+  description: string | null;
+  /** ISO 8601 with offset. */
+  datePublished: string;
+  dateModified: string;
+  language: 'uk' | 'en';
+  /** A person's name when the post names one; otherwise the organisation is the author. */
+  author: string | null;
+  publisherName: string;
+  keywords: readonly string[];
+}
+
+export interface ArticleLd {
+  '@context': typeof SCHEMA_CONTEXT;
+  '@type': 'Article';
+  mainEntityOfPage: { '@type': 'WebPage'; '@id': string };
+  headline: string;
+  inLanguage: string;
+  datePublished: string;
+  dateModified: string;
+  author: { '@type': 'Person' | 'Organization'; name: string };
+  publisher: { '@type': 'Organization'; name: string };
+  description?: string;
+  keywords?: string;
+}
+
+/** Article markup for a blog post the page SHOWS: only values the page itself carries, nothing the visitor chose. */
+export function buildArticle(input: ArticleInput): ArticleLd {
+  return {
+    '@context': SCHEMA_CONTEXT,
+    '@type': 'Article',
+    mainEntityOfPage: { '@type': 'WebPage', '@id': input.url },
+    headline: input.headline.slice(0, 110),
+    inLanguage: input.language,
+    datePublished: input.datePublished,
+    dateModified: input.dateModified,
+    author:
+      input.author === null
+        ? { '@type': 'Organization', name: input.publisherName }
+        : { '@type': 'Person', name: input.author },
+    publisher: { '@type': 'Organization', name: input.publisherName },
+    ...(input.description === null ? {} : { description: input.description }),
+    ...(input.keywords.length === 0 ? {} : { keywords: input.keywords.join(', ') }),
+  };
+}
+
 const LINE_SEPARATOR = String.fromCharCode(0x2028);
 const PARAGRAPH_SEPARATOR = String.fromCharCode(0x2029);
 

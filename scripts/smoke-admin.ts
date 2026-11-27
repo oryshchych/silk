@@ -304,6 +304,144 @@ export async function runAdminSmoke({
       removed.body.includes(String(bannerId)) && !after.html.includes(bannerAlt),
     );
 
+    // The blog (phase 11, slice E): a published post is an indexable page with Article JSON-LD and a hreflang pair, the same bytes for
+    // every visitor, a post with one language only has no counterpart, a draft and an unknown address are 404s, the sitemap lists
+    // the published post, and the footer links to the blog.
+    const blogSlug = `smoke-post-${suffix}`;
+    const ukOnly = `smoke-uk-${suffix}`;
+    const blogDraft = `smoke-draft-${suffix}`;
+    await pool.query(
+      `INSERT INTO blog_posts (slug, title_uk, title_en, content_uk, content_en, tags, published_at) VALUES
+         ($1, 'Smoke uk', 'Smoke en', '## Hello\n\nFirst paragraph of the smoke post.', '## Hello\n\nFirst paragraph of the smoke post.', ARRAY['smoke-tag'], now() - interval '1 hour'),
+         ($2, 'Only uk', 'Only en', '## Hello', NULL, ARRAY[]::text[], now() - interval '1 hour'),
+         ($3, 'Draft', 'Draft', '## Hello', '## Hello', ARRAY[]::text[], NULL),
+         ($4, 'Only en', 'Only en', NULL, '## Hello', ARRAY['en-only-tag'], now() - interval '1 hour')`,
+      [blogSlug, ukOnly, blogDraft, `smoke-en-${suffix}`],
+    );
+    // The posts were written straight into the table, behind the data cache's back (an earlier crawl of the footer link may have cached an
+    // empty blog list for five minutes). A real admin save expires the blog tags at once (`updateTag`): do one, as the owner would.
+    const savedId = (
+      await pool.query<{ id: string }>(`SELECT id FROM blog_posts WHERE slug = $1`, [blogSlug])
+    ).rows[0]?.id;
+    const saved = await form(
+      'updatePostAction',
+      {
+        id: savedId,
+        titleUk: 'Smoke uk saved',
+        titleEn: 'Smoke en',
+        excerptUk: '',
+        excerptEn: '',
+        contentUk: '## Hello\n\nFirst paragraph of the smoke post.',
+        contentEn: '## Hello\n\nFirst paragraph of the smoke post.',
+        author: '',
+        tags: 'smoke-tag',
+        metaTitleUk: '',
+        metaTitleEn: '',
+        metaDescriptionUk: '',
+        metaDescriptionEn: '',
+        publishedAt: '',
+        publishNow: false,
+        unpublish: false,
+      },
+      cookie(ownerFull.token),
+      '/admin/marketing/blog',
+    );
+    check(
+      'blog: an owner save expires the cached blog lists at once',
+      saved.body.includes('"changed":true'),
+    );
+    const postUk = await get(`/blog/${blogSlug}`);
+    const postEn = await get(`/en/blog/${blogSlug}`, { Cookie: 'silk_cart=anything; other=1' });
+    const postUkAgain = await get(`/blog/${blogSlug}`, { Cookie: 'visitor=different' });
+    const blogParts = {
+      status: postUk.status === 200,
+      article: postUk.html.includes('"@type":"Article"'),
+      canonical: postUk.html.includes('rel="canonical"'),
+      hreflangEn: postUk.html.includes('hrefLang="en"'),
+      hreflangUk: postUk.html.includes('hrefLang="uk"'),
+      // The page's own robots meta says index (the `X-Robots-Tag` header is noindex outside production on EVERY page).
+      robotsMeta: /<meta name="robots" content="index, follow"/.test(postUk.html),
+      enStatus: postEn.status === 200,
+      enLanguage: postEn.html.includes('"inLanguage":"en"'),
+    };
+    check(
+      'blog: a published post is 200 with Article JSON-LD, a self canonical, a hreflang pair and an index robots meta',
+      Object.values(blogParts).every(Boolean),
+    );
+    if (!Object.values(blogParts).every(Boolean)) {
+      process.stdout.write(
+        `     ${JSON.stringify(blogParts)} ${JSON.stringify(/<meta name="robots"[^>]*>/.exec(postUk.html)?.[0] ?? 'no robots meta')}\n`,
+      );
+    }
+    check(
+      'blog: the post page is byte-identical for every visitor',
+      postUk.html === postUkAgain.html,
+    );
+    const onlyUkPage = await get(`/blog/${ukOnly}`);
+    const onlyUkInEn = await get(`/en/blog/${ukOnly}`);
+    check(
+      'blog: a post with one language has no hreflang pair, and is a 404 in the other language',
+      onlyUkPage.status === 200 &&
+        !onlyUkPage.html.includes('hrefLang=') &&
+        onlyUkInEn.status === 404,
+    );
+    const draftPage = await get(`/blog/${blogDraft}`);
+    const unknownPage = await get(`/blog/nothing-here-${suffix}`);
+    const badShape = await get('/blog/Bad%20Slug');
+    check(
+      'blog: a draft, an unknown address and a bad shape are 404s that are not stored',
+      draftPage.status === 404 &&
+        unknownPage.status === 404 &&
+        badShape.status === 404 &&
+        unknownPage.cache.includes('no-store'),
+    );
+    // A tag used in one language only has no counterpart: no hreflang pair and no language switch to a 404.
+    const enOnlyTag = await get('/en/blog/tag/en-only-tag');
+    const bothTag = await get('/blog/tag/smoke-tag');
+    const tagParts = {
+      enOnlyStatus: enOnlyTag.status === 200,
+      enOnlyNoPair: !enOnlyTag.html.includes('hrefLang='),
+      bothStatus: bothTag.status === 200,
+      bothPair: bothTag.html.includes('hrefLang="en"'),
+    };
+    check(
+      'blog: a tag in one language has no hreflang and no language switch; a tag in both has the pair',
+      Object.values(tagParts).every(Boolean),
+    );
+    if (!Object.values(tagParts).every(Boolean)) {
+      const links = (bothTag.html.match(/<link rel="(?:alternate|canonical)"[^>]*>/g) ?? []).slice(
+        0,
+        5,
+      );
+      const enBoth = await get('/en/blog/tag/smoke-tag');
+      const enLinks = (enBoth.html.match(/<link rel="(?:alternate|canonical)"[^>]*>/g) ?? []).slice(
+        0,
+        5,
+      );
+      const ukTags = [...bothTag.html.matchAll(/href="\/blog\/tag\/([^"]+)"/g)].map((m) => m[1]);
+      const enTags = [...enBoth.html.matchAll(/href="\/en\/blog\/tag\/([^"]+)"/g)].map((m) => m[1]);
+      process.stdout.write(
+        `     ${JSON.stringify(tagParts)} ${JSON.stringify(links)} en:${String(enBoth.status)} ${JSON.stringify(enLinks)} ukTags=${JSON.stringify(ukTags)} enTags=${JSON.stringify(enTags)}\n`,
+      );
+    }
+    // A page past the last one is a 404 and builds no cache entry; a post without an excerpt gets its own description.
+    const pastTheEnd = await get('/blog?page=99');
+    const firstPage = await get('/blog');
+    check(
+      'blog: a page past the last is a 404, page 1 is 200, a post without an excerpt describes itself from its first paragraph',
+      pastTheEnd.status === 404 &&
+        firstPage.status === 200 &&
+        /<meta name="description" content="First paragraph of the smoke post\."/.test(postUk.html),
+    );
+    const sitemapPages = await get('/sitemaps/pages.xml');
+    const homeForFooter = await get('/en');
+    check(
+      'blog: the sitemap lists the published posts and not the draft, and the footer links to the blog',
+      sitemapPages.html.includes(`/blog/${blogSlug}`) &&
+        !sitemapPages.html.includes(blogDraft) &&
+        homeForFooter.html.includes('href="/en/blog"'),
+    );
+
     // 3. Sessions are read from the database.
     const ok = await get('/admin', cookie(managerLogin.token));
     check(
