@@ -29,6 +29,8 @@
     "./dto/admin-promo": "./src/dto/admin-promo.ts",
     "./promo-code": "./src/promo-code.ts",
     "./dto/banner": "./src/dto/banner.ts",
+    "./dto/blog": "./src/dto/blog.ts",
+    "./blog": "./src/blog.ts",
     "./newsletter": "./src/newsletter.ts",
     "./content-bounds": "./src/content-bounds.ts",
     "./content-columns": "./src/content-columns.ts",

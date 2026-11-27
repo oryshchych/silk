@@ -304,6 +304,65 @@ export async function runAdminSmoke({
       removed.body.includes(String(bannerId)) && !after.html.includes(bannerAlt),
     );
 
+    // The blog (phase 11, slice E): a published post is an indexable page with Article JSON-LD and a hreflang pair, the same bytes for
+    // every visitor, a post with one language only has no counterpart, a draft and an unknown address are 404s, the sitemap lists
+    // the published post, and the footer links to the blog.
+    const blogSlug = `smoke-post-${suffix}`;
+    const ukOnly = `smoke-uk-${suffix}`;
+    const blogDraft = `smoke-draft-${suffix}`;
+    await pool.query(
+      `INSERT INTO blog_posts (slug, title_uk, title_en, content_uk, content_en, tags, published_at) VALUES
+         ($1, 'Smoke uk', 'Smoke en', '## Hello', '## Hello', ARRAY['smoke-tag'], now() - interval '1 hour'),
+         ($2, 'Only uk', 'Only en', '## Hello', NULL, ARRAY[]::text[], now() - interval '1 hour'),
+         ($3, 'Draft', 'Draft', '## Hello', '## Hello', ARRAY[]::text[], NULL)`,
+      [blogSlug, ukOnly, blogDraft],
+    );
+    const postUk = await get(`/blog/${blogSlug}`);
+    const postEn = await get(`/en/blog/${blogSlug}`, { Cookie: 'silk_cart=anything; other=1' });
+    const postUkAgain = await get(`/blog/${blogSlug}`, { Cookie: 'visitor=different' });
+    check(
+      'blog: a published post is 200 with Article JSON-LD, a self canonical, a hreflang pair and no noindex',
+      postUk.status === 200 &&
+        postUk.html.includes('"@type":"Article"') &&
+        postUk.html.includes('rel="canonical"') &&
+        postUk.html.includes('hreflang="en"') &&
+        postUk.html.includes('hreflang="uk"') &&
+        !/name="robots"[^>]*noindex/.test(postUk.html) &&
+        !postUk.robots.includes('noindex') &&
+        postEn.status === 200 &&
+        postEn.html.includes('"inLanguage":"en"'),
+    );
+    check(
+      'blog: the post page is byte-identical for every visitor',
+      postUk.html === postUkAgain.html,
+    );
+    const onlyUkPage = await get(`/blog/${ukOnly}`);
+    const onlyUkInEn = await get(`/en/blog/${ukOnly}`);
+    check(
+      'blog: a post with one language has no hreflang pair, and is a 404 in the other language',
+      onlyUkPage.status === 200 &&
+        !onlyUkPage.html.includes('hreflang="en"') &&
+        onlyUkInEn.status === 404,
+    );
+    const draftPage = await get(`/blog/${blogDraft}`);
+    const unknownPage = await get(`/blog/nothing-here-${suffix}`);
+    const badShape = await get('/blog/Bad%20Slug');
+    check(
+      'blog: a draft, an unknown address and a bad shape are 404s that are not stored',
+      draftPage.status === 404 &&
+        unknownPage.status === 404 &&
+        badShape.status === 404 &&
+        unknownPage.cache.includes('no-store'),
+    );
+    const sitemapPages = await get('/sitemaps/pages.xml');
+    const homeForFooter = await get('/en');
+    check(
+      'blog: the sitemap lists the published posts and not the draft, and the footer links to the blog',
+      sitemapPages.html.includes(`/blog/${blogSlug}`) &&
+        !sitemapPages.html.includes(blogDraft) &&
+        homeForFooter.html.includes('href="/en/blog"'),
+    );
+
     // 3. Sessions are read from the database.
     const ok = await get('/admin', cookie(managerLogin.token));
     check(

@@ -197,6 +197,13 @@
       "when": 1795784019568,
       "tag": "0027_banners_alt_visible",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1795785001799,
+      "tag": "0028_blog_constraints",
+      "breakpoints": true
     }
   ]
 }

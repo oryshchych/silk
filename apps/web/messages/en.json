@@ -71,7 +71,8 @@
     "about": "Original lingerie and homewear delivered across Ukraine.",
     "legalNav": "Legal information",
     "trademark": "All trademarks and brand names belong to their respective owners and are used on this site only to identify products.",
-    "newsletter": "Newsletter"
+    "newsletter": "Newsletter",
+    "blog": "Blog"
   },
   "listing": {
     "title": "Catalog",
@@ -1532,7 +1533,8 @@
     "marketing": {
       "tabs": "Marketing sections",
       "promoCodes": "Promo codes",
-      "banners": "Banners"
+      "banners": "Banners",
+      "blog": "Blog"
     },
     "banners": {
       "title": "Banners",
@@ -1588,6 +1590,52 @@
         "BANNER_INCOMPLETE": "A banner needs both pictures and alt text in both languages before it can be switched on.",
         "BANNER_DATES": "The end must be later than the start.",
         "BANNER_TOO_MANY": "Too many banners: delete an old one first."
+      }
+    },
+    "blog": {
+      "title": "Blog",
+      "intro": "Posts for the storefront blog. A post is public when its publication time has passed (Kyiv time) and it has text in the language asked; a post with text in one language only is shown in that language only.",
+      "create": "New post",
+      "createTitle": "New post",
+      "editTitle": "Edit post",
+      "empty": "No posts yet.",
+      "states": {
+        "draft": "Draft",
+        "scheduled": "Scheduled",
+        "published": "Published"
+      },
+      "fields": {
+        "slug": "Address (set once)",
+        "titleUk": "Title (Ukrainian)",
+        "titleEn": "Title (English)",
+        "excerptUk": "Short summary (Ukrainian)",
+        "excerptEn": "Short summary (English)",
+        "contentUk": "Text (Ukrainian)",
+        "contentEn": "Text (English)",
+        "author": "Author name (empty: the shop)",
+        "tags": "Tags",
+        "metaTitleUk": "Search title (Ukrainian)",
+        "metaTitleEn": "Search title (English)",
+        "metaDescriptionUk": "Search description (Ukrainian)",
+        "metaDescriptionEn": "Search description (English)",
+        "publishedAt": "Publish at (Kyiv time)"
+      },
+      "slugHint": "Lower-case words joined by hyphens, for example how-to-choose-a-bra. It becomes the public address and cannot change later.",
+      "markdownHint": "Markdown: ## heading, **bold**, *italic*, lists, links. Leave empty for a language the post is not written in.",
+      "tagsHint": "Separated by commas: lower-case words joined by hyphens, at most ten.",
+      "publishedAtHint": "Leave empty to keep the current time. Use Publish now to publish at once, or set a future time to schedule.",
+      "save": "Save",
+      "publishNow": "Publish now",
+      "unpublish": "Back to draft",
+      "saved": "Saved.",
+      "delete": "Delete the post",
+      "deleted": "Deleted.",
+      "confirmDelete": "Delete this post for good?",
+      "errors": {
+        "BLOG_NOT_FOUND": "This post no longer exists.",
+        "BLOG_SLUG_TAKEN": "Another post already uses this address.",
+        "BLOG_EMPTY": "A post needs text in at least one language before it can be published.",
+        "BLOG_TIME": "That time does not exist in Kyiv: the clocks skip it. Pick another time."
       }
     }
   },
@@ -1788,5 +1836,18 @@
       "expired": "This link has expired. Sign up again to get a new one.",
       "rateLimited": "Too many attempts. Try again later."
     }
+  },
+  "blog": {
+    "title": "Blog",
+    "intro": "Care guides, fit advice and news from Damazla.",
+    "description": "Care guides, fit advice and news about lingerie and homewear from Damazla.",
+    "empty": "No posts yet.",
+    "tags": "Tags",
+    "allPosts": "All posts",
+    "tagTitle": "Posts tagged {tag}",
+    "by": "By {author}",
+    "prev": "Newer posts",
+    "next": "Older posts",
+    "pages": "Pages"
   }
 }

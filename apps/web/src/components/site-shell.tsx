@@ -145,6 +145,9 @@ export async function SiteShell({
               </ul>
             </nav>
           )}
+          <Link href={href(locale, paths.blog)} className={navLink}>
+            {tf('blog')}
+          </Link>
           <Link href={href(locale, paths.newsletter)} className={navLink}>
             {tf('newsletter')}
           </Link>

@@ -12,6 +12,8 @@ import { customerCookieName } from './lib/account/cookies';
 import { SESSION_COOKIE } from './lib/admin/cookies';
 import { missingPath, parseProductPath } from './lib/product-path';
 import { redirectMap } from './lib/redirect-map';
+import { blogGateKey, parseBlogPath } from './lib/blog-path';
+import { knownBlogPages } from './lib/blog-gate';
 import { knownLegalPages } from './lib/legal-pages';
 import { parseLegalPath } from './lib/legal-path';
 import { knownProductSlugs } from './lib/product-slugs';
@@ -328,6 +330,23 @@ async function route(request: NextRequest): Promise<NextResponse> {
     const response = NextResponse.rewrite(target);
     response.headers.set('Cache-Control', 'no-store');
     return withNoindex(response);
+  }
+
+  // A blog address that is not a visible post (or a tag in use) in THIS language is answered here with the shared 404, for
+  // the same reason as an unknown product slug: nothing a client chooses may become a page cache entry. A word of the wrong
+  // shape never touches the database; if the set cannot be loaded at all the request passes and the page decides.
+  const blog = parseBlogPath(pathname);
+  if (blog !== null && request.method !== 'OPTIONS') {
+    const key = blogGateKey(blog);
+    const known = key === null ? false : await knownBlogPages.has(key);
+    if (known === false) {
+      const target = request.nextUrl.clone();
+      target.pathname = missingPath(blog.locale);
+      target.search = '';
+      const response = NextResponse.rewrite(target);
+      response.headers.set('Cache-Control', 'no-store');
+      return withNoindex(response);
+    }
   }
 
   // Мовна маршрутизація — лише для сторінок: не для API і не для файлів

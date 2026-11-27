@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { money } from './money';
 import {
+  buildArticle,
   buildBreadcrumbList,
   buildItemList,
   buildProduct,
@@ -150,5 +151,44 @@ describe('buildFaqPage', () => {
         { '@type': 'Question', name: 'Q?', acceptedAnswer: { '@type': 'Answer', text: 'A.' } },
       ],
     });
+  });
+});
+
+describe('buildArticle', () => {
+  const base = {
+    url: 'https://shop.example/blog/how-to',
+    headline: 'How to choose a bra',
+    description: 'A guide',
+    datePublished: '2026-11-01T10:00:00.000Z',
+    dateModified: '2026-11-02T10:00:00.000Z',
+    language: 'en' as const,
+    author: null,
+    publisherName: 'Damazla',
+    keywords: ['bras', 'fit-guide'],
+  };
+
+  it('has the fields a search engine reads, and the shop as author when no person is named', () => {
+    const ld = buildArticle(base);
+    expect(ld['@type']).toBe('Article');
+    expect(ld.mainEntityOfPage['@id']).toBe(base.url);
+    expect(ld.author).toEqual({ '@type': 'Organization', name: 'Damazla' });
+    expect(ld.inLanguage).toBe('en');
+    expect(ld.keywords).toBe('bras, fit-guide');
+    expect(buildArticle({ ...base, author: 'Olena' }).author).toEqual({
+      '@type': 'Person',
+      name: 'Olena',
+    });
+  });
+
+  it('leaves out an empty description and keywords, and keeps the headline within 110 characters', () => {
+    const ld = buildArticle({
+      ...base,
+      description: null,
+      keywords: [],
+      headline: 'x'.repeat(300),
+    });
+    expect(ld).not.toHaveProperty('description');
+    expect(ld).not.toHaveProperty('keywords');
+    expect(ld.headline).toHaveLength(110);
   });
 });

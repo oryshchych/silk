@@ -32,3 +32,10 @@ export const legalTag = (kind: string): string => `legal:${kind}`;
  * drops it after the commit.
  */
 export const BANNERS_TAG = 'banners';
+
+/**
+ * The blog. `blog` is read by everything that lists posts (the index, tag pages, the tag list, the sitemap); `blog:{slug}`
+ * by one post page. Any change in the admin expires both the post's tag and the list tag.
+ */
+export const BLOG_TAG = 'blog';
+export const blogPostTag = (slug: string): string => `blog:${slug}`;
