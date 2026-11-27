@@ -2,7 +2,7 @@
  * Phase 10 on the BUILT server (called from smoke-web.ts): the product view counter. `POST /api/pv` is
  * public, so it is bounded: a same-site Origin, a small body, a per-client limit, and it answers an
  * empty 204 that says nothing about the product. The row it writes holds a product, an opaque hash and a
- * day, never an address; a repeat is the same row; another agent is another session.
+ * day, never an address; a repeat is the same row; the user agent is not part of the hash.
  */
 import { createDb } from '../packages/db/src/client.ts';
 import { productViews, products } from '../packages/db/src/schema.ts';
@@ -62,8 +62,19 @@ export async function runViewsSmoke({ base, databaseUrl, siteOrigin, check }: Co
     check('views: the first view writes one row', (await rows()) === before + 1);
     await post(good, {}, '198.51.100.201');
     check('views: the same visitor on the same day is the same row', (await rows()) === before + 1);
-    await post(good, { 'User-Agent': 'smoke-views/2' }, '198.51.100.201');
-    check('views: another agent is another session', (await rows()) === before + 2);
+    for (let n = 0; n < 50; n += 1)
+      await post(good, { 'User-Agent': `forged-agent/${String(n)}` }, '198.51.100.201');
+    check(
+      'views: fifty forged user agents from one client are still one row (the agent is not in the hash)',
+      (await rows()) === before + 1,
+    );
+    const parallel = await Promise.all(
+      Array.from({ length: 10 }, async () => await post(good, {}, '198.51.100.202')),
+    );
+    check(
+      'views: ten parallel posts of one visitor are ten 204s and one row',
+      parallel.every((r) => r.status === 204) && (await rows()) === before + 2,
+    );
     const stored = (await db.select().from(productViews)).at(-1);
     check(
       'views: the row holds an opaque 64-character hash and a day, no address and no agent',
@@ -105,6 +116,10 @@ export async function runViewsSmoke({ base, databaseUrl, siteOrigin, check }: Co
     const getResponse = await fetch(`${base}/api/pv`, {
       headers: { 'X-Forwarded-For': '198.51.100.231' },
     });
+    check(
+      'views: a browser request marked cross-site is refused (403)',
+      (await post(good, { 'Sec-Fetch-Site': 'cross-site' })).status === 403,
+    );
     check('views: a GET is not allowed (405)', getResponse.status === 405);
 
     let limited = 0;

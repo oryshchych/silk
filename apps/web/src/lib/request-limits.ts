@@ -34,6 +34,8 @@ export const limiters = {
   /** Product page views counted per client: a person opens a few dozen pages a minute at most. */
   views: createRateLimiter({ limit: 60, windowMs: 60_000 }),
   /** Views STORED per minute over all clients (a bounded table: past it a view is dropped). */
+  /** Rows STORED per client per day: one visitor reads a few dozen products, a script does not. */
+  viewsDaily: createRateLimiter({ limit: 300, windowMs: 24 * 60 * 60_000 }),
   viewsTotal: createRateLimiter({ limit: 300, windowMs: 60_000, maxKeys: 1 }),
   webhookRefused: createRateLimiter({ limit: 300, windowMs: 60_000, maxKeys: 1 }),
 } as const satisfies Record<string, RateLimiter>;

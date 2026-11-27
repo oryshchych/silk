@@ -119,7 +119,7 @@ describe('purgeProductViews', () => {
       (${productId}::uuid, ${hash(11)}, (now() AT TIME ZONE 'UTC')::date - 90),
       (${productId}::uuid, ${hash(12)}, (now() AT TIME ZONE 'UTC')::date - 89),
       (${productId}::uuid, ${hash(13)}, (now() AT TIME ZONE 'UTC')::date)`);
-    const removed = await db.transaction(async (tx) => await purgeProductViews(tx));
+    const removed = await purgeProductViews(db);
     expect(removed).toBe(1);
     expect(await count()).toBe(3);
     expect(await db.transaction(async (tx) => await purgeProductViews(tx, { keepDays: 1 }))).toBe(
@@ -128,9 +128,26 @@ describe('purgeProductViews', () => {
   });
 });
 
+describe('purgeProductViews in batches', () => {
+  it('removes a backlog larger than one batch in several short transactions, and stops at the round cap', async () => {
+    const { db } = world.connect(1);
+    await db.execute(sql`DELETE FROM product_views`);
+    await db.execute(sql`INSERT INTO product_views (product_id, session_hash, viewed_on)
+      SELECT ${productId}::uuid, md5(g::text) || md5((g + 1)::text), (now() AT TIME ZONE 'UTC')::date - 100 - (g % 50)
+        FROM generate_series(1, 12000) g`);
+    await db.execute(sql`INSERT INTO product_views (product_id, session_hash, viewed_on)
+      VALUES (${productId}::uuid, ${hash(900)}, (now() AT TIME ZONE 'UTC')::date)`);
+    // Capped: 2 rounds of 5000 leave 2000 old rows; the next run finishes the work.
+    expect(await purgeProductViews(db, { batchSize: 5000, maxRounds: 2 })).toBe(10_000);
+    expect(await count()).toBe(2_001);
+    expect(await purgeProductViews(db, { batchSize: 5000 })).toBe(2_000);
+    expect(await count()).toBe(1);
+  });
+});
+
 describe('viewSessionHash', () => {
-  const base = { day: '2026-11-27', client: '203.0.113.9', userAgent: 'Mozilla/5.0' };
-  it('is deterministic, opaque and changes with the day, the client and the agent', () => {
+  const base = { day: '2026-11-27', client: '203.0.113.9' };
+  it('is deterministic, opaque and changes with the day, the client and the secret, and never with a user agent', () => {
     const a = viewSessionHash('secret', base);
     expect(a).toBe(viewSessionHash('secret', base));
     expect(a).toMatch(/^[0-9a-f]{64}$/);
@@ -140,9 +157,8 @@ describe('viewSessionHash', () => {
         a,
         viewSessionHash('secret', { ...base, day: '2026-11-28' }),
         viewSessionHash('secret', { ...base, client: '203.0.113.10' }),
-        viewSessionHash('secret', { ...base, userAgent: 'curl/8' }),
         viewSessionHash('other', base),
       ]).size,
-    ).toBe(5);
+    ).toBe(4);
   });
 });

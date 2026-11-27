@@ -153,7 +153,7 @@ export function createJobHandlers(deps: JobDeps): JobHandlers {
       line({ level: 'info', scope: JOB_NAMES.notifyRestocked, queued });
     },
     [JOB_NAMES.cleanViews]: async () => {
-      const removed = await deps.db.transaction(async (tx) => await purgeProductViews(tx));
+      const removed = await purgeProductViews(deps.db);
       line({ level: 'info', scope: JOB_NAMES.cleanViews, removed });
     },
     [JOB_NAMES.purgePendingAccounts]: async () => {
