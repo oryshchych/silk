@@ -75,7 +75,11 @@ export default async function BlogPostPage({ params }: Props) {
       new Date(iso),
     );
   return (
-    <SiteShell locale={locale} path={paths.blogPost(slug)}>
+    <SiteShell
+      locale={locale}
+      path={paths.blogPost(slug)}
+      hasCounterpart={post.locales.length === 2}
+    >
       <JsonLd
         data={buildBreadcrumbList([
           { name: tn('home'), url: absolute(paths.home) },

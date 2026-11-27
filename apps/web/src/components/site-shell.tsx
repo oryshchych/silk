@@ -28,6 +28,7 @@ export async function SiteShell({
   path,
   search = '',
   degrade = false,
+  hasCounterpart = true,
   children,
 }: {
   locale: SiteLocale;
@@ -37,6 +38,8 @@ export async function SiteShell({
   search?: string;
   /** Render without navigation if categories cannot load: only for pages that are never cached. */
   degrade?: boolean;
+  /** False for a page that exists in this language only (a one-language blog post): no language switch link to a 404. */
+  hasCounterpart?: boolean;
   children: ReactNode;
 }) {
   const t = await getTranslations('nav');
@@ -53,7 +56,7 @@ export async function SiteShell({
   });
   // A legal page that exists in one language only has no counterpart to switch to (the link would be a 404).
   const legalKind = legalKindOfPath(path);
-  const canSwitch = legalKind === null || publishedInBoth(legalNav, legalKind);
+  const canSwitch = hasCounterpart && (legalKind === null || publishedInBoth(legalNav, legalKind));
   const legalLinks = LEGAL_KINDS.flatMap((kind) => {
     const row = legalNav.find((entry) => entry.kind === kind && entry.locale === locale);
     return row === undefined ? [] : [{ kind, title: row.title }];
