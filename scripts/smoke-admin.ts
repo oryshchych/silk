@@ -318,6 +318,38 @@ export async function runAdminSmoke({
          ($4, 'Only en', 'Only en', NULL, '## Hello', ARRAY['en-only-tag'], now() - interval '1 hour')`,
       [blogSlug, ukOnly, blogDraft, `smoke-en-${suffix}`],
     );
+    // The posts were written straight into the table, behind the data cache's back (an earlier crawl of the footer link may have cached an
+    // empty blog list for five minutes). A real admin save expires the blog tags at once (`updateTag`): do one, as the owner would.
+    const savedId = (
+      await pool.query<{ id: string }>(`SELECT id FROM blog_posts WHERE slug = $1`, [blogSlug])
+    ).rows[0]?.id;
+    const saved = await form(
+      'updatePostAction',
+      {
+        id: savedId,
+        titleUk: 'Smoke uk saved',
+        titleEn: 'Smoke en',
+        excerptUk: '',
+        excerptEn: '',
+        contentUk: '## Hello\n\nFirst paragraph of the smoke post.',
+        contentEn: '## Hello\n\nFirst paragraph of the smoke post.',
+        author: '',
+        tags: 'smoke-tag',
+        metaTitleUk: '',
+        metaTitleEn: '',
+        metaDescriptionUk: '',
+        metaDescriptionEn: '',
+        publishedAt: '',
+        publishNow: false,
+        unpublish: false,
+      },
+      cookie(ownerFull.token),
+      '/admin/marketing/blog',
+    );
+    check(
+      'blog: an owner save expires the cached blog lists at once',
+      saved.body.includes('"changed":true'),
+    );
     const postUk = await get(`/blog/${blogSlug}`);
     const postEn = await get(`/en/blog/${blogSlug}`, { Cookie: 'silk_cart=anything; other=1' });
     const postUkAgain = await get(`/blog/${blogSlug}`, { Cookie: 'visitor=different' });
