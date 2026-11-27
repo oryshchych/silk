@@ -324,8 +324,8 @@ export async function runAdminSmoke({
       status: postUk.status === 200,
       article: postUk.html.includes('"@type":"Article"'),
       canonical: postUk.html.includes('rel="canonical"'),
-      hreflangEn: postUk.html.includes('hreflang="en"'),
-      hreflangUk: postUk.html.includes('hreflang="uk"'),
+      hreflangEn: postUk.html.includes('hrefLang="en"'),
+      hreflangUk: postUk.html.includes('hrefLang="uk"'),
       // The page's own robots meta says index (the `X-Robots-Tag` header is noindex outside production on EVERY page).
       robotsMeta: /<meta name="robots" content="index, follow"/.test(postUk.html),
       enStatus: postEn.status === 200,
@@ -349,7 +349,7 @@ export async function runAdminSmoke({
     check(
       'blog: a post with one language has no hreflang pair, and is a 404 in the other language',
       onlyUkPage.status === 200 &&
-        !onlyUkPage.html.includes('hreflang="en"') &&
+        !onlyUkPage.html.includes('hrefLang=') &&
         onlyUkInEn.status === 404,
     );
     const draftPage = await get(`/blog/${blogDraft}`);
