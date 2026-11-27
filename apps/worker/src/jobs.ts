@@ -16,6 +16,7 @@ import { syncAllReturnRefunds } from '@store/core/returns-admin';
 import { purgeEmailTokens, purgePendingAccounts } from '@store/core/customer-auth';
 import { findReservedDrift, releaseExpiredOrders } from '@store/core/expiry';
 import { findReceiptGaps } from '@store/core/fiscal-gaps';
+import { purgeProductViews } from '@store/core/product-views';
 import { purgeQuarantine } from '@store/core/quarantine';
 import { reconcileOpenAttempts } from '@store/core/reconcile';
 import { sweepRefunds } from '@store/core/refund-sweep';
@@ -41,6 +42,8 @@ export const JOB_NAMES = {
   purgePendingAccounts: 'accounts.purge-pending',
   /** Phase 7: queue one mail for every waiting back-in-stock alert whose size can be bought again. */
   notifyRestocked: 'stock.notify-back-in-stock',
+  /** Phase 10: product views older than 90 days are removed (the table must not grow without bound). */
+  cleanViews: 'views.cleanup',
 } as const;
 
 /** Cron expressions and their timezone (ADR-17): the timezone moves the schedule, nothing else. */
@@ -58,6 +61,7 @@ const SCHEDULES = {
   [JOB_NAMES.purgePendingAccounts]: '20 5 * * *',
   // Every ten minutes: a restock reaches the customer within one cycle (and with the reservation expiry too).
   [JOB_NAMES.notifyRestocked]: '*/10 * * * *',
+  [JOB_NAMES.cleanViews]: '0 5 * * *',
 } as const;
 const CRON_TZ = 'Europe/Kyiv';
 const RESTOCK_BATCH = 200;
@@ -147,6 +151,10 @@ export function createJobHandlers(deps: JobDeps): JobHandlers {
         if (claimed < RESTOCK_BATCH) break;
       }
       line({ level: 'info', scope: JOB_NAMES.notifyRestocked, queued });
+    },
+    [JOB_NAMES.cleanViews]: async () => {
+      const removed = await purgeProductViews(deps.db);
+      line({ level: 'info', scope: JOB_NAMES.cleanViews, removed });
     },
     [JOB_NAMES.purgePendingAccounts]: async () => {
       const removed = await deps.db.transaction(async (tx) => await purgePendingAccounts(tx));

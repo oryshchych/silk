@@ -29,6 +29,7 @@ import { runImportSmoke } from './smoke-import.ts';
 import { runLegalSmoke } from './smoke-legal.ts';
 import { runPaymentSmoke } from './smoke-payments.ts';
 import { runReportsSmoke } from './smoke-reports.ts';
+import { runViewsSmoke } from './smoke-views.ts';
 import { runAnalyticsSmoke, runPostFloodSmoke, runSeoSmoke } from './smoke-seo.ts';
 
 const root = join(import.meta.dirname, '..');
@@ -452,6 +453,7 @@ try {
     authSecret: AUTH_SECRET_FOR_SMOKE,
     check,
   });
+  await runViewsSmoke({ base, databaseUrl, siteOrigin: SITE, check });
   await runSeoSmoke({ base, site: SITE, check, storedFiles });
   await runPostFloodSmoke({ base, site: SITE, check, storedFiles });
   await runAnalyticsSmoke({ base, check });
