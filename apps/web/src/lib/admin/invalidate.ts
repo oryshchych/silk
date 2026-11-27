@@ -1,4 +1,4 @@
-import { revalidateTag } from 'next/cache';
+import { revalidateTag, updateTag } from 'next/cache';
 
 /** The most tags one mutation may invalidate: a bound against a runaway fan-out. */
 const MAX_TAGS = 1_000;
@@ -18,4 +18,17 @@ export function invalidateTags(tags: readonly string[]): void {
     );
   }
   for (const tag of unique.slice(0, MAX_TAGS)) revalidateTag(tag, 'max');
+}
+
+/**
+ * Read-your-writes for a SERVER ACTION (`updateTag`, AGENTS.md section 4): the very next request after the change
+ * reads fresh data, instead of one more stale answer while the cache refreshes. Server actions only.
+ */
+export function updateTags(tags: readonly string[]): void {
+  for (const tag of new Set(tags)) updateTag(tag);
+}
+
+/** The same immediate expiry for a ROUTE HANDLER, where `updateTag` is not allowed. */
+export function expireTags(tags: readonly string[]): void {
+  for (const tag of new Set(tags)) revalidateTag(tag, { expire: 0 });
 }

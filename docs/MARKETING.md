@@ -70,10 +70,15 @@ Phase 11 marketing features: what each does, who it may mail, and where the cons
   (the action checks it under a per-banner lock, and the CHECK `banners_active_complete` backs it).
 - **Cache-safe public rendering:** banners are read and rendered on the HOME page only, which is rendered per request and
   never stored as a page. The read takes nothing about the visitor, its key is `['banners', locale]`, the period is decided
-  by Postgres' `now()` when the cache fills, a 60 second TTL moves it over a boundary and an admin change drops the tag
-  `banners` after the commit. The ISR pages (product, category) never import banners (pinned by `banners.unit.test.ts`),
+  by Postgres' `now()` when the cache fills, a 60 second TTL moves it over a boundary and an admin change expires the tag
+  `banners` at once after the commit (`updateTag` in the actions, an immediate expiry in the upload route), so the very next
+  request after a save or a delete reads fresh data. The period boundary itself (a banner that starts or ends by the clock) is
+  picked up within about 60 seconds of the next request, per web process: with several replicas each has its own cache. The ISR pages (product, category) never import banners (pinned by `banners.unit.test.ts`),
   so no banner change can make a shared page differ between visitors or go stale.
 - **Rendering:** one `<picture>` per banner, mobile sources under `(max-width: 767px)`, AVIF, WebP and the original, the box
   reserved from the stored dimensions, the first banner the LCP candidate and the rest lazy.
-- Not built: banner positions other than `home_hero`, per-banner statistics, scheduling per locale. Files of a DELETED banner stay
-  in the bucket (the weekly orphan job of Q47 lists `products/` only).
+- Not built: banner positions other than `home_hero`, per-banner statistics, scheduling per locale. A deleted banner's files are removed after the
+  commit, as are a replaced picture's (best effort; a failure is logged and leaves an orphan that no sweep covers yet).
+- **Deploy note:** migrations 0025 and 0026 are forward-only and drop what they must (0025 clears every picture reference and
+  switches every old row off; 0026 clears a bad picture whole, a bad link, and switches off an incomplete banner). Snapshot the
+  `banners` table before applying them on staging or production.

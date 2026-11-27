@@ -16,7 +16,7 @@ import { serialize } from '@store/shared/dto/serialize';
 export const HOME_BANNER_LIMIT = 5;
 
 const SHOWN_NOW = sql`b.is_active AND b.image_desktop_url IS NOT NULL AND b.image_mobile_url IS NOT NULL
-  AND coalesce(b.alt_uk, '') <> '' AND coalesce(b.alt_en, '') <> ''
+  AND coalesce(b.alt_uk, '') ~ '[^[:space:]]' AND coalesce(b.alt_en, '') ~ '[^[:space:]]'
   AND (b.starts_at IS NULL OR b.starts_at <= now()) AND (b.ends_at IS NULL OR b.ends_at > now())`;
 
 const iso = (value: unknown): string | null => {

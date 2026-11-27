@@ -183,6 +183,13 @@
       "when": 1795780635626,
       "tag": "0025_banners_admin",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1795782903716,
+      "tag": "0026_banners_checks_strict",
+      "breakpoints": true
     }
   ]
 }

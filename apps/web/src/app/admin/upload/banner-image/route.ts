@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import {
   bannerExists,
+  bannerKeysOfUrl,
   bannerImageKey,
   bannerImageQuerySchema,
   setBannerImage,
@@ -11,7 +12,7 @@ import { ImageRejectedError, LIMITS, processImage } from '@store/media/process';
 import { BANNERS_TAG } from '@store/shared/cache-tags';
 
 import { adminAction, requestOriginOk } from '@/lib/admin/bound-action';
-import { invalidateTags } from '@/lib/admin/invalidate';
+import { expireTags } from '@/lib/admin/invalidate';
 import { currentSession } from '@/lib/admin/session';
 import { getDb } from '@/lib/db';
 import { createInFlight } from '@/lib/in-flight';
@@ -63,9 +64,12 @@ export async function POST(request: Request): Promise<Response> {
   ) {
     return reply(429, 'RATE_LIMITED', request);
   }
-  const query = bannerImageQuerySchema.safeParse(
-    Object.fromEntries(new URL(request.url).searchParams),
-  );
+  const params = new URL(request.url).searchParams;
+  // A repeated parameter is refused, not resolved by "the last one wins".
+  if (params.getAll('bannerId').length > 1 || params.getAll('slot').length > 1) {
+    return reply(400, 'INVALID_INPUT', request);
+  }
+  const query = bannerImageQuerySchema.safeParse(Object.fromEntries(params));
   if (!query.success) return reply(400, 'INVALID_INPUT', request);
   const media = await mediaConfig();
   if (media === null) return reply(503, 'MEDIA_NOT_CONFIGURED', request);
@@ -183,23 +187,11 @@ async function upload(
       result.code,
     );
   }
-  invalidateTags([BANNERS_TAG]);
-  // The replaced picture's files: keys are rebuilt from the ids in its URL, never taken from it as a path.
-  if (replaced.previousUrl !== null) {
-    const match = /\/banners\/[0-9a-f-]{36}\/([0-9a-f-]{36})\/full\.webp$/.exec(
-      replaced.previousUrl,
-    );
-    const oldId = match?.[1];
-    if (oldId !== undefined && oldId !== imageId) {
-      await remove(
-        (['thumb', 'card', 'full'] as const).flatMap((size) =>
-          (['webp', 'avif'] as const).map((format) =>
-            bannerImageKey(target.bannerId, oldId, size, format),
-          ),
-        ),
-        'orphan',
-      );
-    }
+  expireTags([BANNERS_TAG]);
+  // The replaced picture's files (keys rebuilt from the ids in its URL, never taken from it as a path).
+  const oldKeys = bannerKeysOfUrl(replaced.previousUrl);
+  if (oldKeys.length > 0 && !oldKeys.some((key) => key.includes(`/${imageId}/`))) {
+    await remove(oldKeys, 'orphan');
   }
   return Response.json({ ok: true, imageId }, { status: 201, headers: HEADERS });
 }

@@ -140,13 +140,9 @@
         "addresses_customer_id_customers_id_fk": {
           "name": "addresses_customer_id_customers_id_fk",
           "tableFrom": "addresses",
-          "columnsFrom": [
-            "customer_id"
-          ],
+          "columnsFrom": ["customer_id"],
           "tableTo": "customers",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         }
@@ -297,13 +293,9 @@
         "attribute_values_attribute_id_attributes_id_fk": {
           "name": "attribute_values_attribute_id_attributes_id_fk",
           "tableFrom": "attribute_values",
-          "columnsFrom": [
-            "attribute_id"
-          ],
+          "columnsFrom": ["attribute_id"],
           "tableTo": "attributes",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         }
@@ -544,13 +536,9 @@
         "auth_credentials_user_id_auth_users_id_fk": {
           "name": "auth_credentials_user_id_auth_users_id_fk",
           "tableFrom": "auth_credentials",
-          "columnsFrom": [
-            "user_id"
-          ],
+          "columnsFrom": ["user_id"],
           "tableTo": "auth_users",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         }
@@ -612,13 +600,9 @@
         "auth_recovery_codes_user_id_auth_users_id_fk": {
           "name": "auth_recovery_codes_user_id_auth_users_id_fk",
           "tableFrom": "auth_recovery_codes",
-          "columnsFrom": [
-            "user_id"
-          ],
+          "columnsFrom": ["user_id"],
           "tableTo": "auth_users",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         }
@@ -721,13 +705,9 @@
         "auth_sessions_user_id_auth_users_id_fk": {
           "name": "auth_sessions_user_id_auth_users_id_fk",
           "tableFrom": "auth_sessions",
-          "columnsFrom": [
-            "user_id"
-          ],
+          "columnsFrom": ["user_id"],
           "tableTo": "auth_users",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         }
@@ -772,13 +752,9 @@
         "auth_totp_user_id_auth_users_id_fk": {
           "name": "auth_totp_user_id_auth_users_id_fk",
           "tableFrom": "auth_totp",
-          "columnsFrom": [
-            "user_id"
-          ],
+          "columnsFrom": ["user_id"],
           "tableTo": "auth_users",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         }
@@ -1192,26 +1168,18 @@
         "cart_items_cart_id_carts_id_fk": {
           "name": "cart_items_cart_id_carts_id_fk",
           "tableFrom": "cart_items",
-          "columnsFrom": [
-            "cart_id"
-          ],
+          "columnsFrom": ["cart_id"],
           "tableTo": "carts",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         },
         "cart_items_variant_id_product_variants_id_fk": {
           "name": "cart_items_variant_id_product_variants_id_fk",
           "tableFrom": "cart_items",
-          "columnsFrom": [
-            "variant_id"
-          ],
+          "columnsFrom": ["variant_id"],
           "tableTo": "product_variants",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         }
@@ -1348,26 +1316,18 @@
         "carts_customer_id_customers_id_fk": {
           "name": "carts_customer_id_customers_id_fk",
           "tableFrom": "carts",
-          "columnsFrom": [
-            "customer_id"
-          ],
+          "columnsFrom": ["customer_id"],
           "tableTo": "customers",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "set null"
         },
         "carts_converted_order_id_orders_id_fk": {
           "name": "carts_converted_order_id_orders_id_fk",
           "tableFrom": "carts",
-          "columnsFrom": [
-            "converted_order_id"
-          ],
+          "columnsFrom": ["converted_order_id"],
           "tableTo": "orders",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "set null"
         }
@@ -1574,13 +1534,9 @@
         "categories_parent_id_categories_id_fk": {
           "name": "categories_parent_id_categories_id_fk",
           "tableFrom": "categories",
-          "columnsFrom": [
-            "parent_id"
-          ],
+          "columnsFrom": ["parent_id"],
           "tableTo": "categories",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         }
@@ -1711,39 +1667,27 @@
         "checkout_intents_cart_id_carts_id_fk": {
           "name": "checkout_intents_cart_id_carts_id_fk",
           "tableFrom": "checkout_intents",
-          "columnsFrom": [
-            "cart_id"
-          ],
+          "columnsFrom": ["cart_id"],
           "tableTo": "carts",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         },
         "checkout_intents_customer_id_customers_id_fk": {
           "name": "checkout_intents_customer_id_customers_id_fk",
           "tableFrom": "checkout_intents",
-          "columnsFrom": [
-            "customer_id"
-          ],
+          "columnsFrom": ["customer_id"],
           "tableTo": "customers",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         },
         "checkout_intents_order_id_orders_id_fk": {
           "name": "checkout_intents_order_id_orders_id_fk",
           "tableFrom": "checkout_intents",
-          "columnsFrom": [
-            "order_id"
-          ],
+          "columnsFrom": ["order_id"],
           "tableTo": "orders",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "set null"
         }
@@ -1978,39 +1922,27 @@
         "customers_user_id_auth_users_id_fk": {
           "name": "customers_user_id_auth_users_id_fk",
           "tableFrom": "customers",
-          "columnsFrom": [
-            "user_id"
-          ],
+          "columnsFrom": ["user_id"],
           "tableTo": "auth_users",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "set null"
         },
         "customers_preferred_bra_size_id_sizes_id_fk": {
           "name": "customers_preferred_bra_size_id_sizes_id_fk",
           "tableFrom": "customers",
-          "columnsFrom": [
-            "preferred_bra_size_id"
-          ],
+          "columnsFrom": ["preferred_bra_size_id"],
           "tableTo": "sizes",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "set null"
         },
         "customers_preferred_apparel_size_id_sizes_id_fk": {
           "name": "customers_preferred_apparel_size_id_sizes_id_fk",
           "tableFrom": "customers",
-          "columnsFrom": [
-            "preferred_apparel_size_id"
-          ],
+          "columnsFrom": ["preferred_apparel_size_id"],
           "tableTo": "sizes",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "set null"
         }
@@ -2185,39 +2117,27 @@
         "fiscal_documents_order_id_orders_id_fk": {
           "name": "fiscal_documents_order_id_orders_id_fk",
           "tableFrom": "fiscal_documents",
-          "columnsFrom": [
-            "order_id"
-          ],
+          "columnsFrom": ["order_id"],
           "tableTo": "orders",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         },
         "fiscal_documents_parent_document_id_fiscal_documents_id_fk": {
           "name": "fiscal_documents_parent_document_id_fiscal_documents_id_fk",
           "tableFrom": "fiscal_documents",
-          "columnsFrom": [
-            "parent_document_id"
-          ],
+          "columnsFrom": ["parent_document_id"],
           "tableTo": "fiscal_documents",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         },
         "fiscal_documents_refund_operation_id_refund_operations_id_fk": {
           "name": "fiscal_documents_refund_operation_id_refund_operations_id_fk",
           "tableFrom": "fiscal_documents",
-          "columnsFrom": [
-            "refund_operation_id"
-          ],
+          "columnsFrom": ["refund_operation_id"],
           "tableTo": "refund_operations",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         }
@@ -2369,39 +2289,27 @@
         "gift_card_transactions_gift_card_id_gift_cards_id_fk": {
           "name": "gift_card_transactions_gift_card_id_gift_cards_id_fk",
           "tableFrom": "gift_card_transactions",
-          "columnsFrom": [
-            "gift_card_id"
-          ],
+          "columnsFrom": ["gift_card_id"],
           "tableTo": "gift_cards",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         },
         "gift_card_transactions_order_id_orders_id_fk": {
           "name": "gift_card_transactions_order_id_orders_id_fk",
           "tableFrom": "gift_card_transactions",
-          "columnsFrom": [
-            "order_id"
-          ],
+          "columnsFrom": ["order_id"],
           "tableTo": "orders",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         },
         "gift_card_transactions_payment_attempt_id_payment_attempts_id_fk": {
           "name": "gift_card_transactions_payment_attempt_id_payment_attempts_id_fk",
           "tableFrom": "gift_card_transactions",
-          "columnsFrom": [
-            "payment_attempt_id"
-          ],
+          "columnsFrom": ["payment_attempt_id"],
           "tableTo": "payment_attempts",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         }
@@ -2591,13 +2499,9 @@
         "gift_cards_issued_by_order_id_orders_id_fk": {
           "name": "gift_cards_issued_by_order_id_orders_id_fk",
           "tableFrom": "gift_cards",
-          "columnsFrom": [
-            "issued_by_order_id"
-          ],
+          "columnsFrom": ["issued_by_order_id"],
           "tableTo": "orders",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         }
@@ -3206,39 +3110,27 @@
         "order_items_order_id_orders_id_fk": {
           "name": "order_items_order_id_orders_id_fk",
           "tableFrom": "order_items",
-          "columnsFrom": [
-            "order_id"
-          ],
+          "columnsFrom": ["order_id"],
           "tableTo": "orders",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         },
         "order_items_product_id_products_id_fk": {
           "name": "order_items_product_id_products_id_fk",
           "tableFrom": "order_items",
-          "columnsFrom": [
-            "product_id"
-          ],
+          "columnsFrom": ["product_id"],
           "tableTo": "products",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "set null"
         },
         "order_items_variant_id_product_variants_id_fk": {
           "name": "order_items_variant_id_product_variants_id_fk",
           "tableFrom": "order_items",
-          "columnsFrom": [
-            "variant_id"
-          ],
+          "columnsFrom": ["variant_id"],
           "tableTo": "product_variants",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "set null"
         }
@@ -3351,13 +3243,9 @@
         "order_status_history_order_id_orders_id_fk": {
           "name": "order_status_history_order_id_orders_id_fk",
           "tableFrom": "order_status_history",
-          "columnsFrom": [
-            "order_id"
-          ],
+          "columnsFrom": ["order_id"],
           "tableTo": "orders",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         }
@@ -3852,13 +3740,9 @@
         "orders_customer_id_customers_id_fk": {
           "name": "orders_customer_id_customers_id_fk",
           "tableFrom": "orders",
-          "columnsFrom": [
-            "customer_id"
-          ],
+          "columnsFrom": ["customer_id"],
           "tableTo": "customers",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "set null"
         }
@@ -4314,13 +4198,9 @@
         "payment_attempts_order_id_orders_id_fk": {
           "name": "payment_attempts_order_id_orders_id_fk",
           "tableFrom": "payment_attempts",
-          "columnsFrom": [
-            "order_id"
-          ],
+          "columnsFrom": ["order_id"],
           "tableTo": "orders",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         }
@@ -4516,26 +4396,18 @@
         "payment_events_order_id_orders_id_fk": {
           "name": "payment_events_order_id_orders_id_fk",
           "tableFrom": "payment_events",
-          "columnsFrom": [
-            "order_id"
-          ],
+          "columnsFrom": ["order_id"],
           "tableTo": "orders",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         },
         "payment_events_payment_attempt_id_payment_attempts_id_fk": {
           "name": "payment_events_payment_attempt_id_payment_attempts_id_fk",
           "tableFrom": "payment_events",
-          "columnsFrom": [
-            "payment_attempt_id"
-          ],
+          "columnsFrom": ["payment_attempt_id"],
           "tableTo": "payment_attempts",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         }
@@ -4584,26 +4456,18 @@
         "product_attribute_values_product_id_products_id_fk": {
           "name": "product_attribute_values_product_id_products_id_fk",
           "tableFrom": "product_attribute_values",
-          "columnsFrom": [
-            "product_id"
-          ],
+          "columnsFrom": ["product_id"],
           "tableTo": "products",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         },
         "product_attribute_values_attribute_value_id_attribute_values_id_fk": {
           "name": "product_attribute_values_attribute_value_id_attribute_values_id_fk",
           "tableFrom": "product_attribute_values",
-          "columnsFrom": [
-            "attribute_value_id"
-          ],
+          "columnsFrom": ["attribute_value_id"],
           "tableTo": "attribute_values",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         }
@@ -4611,10 +4475,7 @@
       "compositePrimaryKeys": {
         "product_attribute_values_product_id_attribute_value_id_pk": {
           "name": "product_attribute_values_product_id_attribute_value_id_pk",
-          "columns": [
-            "product_id",
-            "attribute_value_id"
-          ]
+          "columns": ["product_id", "attribute_value_id"]
         }
       },
       "uniqueConstraints": {},
@@ -4737,26 +4598,18 @@
         "product_images_product_id_products_id_fk": {
           "name": "product_images_product_id_products_id_fk",
           "tableFrom": "product_images",
-          "columnsFrom": [
-            "product_id"
-          ],
+          "columnsFrom": ["product_id"],
           "tableTo": "products",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         },
         "product_images_color_id_colors_id_fk": {
           "name": "product_images_color_id_colors_id_fk",
           "tableFrom": "product_images",
-          "columnsFrom": [
-            "color_id"
-          ],
+          "columnsFrom": ["color_id"],
           "tableTo": "colors",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "set null"
         }
@@ -4965,39 +4818,27 @@
         "product_variants_product_id_products_id_fk": {
           "name": "product_variants_product_id_products_id_fk",
           "tableFrom": "product_variants",
-          "columnsFrom": [
-            "product_id"
-          ],
+          "columnsFrom": ["product_id"],
           "tableTo": "products",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         },
         "product_variants_size_id_sizes_id_fk": {
           "name": "product_variants_size_id_sizes_id_fk",
           "tableFrom": "product_variants",
-          "columnsFrom": [
-            "size_id"
-          ],
+          "columnsFrom": ["size_id"],
           "tableTo": "sizes",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         },
         "product_variants_color_id_colors_id_fk": {
           "name": "product_variants_color_id_colors_id_fk",
           "tableFrom": "product_variants",
-          "columnsFrom": [
-            "color_id"
-          ],
+          "columnsFrom": ["color_id"],
           "tableTo": "colors",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         }
@@ -5128,13 +4969,9 @@
         "product_views_product_id_products_id_fk": {
           "name": "product_views_product_id_products_id_fk",
           "tableFrom": "product_views",
-          "columnsFrom": [
-            "product_id"
-          ],
+          "columnsFrom": ["product_id"],
           "tableTo": "products",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         }
@@ -5501,13 +5338,9 @@
         "products_category_id_categories_id_fk": {
           "name": "products_category_id_categories_id_fk",
           "tableFrom": "products",
-          "columnsFrom": [
-            "category_id"
-          ],
+          "columnsFrom": ["category_id"],
           "tableTo": "categories",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         }
@@ -5644,39 +5477,27 @@
         "promo_code_redemptions_promo_code_id_promo_codes_id_fk": {
           "name": "promo_code_redemptions_promo_code_id_promo_codes_id_fk",
           "tableFrom": "promo_code_redemptions",
-          "columnsFrom": [
-            "promo_code_id"
-          ],
+          "columnsFrom": ["promo_code_id"],
           "tableTo": "promo_codes",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         },
         "promo_code_redemptions_order_id_orders_id_fk": {
           "name": "promo_code_redemptions_order_id_orders_id_fk",
           "tableFrom": "promo_code_redemptions",
-          "columnsFrom": [
-            "order_id"
-          ],
+          "columnsFrom": ["order_id"],
           "tableTo": "orders",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         },
         "promo_code_redemptions_customer_id_customers_id_fk": {
           "name": "promo_code_redemptions_customer_id_customers_id_fk",
           "tableFrom": "promo_code_redemptions",
-          "columnsFrom": [
-            "customer_id"
-          ],
+          "columnsFrom": ["customer_id"],
           "tableTo": "customers",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "set null"
         }
@@ -5890,26 +5711,18 @@
         "promo_codes_scope_category_id_categories_id_fk": {
           "name": "promo_codes_scope_category_id_categories_id_fk",
           "tableFrom": "promo_codes",
-          "columnsFrom": [
-            "scope_category_id"
-          ],
+          "columnsFrom": ["scope_category_id"],
           "tableTo": "categories",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         },
         "promo_codes_scope_product_id_products_id_fk": {
           "name": "promo_codes_scope_product_id_products_id_fk",
           "tableFrom": "promo_codes",
-          "columnsFrom": [
-            "scope_product_id"
-          ],
+          "columnsFrom": ["scope_product_id"],
           "tableTo": "products",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         }
@@ -6169,26 +5982,18 @@
         "refund_operations_order_id_orders_id_fk": {
           "name": "refund_operations_order_id_orders_id_fk",
           "tableFrom": "refund_operations",
-          "columnsFrom": [
-            "order_id"
-          ],
+          "columnsFrom": ["order_id"],
           "tableTo": "orders",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         },
         "refund_operations_payment_attempt_id_payment_attempts_id_fk": {
           "name": "refund_operations_payment_attempt_id_payment_attempts_id_fk",
           "tableFrom": "refund_operations",
-          "columnsFrom": [
-            "payment_attempt_id"
-          ],
+          "columnsFrom": ["payment_attempt_id"],
           "tableTo": "payment_attempts",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         }
@@ -6241,26 +6046,18 @@
         "related_products_product_id_products_id_fk": {
           "name": "related_products_product_id_products_id_fk",
           "tableFrom": "related_products",
-          "columnsFrom": [
-            "product_id"
-          ],
+          "columnsFrom": ["product_id"],
           "tableTo": "products",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         },
         "related_products_related_id_products_id_fk": {
           "name": "related_products_related_id_products_id_fk",
           "tableFrom": "related_products",
-          "columnsFrom": [
-            "related_id"
-          ],
+          "columnsFrom": ["related_id"],
           "tableTo": "products",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         }
@@ -6268,11 +6065,7 @@
       "compositePrimaryKeys": {
         "related_products_product_id_related_id_kind_pk": {
           "name": "related_products_product_id_related_id_kind_pk",
-          "columns": [
-            "product_id",
-            "related_id",
-            "kind"
-          ]
+          "columns": ["product_id", "related_id", "kind"]
         }
       },
       "uniqueConstraints": {},
@@ -6384,26 +6177,18 @@
         "return_request_items_return_request_id_return_requests_id_fk": {
           "name": "return_request_items_return_request_id_return_requests_id_fk",
           "tableFrom": "return_request_items",
-          "columnsFrom": [
-            "return_request_id"
-          ],
+          "columnsFrom": ["return_request_id"],
           "tableTo": "return_requests",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         },
         "return_request_items_order_item_id_order_items_id_fk": {
           "name": "return_request_items_order_item_id_order_items_id_fk",
           "tableFrom": "return_request_items",
-          "columnsFrom": [
-            "order_item_id"
-          ],
+          "columnsFrom": ["order_item_id"],
           "tableTo": "order_items",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         }
@@ -6602,26 +6387,18 @@
         "return_requests_order_id_orders_id_fk": {
           "name": "return_requests_order_id_orders_id_fk",
           "tableFrom": "return_requests",
-          "columnsFrom": [
-            "order_id"
-          ],
+          "columnsFrom": ["order_id"],
           "tableTo": "orders",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         },
         "return_requests_customer_id_customers_id_fk": {
           "name": "return_requests_customer_id_customers_id_fk",
           "tableFrom": "return_requests",
-          "columnsFrom": [
-            "customer_id"
-          ],
+          "columnsFrom": ["customer_id"],
           "tableTo": "customers",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "set null"
         }
@@ -6784,39 +6561,27 @@
         "reviews_product_id_products_id_fk": {
           "name": "reviews_product_id_products_id_fk",
           "tableFrom": "reviews",
-          "columnsFrom": [
-            "product_id"
-          ],
+          "columnsFrom": ["product_id"],
           "tableTo": "products",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         },
         "reviews_customer_id_customers_id_fk": {
           "name": "reviews_customer_id_customers_id_fk",
           "tableFrom": "reviews",
-          "columnsFrom": [
-            "customer_id"
-          ],
+          "columnsFrom": ["customer_id"],
           "tableTo": "customers",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         },
         "reviews_order_id_orders_id_fk": {
           "name": "reviews_order_id_orders_id_fk",
           "tableFrom": "reviews",
-          "columnsFrom": [
-            "order_id"
-          ],
+          "columnsFrom": ["order_id"],
           "tableTo": "orders",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "set null"
         }
@@ -7010,13 +6775,9 @@
         "shipment_operations_order_id_orders_id_fk": {
           "name": "shipment_operations_order_id_orders_id_fk",
           "tableFrom": "shipment_operations",
-          "columnsFrom": [
-            "order_id"
-          ],
+          "columnsFrom": ["order_id"],
           "tableTo": "orders",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         }
@@ -7234,13 +6995,9 @@
         "stock_notifications_variant_id_product_variants_id_fk": {
           "name": "stock_notifications_variant_id_product_variants_id_fk",
           "tableFrom": "stock_notifications",
-          "columnsFrom": [
-            "variant_id"
-          ],
+          "columnsFrom": ["variant_id"],
           "tableTo": "product_variants",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         }
@@ -7366,26 +7123,18 @@
         "stock_reservations_variant_id_product_variants_id_fk": {
           "name": "stock_reservations_variant_id_product_variants_id_fk",
           "tableFrom": "stock_reservations",
-          "columnsFrom": [
-            "variant_id"
-          ],
+          "columnsFrom": ["variant_id"],
           "tableTo": "product_variants",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         },
         "stock_reservations_order_id_orders_id_fk": {
           "name": "stock_reservations_order_id_orders_id_fk",
           "tableFrom": "stock_reservations",
-          "columnsFrom": [
-            "order_id"
-          ],
+          "columnsFrom": ["order_id"],
           "tableTo": "orders",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "restrict"
         }
@@ -7503,26 +7252,18 @@
         "wishlist_items_customer_id_customers_id_fk": {
           "name": "wishlist_items_customer_id_customers_id_fk",
           "tableFrom": "wishlist_items",
-          "columnsFrom": [
-            "customer_id"
-          ],
+          "columnsFrom": ["customer_id"],
           "tableTo": "customers",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         },
         "wishlist_items_product_id_products_id_fk": {
           "name": "wishlist_items_product_id_products_id_fk",
           "tableFrom": "wishlist_items",
-          "columnsFrom": [
-            "product_id"
-          ],
+          "columnsFrom": ["product_id"],
           "tableTo": "products",
-          "columnsTo": [
-            "id"
-          ],
+          "columnsTo": ["id"],
           "onUpdate": "no action",
           "onDelete": "cascade"
         }
@@ -7530,10 +7271,7 @@
       "compositePrimaryKeys": {
         "wishlist_items_customer_id_product_id_pk": {
           "name": "wishlist_items_customer_id_product_id_pk",
-          "columns": [
-            "customer_id",
-            "product_id"
-          ]
+          "columns": ["customer_id", "product_id"]
         }
       },
       "uniqueConstraints": {},
@@ -7546,105 +7284,52 @@
     "public.admin_role": {
       "name": "admin_role",
       "schema": "public",
-      "values": [
-        "owner",
-        "admin",
-        "manager",
-        "content"
-      ]
+      "values": ["owner", "admin", "manager", "content"]
     },
     "public.attribute_type": {
       "name": "attribute_type",
       "schema": "public",
-      "values": [
-        "select",
-        "multiselect",
-        "boolean",
-        "text"
-      ]
+      "values": ["select", "multiselect", "boolean", "text"]
     },
     "public.product_badge": {
       "name": "product_badge",
       "schema": "public",
-      "values": [
-        "none",
-        "new",
-        "sale",
-        "bestseller",
-        "last_units"
-      ]
+      "values": ["none", "new", "sale", "bestseller", "last_units"]
     },
     "public.delivery_method": {
       "name": "delivery_method",
       "schema": "public",
-      "values": [
-        "np_warehouse",
-        "np_courier",
-        "ukrposhta",
-        "pickup"
-      ]
+      "values": ["np_warehouse", "np_courier", "ukrposhta", "pickup"]
     },
     "public.fiscal_status": {
       "name": "fiscal_status",
       "schema": "public",
-      "values": [
-        "not_required",
-        "pending",
-        "issued",
-        "failed",
-        "refund_issued"
-      ]
+      "values": ["not_required", "pending", "issued", "failed", "refund_issued"]
     },
     "public.fit_feedback": {
       "name": "fit_feedback",
       "schema": "public",
-      "values": [
-        "small",
-        "true_to_size",
-        "large"
-      ]
+      "values": ["small", "true_to_size", "large"]
     },
     "public.gift_card_status": {
       "name": "gift_card_status",
       "schema": "public",
-      "values": [
-        "pending_issue",
-        "active",
-        "depleted",
-        "expired",
-        "void"
-      ]
+      "values": ["pending_issue", "active", "depleted", "expired", "void"]
     },
     "public.gift_card_txn": {
       "name": "gift_card_txn",
       "schema": "public",
-      "values": [
-        "issue",
-        "redeem",
-        "refund",
-        "adjust",
-        "void"
-      ]
+      "values": ["issue", "redeem", "refund", "adjust", "void"]
     },
     "public.np_warehouse_type": {
       "name": "np_warehouse_type",
       "schema": "public",
-      "values": [
-        "branch",
-        "postomat",
-        "cargo"
-      ]
+      "values": ["branch", "postomat", "cargo"]
     },
     "public.operation_state": {
       "name": "operation_state",
       "schema": "public",
-      "values": [
-        "pending",
-        "in_flight",
-        "succeeded",
-        "failed",
-        "unknown"
-      ]
+      "values": ["pending", "in_flight", "succeeded", "failed", "unknown"]
     },
     "public.order_status": {
       "name": "order_status",
@@ -7662,13 +7347,7 @@
     "public.payment_provider": {
       "name": "payment_provider",
       "schema": "public",
-      "values": [
-        "mono",
-        "wayforpay",
-        "cod",
-        "bank_transfer",
-        "gift_card"
-      ]
+      "values": ["mono", "wayforpay", "cod", "bank_transfer", "gift_card"]
     },
     "public.payment_status": {
       "name": "payment_status",
@@ -7686,50 +7365,27 @@
     "public.product_kind": {
       "name": "product_kind",
       "schema": "public",
-      "values": [
-        "physical",
-        "gift_card"
-      ]
+      "values": ["physical", "gift_card"]
     },
     "public.promo_scope": {
       "name": "promo_scope",
       "schema": "public",
-      "values": [
-        "all",
-        "category",
-        "product"
-      ]
+      "values": ["all", "category", "product"]
     },
     "public.promo_type": {
       "name": "promo_type",
       "schema": "public",
-      "values": [
-        "percent",
-        "fixed",
-        "free_shipping"
-      ]
+      "values": ["percent", "fixed", "free_shipping"]
     },
     "public.relation_kind": {
       "name": "relation_kind",
       "schema": "public",
-      "values": [
-        "similar",
-        "cross_sell",
-        "up_sell",
-        "accessory"
-      ]
+      "values": ["similar", "cross_sell", "up_sell", "accessory"]
     },
     "public.return_reason": {
       "name": "return_reason",
       "schema": "public",
-      "values": [
-        "defect",
-        "wrong_item",
-        "not_as_described",
-        "changed_mind",
-        "wrong_size",
-        "other"
-      ]
+      "values": ["defect", "wrong_item", "not_as_described", "changed_mind", "wrong_size", "other"]
     },
     "public.return_status": {
       "name": "return_status",
@@ -7747,12 +7403,7 @@
     "public.size_system": {
       "name": "size_system",
       "schema": "public",
-      "values": [
-        "bra",
-        "panty",
-        "apparel",
-        "onesize"
-      ]
+      "values": ["bra", "panty", "apparel", "onesize"]
     }
   },
   "schemas": {},

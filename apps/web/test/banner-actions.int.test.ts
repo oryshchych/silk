@@ -49,7 +49,11 @@ async function wired() {
 vi.mock('@/lib/admin/bound-action', wired);
 vi.mock('../src/lib/admin/bound-action', wired);
 vi.mock('@/lib/admin/invalidate', () => ({
-  invalidateTags: (tags: readonly string[]) => {
+  // Both paths expire at once: the server actions call `updateTags`, the upload route `expireTags`.
+  updateTags: (tags: readonly string[]) => {
+    state.tags.push(...tags);
+  },
+  expireTags: (tags: readonly string[]) => {
     state.tags.push(...tags);
   },
 }));
@@ -209,6 +213,33 @@ describe('the picture upload route', () => {
     });
     expect((await audits(id)).map((r) => r.action)).toContain('banner.image_set');
     expect(state.tags.filter((t) => t === 'banners').length).toBeGreaterThanOrEqual(4);
+  });
+
+  it('deleting a banner removes its picture files after the commit', async () => {
+    const created = await actions.createBannerAction(input());
+    if (!created.ok) throw new Error(created.code);
+    const before = state.files.size;
+    expect((await upload(created.data.id, 'desktop', await samplePhoto(1800, 700))).status).toBe(
+      201,
+    );
+    expect(state.files.size).toBe(before + 6);
+    expect(await actions.deleteBannerAction({ id: created.data.id })).toEqual({
+      ok: true,
+      data: { id: created.data.id },
+    });
+    expect(state.files.size).toBe(before);
+  });
+
+  it('a repeated query parameter is refused', async () => {
+    const created = await actions.createBannerAction(input());
+    if (!created.ok) throw new Error(created.code);
+    const response = await route.POST(
+      new Request(
+        `http://localhost/admin/upload/banner-image?bannerId=${created.data.id}&slot=desktop&slot=mobile`,
+        { method: 'POST', body: 'x', headers: { 'content-length': '1' } },
+      ),
+    );
+    expect(response.status).toBe(400);
   });
 
   it('refuses a stranger, a manager, an unknown banner and bytes that are not a picture, storing nothing', async () => {

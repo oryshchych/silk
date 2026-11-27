@@ -1,7 +1,9 @@
 /**
  * The home banners. Each is ONE `<picture>`: the mobile pictures under `(max-width: 767px)`, the desktop ones
- * otherwise, AVIF then WebP then the stored original, every box reserved (`width` and `height` of the matching
- * picture), the first banner the LCP candidate and the rest lazy. Plain server markup, the same for every visitor.
+ * otherwise, AVIF then WebP then the stored original. EVERY `<source>` carries the `width` and `height` of ITS OWN
+ * picture (mobile on the mobile sources, desktop on the rest), so the browser reserves the box of the picture it
+ * actually picks and nothing shifts on a phone; the `<img>` carries the desktop size. The first banner is the LCP
+ * candidate and the rest are lazy; the title is a paragraph, never a heading above the page's `<h1>`. Plain server markup, the same for every visitor.
  * The link is a path on this shop (the database refuses anything else); the text is escaped by React.
  */
 import Link from 'next/link';
@@ -21,17 +23,48 @@ function Picture({ banner, first }: { banner: PublicBannerDto; first: boolean })
     <picture>
       {mobile === null ? null : (
         <>
-          <source media={MOBILE_QUERY} type="image/avif" srcSet={mobile.avif} sizes="100vw" />
-          <source media={MOBILE_QUERY} type="image/webp" srcSet={mobile.webp} sizes="100vw" />
+          <source
+            media={MOBILE_QUERY}
+            type="image/avif"
+            srcSet={mobile.avif}
+            sizes="100vw"
+            width={banner.mobile.width}
+            height={banner.mobile.height}
+          />
+          <source
+            media={MOBILE_QUERY}
+            type="image/webp"
+            srcSet={mobile.webp}
+            sizes="100vw"
+            width={banner.mobile.width}
+            height={banner.mobile.height}
+          />
         </>
       )}
       {mobile !== null || banner.mobile.url === banner.desktop.url ? null : (
-        <source media={MOBILE_QUERY} srcSet={banner.mobile.url} />
+        <source
+          media={MOBILE_QUERY}
+          srcSet={banner.mobile.url}
+          width={banner.mobile.width}
+          height={banner.mobile.height}
+        />
       )}
       {desktop === null ? null : (
         <>
-          <source type="image/avif" srcSet={desktop.avif} sizes="100vw" />
-          <source type="image/webp" srcSet={desktop.webp} sizes="100vw" />
+          <source
+            type="image/avif"
+            srcSet={desktop.avif}
+            sizes="100vw"
+            width={banner.desktop.width}
+            height={banner.desktop.height}
+          />
+          <source
+            type="image/webp"
+            srcSet={desktop.webp}
+            sizes="100vw"
+            width={banner.desktop.width}
+            height={banner.desktop.height}
+          />
         </>
       )}
       <img
@@ -69,7 +102,7 @@ export function HomeBanners({
             banner.ctaLabel === null ? null : (
               <div className="p-3">
                 {banner.title === null ? null : (
-                  <h2 className="font-display text-2xl">{banner.title}</h2>
+                  <p className="font-display text-2xl">{banner.title}</p>
                 )}
                 {banner.subtitle === null ? null : (
                   <p className="text-text-muted">{banner.subtitle}</p>

@@ -21,6 +21,21 @@ export const MAX_BANNERS = 50;
 export const BANNER_SIZES = ['thumb', 'card', 'full'] as const;
 export const BANNER_FORMATS = ['webp', 'avif'] as const;
 
+/**
+ * The six storage keys behind a stored picture URL (`.../banners/<bannerId>/<imageId>/full.webp`), rebuilt from the
+ * two ids in it; an empty list for anything that is not of that shape. Keys are never taken from the URL as a path.
+ */
+export function bannerKeysOfUrl(url: string | null): string[] {
+  if (url === null) return [];
+  const match = /\/banners\/([0-9a-f-]{36})\/([0-9a-f-]{36})\/full\.webp$/.exec(url);
+  const bannerId = match?.[1];
+  const imageId = match?.[2];
+  if (bannerId === undefined || imageId === undefined) return [];
+  return BANNER_SIZES.flatMap((size) =>
+    BANNER_FORMATS.map((format) => bannerImageKey(bannerId, imageId, size, format)),
+  );
+}
+
 /** `banners/<bannerId>/<imageId>/<size>.<format>`: ids and fixed words only. */
 export const bannerImageKey = (
   bannerId: string,
@@ -44,6 +59,8 @@ function pgCode(error: unknown): string | null {
 
 /** A banner is made inactive: pictures come next, and only then can it be switched on. */
 export async function createBanner(tx: Tx, input: BannerCreateInput): Promise<{ id: string }> {
+  // One creator at a time, so the cap below is exact (two concurrent creates cannot both pass it).
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended('banners:create', 0))`);
   const [count] = await tx.select({ n: sql<number>`count(*)::int` }).from(banners);
   if ((count?.n ?? 0) >= MAX_BANNERS) throw new TooManyBannersError();
   if (input.isActive) throw new BannerIncompleteError();
@@ -105,13 +122,30 @@ export async function updateBanner(tx: Tx, input: BannerUpdateInput): Promise<Ba
   ] as const;
   const diff: Record<string, [unknown, unknown]> = {};
   for (const name of names) if (row[name] !== input[name]) diff[name] = [row[name], input[name]];
-  const dates = await tx.execute<{ start_same: boolean; end_same: boolean }>(
-    sql`SELECT starts_at IS NOT DISTINCT FROM ${instant(input.startsAt)} AS start_same,
-               ends_at IS NOT DISTINCT FROM ${instant(input.endsAt)} AS end_same
+  // Old and new instants as ISO strings in ONE format, read in the same statement that compares them.
+  const FORMAT = 'YYYY-MM-DD"T"HH24:MI:SS"Z"';
+  const startNew = instant(input.startsAt);
+  const endNew = instant(input.endsAt);
+  const dates = await tx.execute<{
+    start_same: boolean;
+    end_same: boolean;
+    old_start: string | null;
+    new_start: string | null;
+    old_end: string | null;
+    new_end: string | null;
+  }>(
+    sql`SELECT starts_at IS NOT DISTINCT FROM ${startNew} AS start_same,
+               ends_at IS NOT DISTINCT FROM ${endNew} AS end_same,
+               to_char(starts_at AT TIME ZONE 'UTC', ${FORMAT}) AS old_start,
+               to_char(${startNew} AT TIME ZONE 'UTC', ${FORMAT}) AS new_start,
+               to_char(ends_at AT TIME ZONE 'UTC', ${FORMAT}) AS old_end,
+               to_char(${endNew} AT TIME ZONE 'UTC', ${FORMAT}) AS new_end
           FROM banners WHERE id = ${input.id}::uuid`,
   );
-  if (dates.rows[0]?.start_same !== true) diff['startsAt'] = [row.startsAt, input.startsAt];
-  if (dates.rows[0]?.end_same !== true) diff['endsAt'] = [row.endsAt, input.endsAt];
+  const when = dates.rows[0];
+  if (when?.start_same !== true)
+    diff['startsAt'] = [when?.old_start ?? null, when?.new_start ?? null];
+  if (when?.end_same !== true) diff['endsAt'] = [when?.old_end ?? null, when?.new_end ?? null];
   if (Object.keys(diff).length === 0) return { changed: false, diff };
   try {
     await tx
@@ -139,10 +173,16 @@ export async function updateBanner(tx: Tx, input: BannerUpdateInput): Promise<Ba
   return { changed: true, diff };
 }
 
-export async function deleteBanner(tx: Tx, id: string): Promise<void> {
+/** Deletes the banner and returns its stored picture URLs (their files can be removed after the commit). */
+export async function deleteBanner(tx: Tx, id: string): Promise<{ urls: string[] }> {
   await lock(tx, id);
-  const gone = await tx.delete(banners).where(eq(banners.id, id)).returning({ id: banners.id });
-  if (gone.length === 0) throw new BannerNotFoundError();
+  const gone = await tx
+    .delete(banners)
+    .where(eq(banners.id, id))
+    .returning({ desktop: banners.imageDesktopUrl, mobile: banners.imageMobileUrl });
+  const row = gone[0];
+  if (row === undefined) throw new BannerNotFoundError();
+  return { urls: [row.desktop, row.mobile].filter((url): url is string => url !== null) };
 }
 
 /** False when there is no such banner (checked BEFORE a picture is converted, not after). */

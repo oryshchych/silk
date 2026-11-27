@@ -41,6 +41,27 @@ describe('HomeBanners', () => {
     expect(html).toContain('href="/category/bras"');
   });
 
+  it('every <source> carries the size of ITS OWN picture (mobile on mobile sources, desktop on the rest)', () => {
+    const html = render([banner()]);
+    const sources = html.match(/<source[^>]*>/g) ?? [];
+    expect(sources.length).toBeGreaterThanOrEqual(4);
+    for (const source of sources) {
+      expect(source, source).toMatch(/width="\d+"/);
+      expect(source, source).toMatch(/height="\d+"/);
+      if (source.includes('media="(max-width: 767px)"')) {
+        expect(source).toContain('width="800"');
+        expect(source).toContain('height="1000"');
+      } else {
+        expect(source).toContain('width="2400"');
+        expect(source).toContain('height="800"');
+      }
+    }
+  });
+
+  it('the title is a paragraph, never a heading above the page h1', () => {
+    expect(render([banner()])).not.toMatch(/<h[1-6]/);
+  });
+
   it('only the first banner is the LCP candidate; the rest are lazy', () => {
     const html = render([banner(), banner({ id: '0190a1b2-0000-7000-8000-000000000002' })]);
     expect(html.match(/fetchPriority="high"/g)).toHaveLength(1);

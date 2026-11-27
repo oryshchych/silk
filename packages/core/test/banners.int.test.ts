@@ -9,6 +9,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { DbHandle } from '@store/db/client';
 
 import {
+  bannerKeysOfUrl,
+  MAX_BANNERS,
   bannerCreateSchema,
   bannerUpdateSchema,
   BannerIncompleteError,
@@ -195,5 +197,68 @@ describe('the public read', () => {
       await deleteBanner(tx, id);
     });
     expect(await shown()).toEqual([]);
+  });
+});
+
+describe('review round', () => {
+  it('a whitespace-only alt text does not make a banner completable', async () => {
+    const id = await create();
+    await pictures(id);
+    await expect(update(id, { isActive: true, altUk: '   ' })).rejects.toBeInstanceOf(
+      BannerIncompleteError,
+    );
+    await expect(
+      admin.db.execute(
+        sql`UPDATE banners SET alt_uk = ' ', is_active = true WHERE id = ${id}::uuid`,
+      ),
+    ).rejects.toThrow();
+  });
+
+  it('the audit diff of a period change holds ISO strings on both sides', async () => {
+    const id = await create({ startsAt: '2030-01-02T10:00', endsAt: '2030-02-02T10:00' });
+    const first = await update(id, { startsAt: '2030-01-03T10:00', endsAt: '' });
+    expect(first.diff).toEqual({
+      startsAt: ['2030-01-02T08:00:00Z', '2030-01-03T08:00:00Z'],
+      endsAt: ['2030-02-02T08:00:00Z', null],
+    });
+    // Summer time: Kyiv is UTC+3.
+    const second = await update(id, { startsAt: '2030-07-03T10:00', endsAt: '' });
+    expect(second.diff).toEqual({ startsAt: ['2030-01-03T08:00:00Z', '2030-07-03T07:00:00Z'] });
+    expect(JSON.stringify(second.diff)).not.toContain('{}');
+  });
+
+  it('the cap is exact: two creates racing for the last place make one banner', async () => {
+    await admin.db.execute(
+      sql`INSERT INTO banners (is_active) SELECT false FROM generate_series(1, ${MAX_BANNERS - 1})`,
+    );
+    const results = await Promise.allSettled([
+      world
+        .connect()
+        .db.transaction(async (tx) => await createBanner(tx, bannerCreateSchema.parse(form()))),
+      world
+        .connect()
+        .db.transaction(async (tx) => await createBanner(tx, bannerCreateSchema.parse(form()))),
+    ]);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    const count = await admin.db.execute<{ n: number }>(
+      sql`SELECT count(*)::int AS n FROM banners`,
+    );
+    expect(count.rows[0]?.n).toBe(MAX_BANNERS);
+  });
+
+  it('keys are rebuilt from the two ids of a stored URL, and nothing else yields keys', () => {
+    const banner = '00000000-0000-4000-8000-0000000000b1';
+    const image = '00000000-0000-4000-8000-0000000000a1';
+    const keys = bannerKeysOfUrl(`https://media.test/banners/${banner}/${image}/full.webp`);
+    expect(keys).toHaveLength(6);
+    expect(keys).toContain(`banners/${banner}/${image}/thumb.avif`);
+    for (const url of [
+      null,
+      '',
+      'https://x/products/a/b/full.webp',
+      `https://media.test/banners/../${image}/full.webp`,
+    ]) {
+      expect(bannerKeysOfUrl(url)).toEqual([]);
+    }
   });
 });

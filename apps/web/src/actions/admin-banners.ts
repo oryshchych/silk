@@ -2,6 +2,7 @@
 
 import {
   bannerCreateSchema,
+  bannerKeysOfUrl,
   bannerIdSchema,
   bannerUpdateSchema,
   createBanner,
@@ -11,7 +12,8 @@ import {
 import { BANNERS_TAG } from '@store/shared/cache-tags';
 
 import { adminAction } from '@/lib/admin/bound-action';
-import { invalidateTags } from '@/lib/admin/invalidate';
+import { updateTags } from '@/lib/admin/invalidate';
+import { mediaConfig } from '@/lib/media';
 
 /**
  * Home-page banners. Every action names `banners.edit`, checked by `adminAction` BEFORE the input is parsed; the
@@ -34,7 +36,7 @@ export async function createBannerAction(input: unknown) {
       return created;
     },
   });
-  if (result.ok) invalidateTags([BANNERS_TAG]);
+  if (result.ok) updateTags([BANNERS_TAG]);
   return result;
 }
 
@@ -58,7 +60,7 @@ export async function updateBannerAction(input: unknown) {
       return { id: parsed.id, changed: true };
     },
   });
-  if (result.ok && result.data.changed) invalidateTags([BANNERS_TAG]);
+  if (result.ok && result.data.changed) updateTags([BANNERS_TAG]);
   return result;
 }
 
@@ -68,11 +70,29 @@ export async function deleteBannerAction(input: unknown) {
     schema: bannerIdSchema,
     input,
     run: async ({ tx, input: parsed, audit }) => {
-      await deleteBanner(tx, parsed.id);
+      const gone = await deleteBanner(tx, parsed.id);
       await audit({ action: 'banner.deleted', entity: 'banner', entityId: parsed.id });
-      return { id: parsed.id };
+      return { id: parsed.id, urls: gone.urls };
     },
   });
-  if (result.ok) invalidateTags([BANNERS_TAG]);
-  return result;
+  if (!result.ok) return result;
+  updateTags([BANNERS_TAG]);
+  // After the commit: the picture files go too (best effort, keys rebuilt from the ids in the stored URLs).
+  const media = await mediaConfig();
+  if (media !== null) {
+    const keys = result.data.urls.flatMap((url) => bannerKeysOfUrl(url));
+    const outcome = await Promise.allSettled(
+      keys.map(async (key) => {
+        await media.storage.remove(key);
+      }),
+    );
+    outcome.forEach((entry, index) => {
+      if (entry.status === 'rejected') {
+        process.stderr.write(
+          `${JSON.stringify({ level: 'warn', scope: 'media', event: 'orphan', key: keys[index] ?? '' })}\n`,
+        );
+      }
+    });
+  }
+  return { ok: true as const, data: { id: result.data.id } };
 }

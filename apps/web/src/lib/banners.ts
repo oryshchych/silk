@@ -4,7 +4,10 @@
  * - the read takes NOTHING about the visitor (no cookie, header, session or address): the result is a function of
  *   the locale and the database clock alone, so every visitor of a language gets the same bytes;
  * - the display period is decided by Postgres' `now()` when the cache is filled, and a 60 second TTL moves the
- *   result across a period boundary on its own (an admin change also drops it: tag `banners`, after the commit);
+ *   result across a period boundary on its own. LIMIT: this is stale-while-revalidate and per PROCESS, so a boundary
+ *   (a banner that starts or ends by the clock) is picked up within about 60 seconds of the next request after it,
+ *   and with several web replicas each has its own cache. An admin change is immediate: the actions call
+ *   `updateTag('banners')` (read-your-writes), the picture route expires the tag at once;
  * - the key is `['banners', locale]` over a closed set of two locales: nothing user-controlled is in a cache key;
  * - banners are rendered on the HOME page only, which is rendered per request and never stored as a page
  *   (`app/[locale]/page.tsx`); the ISR pages (product, category) carry no banner markup, so no banner change or
