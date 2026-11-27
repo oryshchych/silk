@@ -451,6 +451,7 @@ try {
     base,
     databaseUrl,
     authSecret: AUTH_SECRET_FOR_SMOKE,
+    staticDir: join(root, 'apps/web/.next/static'),
     check,
   });
   await runViewsSmoke({ base, databaseUrl, siteOrigin: SITE, check });

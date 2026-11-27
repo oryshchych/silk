@@ -5,6 +5,7 @@ import {
   mayRunReport,
   parseReportRequest,
   ReportInputError,
+  resultIncludesCost,
   resultToCsv,
 } from '@store/core/reports';
 
@@ -70,7 +71,8 @@ export async function GET(
     if (error instanceof BusyError) return refuse(503, 'BUSY', { 'Retry-After': '10' });
     throw error;
   }
-  const includedCost = can(session.role, 'catalog.cost.view');
+  // What the file really holds, not what the role may see: a revenue export by an owner has no cost.
+  const includedCost = resultIncludesCost(result);
   const db = await getDb();
   const ip = await clientAddressOf(request);
   await db.transaction(async (tx) => {
@@ -98,4 +100,9 @@ export async function GET(
       'X-Report-As-Of': result.asOf,
     },
   });
+}
+
+/** HEAD would run the whole report and write an audit row without a download: refuse it. */
+export function HEAD(): Response {
+  return refuse(405, 'METHOD_NOT_ALLOWED', { Allow: 'GET' });
 }

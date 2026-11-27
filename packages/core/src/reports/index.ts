@@ -12,6 +12,7 @@ export {
   parseReportRequest,
   reportParamsSchema,
   ReportForbiddenError,
+  resultIncludesCost,
   runReport,
   type ParsedReport,
   type ReportParams,

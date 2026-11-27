@@ -32,6 +32,7 @@ describe('the public API of the reports module', () => {
         'periodInputSchema',
         'previousPeriod',
         'reportParamsSchema',
+        'resultIncludesCost',
         'resultToCsv',
         'revenueComparison',
         'revenueReport',

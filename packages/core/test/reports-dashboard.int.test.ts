@@ -70,6 +70,11 @@ beforeAll(async () => {
       carrier: 'np',
       state: 'unknown',
     });
+    // Low stock is AVAILABLE units (stock minus reserved): the first variant has 10 in stock but 9 reserved.
+    await tx.execute(sql`UPDATE product_variants SET stock_quantity = 10, reserved_quantity = 0`);
+    await tx.execute(
+      sql`UPDATE product_variants SET reserved_quantity = 9 WHERE id = ${world.fixture.variantIds[0]}`,
+    );
     await tx.insert(stockReservations).values([
       {
         variantId: world.fixture.variantIds[0],
@@ -101,7 +106,7 @@ describe('alerts', () => {
       refund_open: 0, // the refund rows are brand new: the 10 minute grace period applies
       payment_unknown: 1,
       reservation_expiring: 1,
-      low_stock: 2,
+      low_stock: 1, // the variant with 10 in stock and 9 reserved; the other has 10 available
       fiscal_failed: 1,
       waybill_unknown: 1,
     });

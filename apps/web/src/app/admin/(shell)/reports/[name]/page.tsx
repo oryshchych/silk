@@ -20,7 +20,9 @@ import { requirePermission } from '@/lib/admin/session';
 import { BusyError } from '@/lib/keyed-computation';
 import { createRateLimiter } from '@/lib/rate-limit';
 
-const limiter = createRateLimiter({ limit: 30, windowMs: 60_000 });
+// A page view is one or two requests (the second a Flight fetch); the computation itself is shared and
+// capped, so this limit is for floods, not for people.
+const limiter = createRateLimiter({ limit: 120, windowMs: 60_000 });
 const first = (value: string | string[] | undefined): string | undefined =>
   typeof value === 'string' ? value : undefined;
 

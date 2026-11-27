@@ -56,6 +56,8 @@ export type ReportParams = z.input<typeof reportParamsSchema>;
 
 /** Reports that are not about a period. */
 const NO_PERIOD: readonly ReportName[] = ['stock'];
+/** Reports that draw one point per bucket: only these are limited by the point cap. */
+const SERIES_REPORTS: readonly ReportName[] = ['revenue'];
 const COST_REQUIRED: readonly ReportName[] = ['margin'];
 
 export interface ParsedReport {
@@ -72,11 +74,14 @@ export function parseReportRequest(name: ReportName, raw: unknown): ParsedReport
   if (!parsed.success) throw new ReportInputError('bad_day');
   const { sort, by, threshold } = parsed.data;
   if (NO_PERIOD.includes(name)) return { name, period: null, sort, by, threshold };
-  const period = parsePeriod({
-    from: parsed.data.from ?? '',
-    to: parsed.data.to ?? '',
-    ...(parsed.data.granularity === undefined ? {} : { granularity: parsed.data.granularity }),
-  });
+  const period = parsePeriod(
+    {
+      from: parsed.data.from ?? '',
+      to: parsed.data.to ?? '',
+      ...(parsed.data.granularity === undefined ? {} : { granularity: parsed.data.granularity }),
+    },
+    { series: SERIES_REPORTS.includes(name) },
+  );
   return { name, period, sort, by, threshold };
 }
 
@@ -211,4 +216,30 @@ export async function runReport(
   // The role is judged before a connection is taken.
   if (!mayRunReport(role, request.name)) throw new ReportForbiddenError();
   return await inReportTransaction(db, async (tx) => await runReportOn(tx, request, role), options);
+}
+
+/** Column and fact keys that carry a cost or something derived from one. */
+const COST_RESULT_KEYS: ReadonlySet<string> = new Set([
+  'cost',
+  'costOfGoods',
+  'goodsRevenue',
+  'margin',
+  'marginBps',
+  'shippingCost',
+  'marginTotal',
+  'marginBpsTotal',
+  'noCostLines',
+  'noCostRevenue',
+  'noShippingCostOrders',
+  'otherRefunds',
+  'stockValueAtCost',
+  'noCostVariants',
+]);
+
+/** Whether a result carries any cost column or fact: what an export audit row records as `includedCost`. */
+export function resultIncludesCost(result: ReportResultDto): boolean {
+  return (
+    result.table.columns.some((column) => COST_RESULT_KEYS.has(column.key)) ||
+    result.facts.some((fact) => COST_RESULT_KEYS.has(fact.key))
+  );
 }

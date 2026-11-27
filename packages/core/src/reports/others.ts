@@ -15,7 +15,7 @@ import { z } from 'zod';
 
 import type { Reader } from '@store/db/types';
 import type { ReportCell, ReportResultDto } from '@store/shared/dto/reports';
-import { moneyFromDb, ratioBps } from '@store/shared/money';
+import { moneyFromDb, ratioBps, sum } from '@store/shared/money';
 
 import { isoUtc, lowerBound, upperBound, type Period } from './period.ts';
 import { capturedRows, settledRefundRows } from './revenue.ts';
@@ -52,7 +52,7 @@ export async function readOrdersReport(db: Reader, period: Period): Promise<Repo
   const info = await meta(db, period);
   const dims = (column: ReturnType<typeof sql.raw>, label: string) => sql`
     SELECT ${label}::text AS dim, ${column}::text AS value, count(*)::text AS n,
-           coalesce(sum(o.total), 0)::text AS amount
+           coalesce(sum(o.total) FILTER (WHERE o.status <> 'cancelled'), 0)::text AS amount
       FROM orders o, bounds b
      WHERE o.created_at >= b.lo AND o.created_at < b.hi
      GROUP BY 2`;
@@ -61,7 +61,8 @@ export async function readOrdersReport(db: Reader, period: Period): Promise<Repo
     ${dims(sql.raw('o.status'), 'status')}
     UNION ALL ${dims(sql.raw('o.delivery_method'), 'delivery')}
     UNION ALL ${dims(sql.raw(`coalesce(o.payment_provider::text, 'none')`), 'payment')}
-    UNION ALL SELECT 'all', '', count(*)::text, coalesce(sum(o.total), 0)::text
+    UNION ALL SELECT 'all', '', count(*)::text,
+           coalesce(sum(o.total) FILTER (WHERE o.status <> 'cancelled'), 0)::text
       FROM orders o, bounds b WHERE o.created_at >= b.lo AND o.created_at < b.hi
     ORDER BY 1, 2`);
   const all = result.rows.map((row) => ordersRow.parse(row));
@@ -84,7 +85,7 @@ export async function readOrdersReport(db: Reader, period: Period): Promise<Repo
     },
     facts: [],
     chart: null,
-    notes: ['ordersByCreation'],
+    notes: ['ordersByCreation', 'ordersAmountNotCancelled'],
   };
 }
 
@@ -122,7 +123,7 @@ export async function readTopProducts(
         { key: 'product', kind: 'text' },
         { key: 'name', kind: 'text' },
         { key: 'units', kind: 'int' },
-        { key: 'revenue', kind: 'money' },
+        { key: 'orderedValue', kind: 'money' },
       ],
       rows: rows
         .slice(0, ROW_CAP)
@@ -277,7 +278,7 @@ export async function readReturnsReport(db: Reader, period: Period): Promise<Rep
         requests,
         sumOf((r) => r.received),
         sumOf((r) => r.refunded),
-        moneyFromDb(String(sumOf((r) => r.amount))),
+        sum(rows.map((r) => moneyFromDb(r.amount))),
       ],
       truncated: false,
     },
@@ -296,21 +297,30 @@ const promoRow = z.object({ code: str, orders: str, discount: str, total: str })
 
 export async function readPromosReport(db: Reader, period: Period): Promise<ReportResultDto> {
   const info = await meta(db, period);
-  const where = sql`o.created_at >= b.lo AND o.created_at < b.hi AND o.status <> 'cancelled'`;
+  const live = sql`o.created_at >= b.lo AND o.created_at < b.hi AND o.status <> 'cancelled'`;
+  // The discount a code really gave is the CONSUMED redemption (the record written with the order); a
+  // released one (the order was changed or the use given back) gave nothing.
   const result = await db.execute(sql`
     WITH ${bounds(period)}
-    SELECT o.promo_code AS code, count(*)::text AS orders, sum(o.discount_total)::text AS discount,
+    SELECT pc.code AS code, count(*)::text AS orders, sum(r.discount_amount::bigint)::text AS discount,
            sum(o.total::bigint)::text AS total
-      FROM orders o, bounds b WHERE ${where} AND o.promo_code IS NOT NULL
-     GROUP BY 1 ORDER BY sum(o.discount_total) DESC, 1 LIMIT ${ROW_CAP + 1}`);
+      FROM promo_code_redemptions r
+      JOIN promo_codes pc ON pc.id = r.promo_code_id
+      JOIN orders o ON o.id = r.order_id, bounds b
+     WHERE r.state = 'consumed' AND ${live}
+     GROUP BY pc.code ORDER BY sum(r.discount_amount::bigint) DESC, pc.code LIMIT ${ROW_CAP + 1}`);
   const rows = result.rows.map((row) => promoRow.parse(row));
   const totals = await db.execute(sql`
     WITH ${bounds(period)}
-    SELECT count(*) FILTER (WHERE o.promo_code IS NOT NULL)::text AS promo_orders,
-           coalesce(sum(o.discount_total) FILTER (WHERE o.promo_code IS NOT NULL), 0)::text AS discount,
-           coalesce(sum(o.total::bigint) FILTER (WHERE o.promo_code IS NOT NULL), 0)::text AS total,
-           count(*)::text AS all_orders
-      FROM orders o, bounds b WHERE ${where}`);
+    SELECT (SELECT count(*) FROM promo_code_redemptions r JOIN orders o ON o.id = r.order_id, bounds b
+             WHERE r.state = 'consumed' AND ${live})::text AS promo_orders,
+           (SELECT coalesce(sum(r.discount_amount::bigint), 0) FROM promo_code_redemptions r
+              JOIN orders o ON o.id = r.order_id, bounds b
+             WHERE r.state = 'consumed' AND ${live})::text AS discount,
+           (SELECT coalesce(sum(o.total::bigint), 0) FROM promo_code_redemptions r
+              JOIN orders o ON o.id = r.order_id, bounds b
+             WHERE r.state = 'consumed' AND ${live})::text AS total,
+           (SELECT count(*) FROM orders o, bounds b WHERE ${live})::text AS all_orders`);
   const t = z
     .object({ promo_orders: str, discount: str, total: str, all_orders: str })
     .parse(totals.rows[0]);
@@ -338,7 +348,7 @@ export async function readPromosReport(db: Reader, period: Period): Promise<Repo
       },
     ],
     chart: null,
-    notes: ['ordersByCreation'],
+    notes: ['ordersByCreation', 'promoRedemptions'],
   };
 }
 
@@ -431,8 +441,9 @@ export async function readProvidersReport(db: Reader, period: Period): Promise<R
       FROM payment_attempts a, bounds b WHERE a.created_at >= b.lo AND a.created_at < b.hi GROUP BY 1`);
   const refunds = await db.execute(sql`
     WITH ${bounds(period)}
-    SELECT a.provider::text AS provider, count(*)::text AS n, sum(r.amount::bigint)::text AS amount
-      FROM refund_operations r JOIN payment_attempts a ON a.id = r.payment_attempt_id, bounds b
+    SELECT coalesce(a.provider::text, 'unlinked') AS provider, count(*)::text AS n,
+           sum(r.amount::bigint)::text AS amount
+      FROM refund_operations r LEFT JOIN payment_attempts a ON a.id = r.payment_attempt_id, bounds b
      WHERE r.state = 'succeeded' AND r.settled_at >= b.lo AND r.settled_at < b.hi GROUP BY 1`);
   const byProvider = new Map<
     string,
@@ -492,13 +503,13 @@ export async function readProvidersReport(db: Reader, period: Period): Promise<R
         failed,
         ratioBps(ok, ok + failed),
         sumNum((v) => v.refunds),
-        moneyFromDb(String(names.reduce((acc, name) => acc + num(slot(name).amount), 0))),
+        sum(names.map((name) => moneyFromDb(slot(name).amount))),
       ],
       truncated: false,
     },
     facts: [],
     chart: null,
-    notes: ['successRateSettled'],
+    notes: ['successRateSettled', 'providersUnlinked'],
   };
 }
 
@@ -540,6 +551,6 @@ export async function readViewedNotBought(db: Reader, period: Period): Promise<R
     },
     facts: [],
     chart: null,
-    notes: ['viewsAreSessionDays', 'noConversion'],
+    notes: ['viewsAreSessionDays', 'viewsRetention', 'noConversion'],
   };
 }

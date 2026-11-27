@@ -134,3 +134,19 @@ Alerts (counts and the age of the oldest row, no row data), each with a read-onl
 
 The dead-letter queue lives in the pg-boss schema, which the app role does not read; the stuck-outbox count is the
 visible symptom of it.
+
+## Rules pinned by review (phase 10, slice B)
+
+- **Orders report:** the amount column is ordered value of orders that are NOT cancelled (a cancelled row still counts the
+  order and shows 0); it is not revenue.
+- **Top products:** `orderedValue` is the ordered value of non-cancelled lines, not net of returns and including unpaid
+  orders; it is not revenue.
+- **Promo codes:** the discount is the sum of CONSUMED `promo_code_redemptions` of non-cancelled orders; a released
+  redemption gave nothing. A code used on an order with another kind of discount is not credited with it.
+- **Payment providers:** refunds are listed by the provider of the attempt behind them; a succeeded refund with no
+  attempt is the explicit `unlinked` row, so the refund total equals the revenue report to the kopiyka. Dated by the settle
+  time (a refund made in May and settled in June belongs to June).
+- **Ranges:** a daily series (revenue by day) is capped at 366 days; every other report accepts up to about three years
+  (1100 days); `granularity` means nothing to them.
+- **Audit:** an export records `includedCost` from what the file holds (a cost column or fact), not from the role.
+- **Alerts:** until the worker runs (owner queue Q31) every outbox row ages and the "stuck outbox" alert is permanent.

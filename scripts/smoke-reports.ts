@@ -9,6 +9,9 @@
  * export route refuses a manager before any query; the owner's CSV equals the screen, neutralises a
  * formula name and carries `private, no-store` and `nosniff`; a download writes an audit row.
  */
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
+
 import {
   beginLogin,
   confirmTotpEnrolment,
@@ -24,6 +27,8 @@ interface Context {
   base: string;
   databaseUrl: string;
   authSecret: string;
+  /** The build's `.next/static` directory: what an anonymous visitor can download. */
+  staticDir: string;
   check: (name: string, ok: boolean) => void;
 }
 
@@ -33,7 +38,13 @@ const COST_MARKERS = ['4242424', '42 424', '42 424', '42,424', 'costOfGoods', '
 const HOSTILE = '=HYPERLINK("http://evil.example","x")';
 const RANGE = 'from=2031-01-01&to=2031-12-31';
 
-export async function runReportsSmoke({ base, databaseUrl, authSecret, check }: Context) {
+export async function runReportsSmoke({
+  base,
+  databaseUrl,
+  authSecret,
+  staticDir,
+  check,
+}: Context) {
   const { db, close } = createDb(databaseUrl, { max: 2 });
   const suffix = String(Date.now());
   let counter = 0;
@@ -52,6 +63,23 @@ export async function runReportsSmoke({ base, databaseUrl, authSecret, check }: 
     };
   };
   const leaksCost = (text: string): boolean => COST_MARKERS.some((marker) => text.includes(marker));
+  /**
+   * The RSC (Flight) payload as the browser gets it: the first request is answered with a redirect that
+   * adds the `_rsc` value, the second is the payload. An empty or redirect-only answer would pass a leak
+   * check for the wrong reason, so the content type and a non-empty body are part of the result.
+   */
+  const rsc = async (path: string, headers: Record<string, string>) => {
+    const first = await get(path, { ...headers, RSC: '1' });
+    const target = first.status === 307 && first.location !== null ? first.location : path;
+    const second = first.status === 307 ? await get(target, { ...headers, RSC: '1' }) : first;
+    return {
+      ok:
+        second.status === 200 &&
+        (second.headers.get('content-type') ?? '').includes('text/x-component') &&
+        second.text.length > 0,
+      text: second.text,
+    };
+  };
   try {
     // The orders are dated in 2031 on purpose: other smoke scripts take the OLDEST guest orders of the seed.
     // No new category or product: the storefront caches its category list, and a category created behind
@@ -123,6 +151,30 @@ export async function runReportsSmoke({ base, databaseUrl, authSecret, check }: 
       Cookie: `admin_session=${role === 'owner' ? ownerFull.token : (tokens[role] ?? '')}; admin_locale=${locale}`,
     });
 
+    // What an anonymous visitor can download: no report label in any public script (the last-resort pages
+    // used to import the whole message files and shipped every admin label as a public chunk).
+    const files = (dir: string): string[] =>
+      readdirSync(dir).flatMap((entry) => {
+        const path = join(dir, entry);
+        return statSync(path).isDirectory() ? files(path) : [path];
+      });
+    const REPORT_LABELS = [
+      'Stock value at cost',
+      'Вартість складу за собівартістю',
+      'Виручка від товарів',
+      'costOfGoods',
+      'stockValueAtCost',
+    ];
+    const leaking = files(staticDir).filter((file) => {
+      if (!/\.(js|css|json|txt|html)$/.test(file)) return false;
+      const text = readFileSync(file, 'utf8');
+      return REPORT_LABELS.some((label) => text.includes(label));
+    });
+    check(
+      `reports: no public script under .next/static carries a report or cost label :: ${leaking.join(', ')}`,
+      leaking.length === 0,
+    );
+
     // Anonymous.
     const anonymous = await get(`/admin/reports/revenue?${RANGE}`);
     check(
@@ -159,17 +211,18 @@ export async function runReportsSmoke({ base, databaseUrl, authSecret, check }: 
           `/admin/reports/${name}?${RANGE}&threshold=1000`,
           cookie('manager', locale),
         );
-        const rsc = await get(`/admin/reports/${name}?${RANGE}&threshold=1000`, {
-          ...cookie('manager', locale),
-          RSC: '1',
-        });
+        const flight = await rsc(
+          `/admin/reports/${name}?${RANGE}&threshold=1000`,
+          cookie('manager', locale),
+        );
         const ok =
           page.status === 200 &&
           page.cache.includes('no-store') &&
           !page.text.includes('admin.reports.') &&
           !leaksCost(page.text) &&
-          !leaksCost(rsc.text);
-        const why = `status ${String(page.status)} cache ${page.cache} rawkeys ${String(page.text.includes('admin.reports.'))} leakHtml ${String(COST_MARKERS.find((m) => page.text.includes(m)))} leakRsc ${String(COST_MARKERS.find((m) => rsc.text.includes(m)))}`;
+          flight.ok &&
+          !leaksCost(flight.text);
+        const why = `status ${String(page.status)} cache ${page.cache} rawkeys ${String(page.text.includes('admin.reports.'))} leakHtml ${String(COST_MARKERS.find((m) => page.text.includes(m)))} rscOk ${String(flight.ok)} leakRsc ${String(COST_MARKERS.find((m) => flight.text.includes(m)))}`;
         check(
           `reports: ${name} (${locale}) for the manager renders, no raw keys, no cost in HTML or RSC${ok ? '' : ` :: ${why}`}`,
           ok,
@@ -222,7 +275,8 @@ export async function runReportsSmoke({ base, databaseUrl, authSecret, check }: 
               overview.text.includes('Потребує уваги')) &&
           !/>(Margin|Маржа)</.test(overview.text) &&
           !leaksCost(overview.text) &&
-          !leaksCost((await get('/admin', { ...cookie('manager', locale), RSC: '1' })).text),
+          (await rsc('/admin', cookie('manager', locale))).ok &&
+          !leaksCost((await rsc('/admin', cookie('manager', locale))).text),
       );
     }
     const contentOverview = await get('/admin', cookie('content'));

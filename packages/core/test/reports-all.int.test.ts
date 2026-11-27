@@ -21,6 +21,7 @@ import {
   ReportForbiddenError,
   mayRunReport,
   parseReportRequest,
+  resultIncludesCost,
   runReport,
   runReportOn,
 } from '../src/reports/run.ts';
@@ -46,6 +47,7 @@ beforeAll(async () => {
       createdAt: '2026-06-10T10:00:00Z',
       email: 'Anna@Example.com',
       promoCode: 'SPRING',
+      redemption: { code: 'SPRING', discount: 20_000 },
       lines: [
         {
           uid: productId,
@@ -57,13 +59,20 @@ beforeAll(async () => {
         },
       ],
       captures: [{ at: '2026-06-10T10:05:00Z', amount: 180_000 }],
-      refunds: [{ at: '2026-06-12T10:00:00Z', amount: 30_000 }],
+      refunds: [
+        // Made in May, settled in June: dated by the settle time (a mutation to created_at drops it).
+        { at: '2026-06-12T10:00:00Z', amount: 30_000, createdAt: '2026-05-30T10:00:00Z' },
+        // No payment attempt behind it: the revenue report counts it, so must the providers report.
+        { at: '2026-06-13T10:00:00Z', amount: 1_000, unlinked: true },
+      ],
     });
     await insertOrder(tx, {
       createdAt: '2026-06-15T10:00:00Z',
       email: 'anna@example.com',
       lines: [{ uid: productId, quantity: 1, price: 50_000, cost: 20_000 }],
       captures: [{ at: '2026-06-15T10:05:00Z', amount: 50_000, provider: 'wayforpay' }],
+      // A refund of the return that has NOT settled: the return is not counted as refunded.
+      refunds: [{ at: null, amount: 5_000, state: 'pending', returnIndex: 0 }],
       returns: [
         {
           receivedAt: '2026-06-20T10:00:00Z',
@@ -76,6 +85,8 @@ beforeAll(async () => {
       createdAt: '2026-06-16T10:00:00Z',
       provider: 'cod',
       email: 'bob@example.com',
+      // A released use of the code: it gave nothing and is not in the promo report.
+      redemption: { code: 'SPRING', discount: 5_000, state: 'released' },
       lines: [{ uid: productId, quantity: 1, price: 70_000, cost: 30_000 }],
     });
     await insertOrder(tx, {
@@ -87,6 +98,13 @@ beforeAll(async () => {
     await insertOrder(tx, {
       createdAt: '2026-07-10T10:00:00Z',
       lines: [{ name: '=HYPERLINK("http://x")', quantity: 1, price: 1_000, cost: null }],
+    });
+    // A cancelled order is not a purchase: the product it names still counts as "viewed, not bought".
+    await insertOrder(tx, {
+      createdAt: '2026-07-12T10:00:00Z',
+      status: 'cancelled',
+      cancelledAt: '2026-07-12T12:00:00Z',
+      lines: [{ uid: productId, quantity: 1, price: 1_000, cost: null }],
     });
     await tx.insert(productViews).values([
       { productId, sessionHash: 'a'.repeat(64), viewedOn: '2026-07-05' },
@@ -101,7 +119,11 @@ afterAll(async () => {
 describe('what each report counts', () => {
   it('orders: by status, delivery and payment; all orders created in the period', async () => {
     const r = await run('orders', 'owner');
-    expect(r.table.totals).toEqual(['all', '', 4, 309_000]);
+    // Four orders; the amount leaves out the cancelled one (9 000): ordered value, not revenue.
+    expect(r.table.totals).toEqual(['all', '', 4, 300_000]);
+    const cancelled = r.table.rows.find((row) => row[0] === 'status' && row[1] === 'cancelled');
+    expect(cancelled).toEqual(['status', 'cancelled', 1, 0]);
+    expect(r.notes).toContain('ordersAmountNotCancelled');
     const status = r.table.rows.filter((row) => row[0] === 'status');
     expect(status.map((row) => [row[1], row[2]])).toEqual(
       [
@@ -116,11 +138,15 @@ describe('what each report counts', () => {
     const r = await run('top-products', 'manager');
     expect(r.table.rows[0]?.slice(2)).toEqual([4, 180_000 + 50_000 + 70_000]);
     expect(r.table.totals?.slice(2)).toEqual([4, 300_000]);
+    // The cancelled order names another product: it must not appear at all.
+    expect(r.table.rows).toHaveLength(1);
   });
 
   it('promos: the discount of the code and its share of orders', async () => {
     const r = await run('promos', 'admin');
+    // The consumed redemption counts; the released one (5 000, on another order) gave nothing.
     expect(r.table.rows).toEqual([['SPRING', 1, 20_000, 180_000]]);
+    expect(r.table.totals).toEqual(['', 1, 20_000, 180_000]);
     expect(r.facts.find((f) => f.key === 'ordersWithPromo')?.value).toBe(3333);
   });
 
@@ -140,14 +166,21 @@ describe('what each report counts', () => {
     ]);
     const top = r.table.rows.filter((row) => row[0] === 'top');
     expect(top).toHaveLength(1);
-    expect(top[0]?.[4]).toBe(230_000 - 30_000);
+    expect(top[0]?.[4]).toBe(230_000 - 30_000 - 1_000);
     expect(JSON.stringify(r)).not.toMatch(/example\.com|@/);
   });
 
   it('providers: attempts, settled success rate, refunds by provider', async () => {
     const r = await run('providers', 'owner');
     const byName = Object.fromEntries(r.table.rows.map((row) => [String(row[0]), row]));
+    // The 30 000 refund was created in May and settled in June: it belongs to June.
     expect(byName['mono']).toEqual(['mono', 1, 1, 0, 10_000, 1, 30_000]);
+    expect(byName['unlinked']).toEqual(['unlinked', 0, 0, 0, null, 1, 1_000]);
+    // The pending refund of the return is not a refund.
+    expect(byName['wayforpay']?.slice(5)).toEqual([0, 0]);
+    // And the refund total is exactly the revenue report's.
+    const revenue = await run('revenue', 'owner');
+    expect(r.table.totals?.[6]).toBe(revenue.table.totals?.[2]);
     expect(byName['wayforpay']?.slice(0, 5)).toEqual(['wayforpay', 1, 1, 0, 10_000]);
   });
 
@@ -155,6 +188,7 @@ describe('what each report counts', () => {
     const quiet = await run('viewed-not-bought', 'owner', { from: '2026-07-01', to: '2026-07-31' });
     expect(quiet.table.rows).toHaveLength(1);
     expect(quiet.table.rows[0]?.[3]).toBe(2);
+    // The cancelled order in July names the same product: it is not a purchase, the product is still listed.
     const bought = await run('viewed-not-bought', 'owner');
     expect(bought.table.rows).toHaveLength(0);
   });
@@ -248,35 +282,84 @@ describe('the export equals the screen', () => {
     return { header: parsed.header, rows };
   };
 
-  it('every report: the same cells to the kopiyka, in the same order, totals included', async () => {
-    for (const name of reportNames) {
-      const result = await run(name, 'owner');
-      const { header, rows } = parseBack(result);
-      expect(header).toEqual(
-        result.table.columns.map((c) =>
-          (c.kind === 'bps' ? `${c.key}_percent` : c.key).toLowerCase(),
-        ),
-      );
-      const expected = [
-        ...result.table.rows,
-        ...(result.table.totals === null ? [] : [result.table.totals]),
-      ];
-      const data = rows.filter((r) => r[0] !== '#fact' && !(r[0] ?? '').startsWith('# truncated'));
-      expect(data.length, name).toBe(expected.length);
-      for (const [rowIndex, cells] of data.entries()) {
-        const row = expected[rowIndex] ?? [];
-        for (const [i, column] of result.table.columns.entries()) {
-          const screen = row[i] ?? null;
-          const file = cells[i] ?? '';
-          const isTotals = result.table.totals !== null && rowIndex === expected.length - 1;
-          if (screen === null) expect(file).toBe('');
-          else if (column.kind === 'money') expect(parseHryvnias(file)).toBe(screen);
-          else if (column.kind === 'bps') expect(Math.round(Number(file) * 100)).toBe(screen);
-          else if (isTotals && i === 0 && screen === '') expect(file).toBe('TOTAL');
-          else expect(file).toBe(String(screen));
-        }
+  /** The file read back cell by cell against the result the screen renders from. */
+  const expectCsvEqualsScreen = (name: string, result: ReportResultDto): void => {
+    const { header, rows } = parseBack(result);
+    expect(header).toEqual(
+      result.table.columns.map((c) =>
+        (c.kind === 'bps' ? `${c.key}_percent` : c.key).toLowerCase(),
+      ),
+    );
+    const expected = [
+      ...result.table.rows,
+      ...(result.table.totals === null ? [] : [result.table.totals]),
+    ];
+    const data = rows.filter((r) => r[0] !== '#fact' && !(r[0] ?? '').startsWith('# truncated'));
+    expect(data.length, name).toBe(expected.length);
+    for (const [rowIndex, cells] of data.entries()) {
+      const row = expected[rowIndex] ?? [];
+      for (const [i, column] of result.table.columns.entries()) {
+        const screen = row[i] ?? null;
+        const file = cells[i] ?? '';
+        const isTotals = result.table.totals !== null && rowIndex === expected.length - 1;
+        if (screen === null) expect(file).toBe('');
+        else if (column.kind === 'money')
+          expect(parseHryvnias(file), `${name} ${column.key}`).toBe(screen);
+        else if (column.kind === 'bps') expect(Math.round(Number(file) * 100)).toBe(screen);
+        else if (isTotals && i === 0 && screen === '') expect(file).toBe('TOTAL');
+        else expect(file).toBe(String(screen));
       }
     }
+  };
+
+  it('every report: the same cells to the kopiyka, in the same order, totals included', async () => {
+    for (const name of reportNames) expectCsvEqualsScreen(name, await run(name, 'owner'));
+  });
+
+  it('amounts with odd kopiykas, and filtered requests parsed exactly as the route parses them', async () => {
+    const august = { from: '2026-08-01', to: '2026-08-31' };
+    await world.connect(1).db.transaction(async (tx) => {
+      await insertOrder(tx, {
+        createdAt: '2026-08-10T10:00:00Z',
+        email: 'odd@example.test',
+        redemption: { code: 'ODD', discount: 4_321 },
+        lines: [
+          { uid: productId, name: 'Odd', quantity: 3, price: 3_333, cost: 1_111 },
+          { uid: productId, name: 'Odd', quantity: 1, price: 12_345, cost: 4_321 },
+        ],
+        captures: [{ at: '2026-08-10T10:05:00Z', amount: 22_344 }],
+        refunds: [{ at: '2026-08-20T10:00:00Z', amount: 1_234 }],
+      });
+    });
+    const filtered: Record<string, Record<string, unknown>> = {
+      'top-products': { sort: 'revenue' },
+      stock: { threshold: 1000 },
+      margin: { by: 'category' },
+      revenue: { granularity: 'week' },
+    };
+    for (const name of reportNames) {
+      const handle = world.connect(1);
+      const request = parseReportRequest(name, { ...august, ...filtered[name] });
+      const result = await runReportOn(handle.db, request, 'owner');
+      expectCsvEqualsScreen(name, result);
+    }
+    const revenue = await runReportOn(
+      world.connect(1).db,
+      parseReportRequest('revenue', { ...august, granularity: 'month' }),
+      'owner',
+    );
+    // 22 344 and 1 234 kopiykas: the file must say 223.44 and 12.34, not 223.00.
+    expect(resultToCsv(revenue)).toContain('223.44');
+    expect(resultToCsv(revenue)).toContain('12.34');
+  });
+
+  it('what an export records as "includes cost" comes from the result, not from the role', async () => {
+    expect(resultIncludesCost(await run('revenue', 'owner'))).toBe(false);
+    expect(resultIncludesCost(await run('orders', 'admin'))).toBe(false);
+    expect(resultIncludesCost(await run('returns', 'owner'))).toBe(false);
+    expect(resultIncludesCost(await run('margin', 'owner'))).toBe(true);
+    expect(resultIncludesCost(await run('stock', 'owner'))).toBe(true);
+    expect(resultIncludesCost(await run('stock', 'manager'))).toBe(false);
   });
 
   it('a product name that starts like a formula is text in the file', async () => {
@@ -302,6 +385,32 @@ describe('the export equals the screen', () => {
       },
     };
     expect(resultToCsv(cut).trim().split('\r\n').at(-1)).toMatch(/^# truncated/);
+  });
+});
+
+describe('long ranges', () => {
+  it('a report without a series runs over two years; only a daily series is capped', async () => {
+    const wide = { from: '2024-01-01', to: '2026-11-26' };
+    for (const name of [
+      'orders',
+      'top-products',
+      'customers',
+      'returns',
+      'promos',
+      'providers',
+      'margin',
+    ] as const) {
+      expect(() => parseReportRequest(name, wide), name).not.toThrow();
+      const result = await runReportOn(
+        world.connect(1).db,
+        parseReportRequest(name, wide),
+        'owner',
+      );
+      expect(result.period?.from).toBe('2024-01-01');
+    }
+    expect(() => parseReportRequest('revenue', wide)).toThrow();
+    expect(() => parseReportRequest('revenue', { ...wide, granularity: 'month' })).not.toThrow();
+    expect(() => parseReportRequest('orders', { from: '2000-01-01', to: '2026-11-26' })).toThrow();
   });
 });
 

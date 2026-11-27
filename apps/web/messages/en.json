@@ -1305,7 +1305,8 @@
         "succeeded": "Succeeded",
         "failed": "Failed",
         "successRate": "Success rate",
-        "views": "Views (sessions per day)"
+        "views": "Views (sessions per day)",
+        "orderedValue": "Ordered value"
       },
       "values": {
         "status": "Status",
@@ -1337,7 +1338,8 @@
         "new": "New customers",
         "returning": "Returning customers",
         "top": "Top customer",
-        "all": "All"
+        "all": "All",
+        "unlinked": "unlinked (no payment attempt)"
       },
       "facts": {
         "captures": "Captures counted",
@@ -1376,7 +1378,11 @@
         "marginEvents": "Margin follows events: a sale in the period of its first capture, a cancellation or a received return in the period it happens.",
         "goodsOnlyBreakdown": "The rows are goods margin; the carrier cost is only in the figure above the table.",
         "noCostLines": "Lines sold without a cost snapshot are left out of the margin and counted separately.",
-        "noShippingCost": "Some seller-paid orders have no carrier cost yet; their shipping is left out."
+        "noShippingCost": "Some seller-paid orders have no carrier cost yet; their shipping is left out.",
+        "ordersAmountNotCancelled": "The amount column leaves out cancelled orders (their rows still count the orders); it is ordered value, not revenue.",
+        "promoRedemptions": "Discounts are the consumed promo code redemptions of orders that are not cancelled; a released use gave nothing.",
+        "providersUnlinked": "A refund with no payment attempt behind it is listed as \"unlinked\", so the refund total equals the revenue report.",
+        "viewsRetention": "Views are kept for 90 days: a period older than that is incomplete."
       }
     },
     "dashboardReports": {
@@ -1410,7 +1416,7 @@
       "oldest": "oldest {time} (UTC)",
       "open": "Open",
       "alerts": {
-        "outbox_stuck": "Messages waiting to be delivered for over 15 minutes",
+        "outbox_stuck": "Messages waiting to be delivered for over 15 minutes (until the worker runs, every message waits: owner queue Q31)",
         "refund_open": "Refunds not confirmed for over 10 minutes",
         "payment_unknown": "Payments in an unknown state",
         "reservation_expiring": "Reservations that expire within 15 minutes",

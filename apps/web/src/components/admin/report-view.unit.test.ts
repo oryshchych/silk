@@ -33,7 +33,10 @@ const result: ReportResultDto = {
       { key: 'units', kind: 'int' },
       { key: 'revenue', kind: 'money' },
     ],
-    rows: [['p1', HOSTILE, 1234, 129_900]],
+    rows: [
+      ['p1', HOSTILE, 1234, 129_900],
+      ['p2', 'Odd', 3, 12_345],
+    ],
     totals: ['', '', 1234, -50_000],
     truncated: false,
   },
@@ -62,6 +65,7 @@ describe('ReportView', () => {
     expect(html).toContain('Разом');
     expect(html).toContain('-500,00');
     expect(render('en', result)).toContain('1,299.00');
+    expect(render('en', result)).toContain('123.45');
   });
 
   it('shows the data time, the notes and the export link; a failed run shows the alert and keeps the form', () => {

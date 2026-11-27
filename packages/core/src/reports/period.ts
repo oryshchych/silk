@@ -55,7 +55,7 @@ export interface Period {
 }
 
 /** Validate and normalise; throws `ReportInputError` (a 400, never a 500) on anything out of range. */
-export function parsePeriod(input: unknown): Period {
+export function parsePeriod(input: unknown, options: { series?: boolean } = {}): Period {
   const parsed = periodInputSchema.safeParse(input);
   if (!parsed.success) throw new ReportInputError('bad_day');
   const { from, to, granularity } = parsed.data;
@@ -64,7 +64,10 @@ export function parsePeriod(input: unknown): Period {
   if (from > to) throw new ReportInputError('inverted');
   const days = daysInRange(from, to);
   if (days > MAX_PERIOD_DAYS) throw new ReportInputError('too_long');
-  if (granularity === 'day' && days > MAX_DAILY_DAYS) throw new ReportInputError('too_many_points');
+  // The point cap protects a SERIES (a chart of one point per day); a report without one has no points.
+  if (options.series !== false && granularity === 'day' && days > MAX_DAILY_DAYS) {
+    throw new ReportInputError('too_many_points');
+  }
   return { from, to, granularity };
 }
 
