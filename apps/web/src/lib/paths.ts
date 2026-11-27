@@ -20,6 +20,7 @@ export const paths = {
   accountWishlist: '/account/wishlist',
   legal: (kind: LegalKind): string => legalPath(kind),
   unsubscribe: '/unsubscribe',
+  unsubscribeMarketing: '/unsubscribe/marketing',
   accountProfile: '/account/profile',
   accountAddresses: '/account/addresses',
   accountLogin: '/account/login',

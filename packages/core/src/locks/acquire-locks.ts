@@ -124,3 +124,39 @@ export async function acquireLocks(
 
   return result;
 }
+
+/**
+ * The same lock for a background batch, but a row that someone else holds is SKIPPED instead of waited for:
+ * a long checkout holding one cart must not stall a claim of two hundred. Returns the ids now locked (the
+ * caller works on those only; skipped rows come back on the next run). One kind, ids ascending, taken in
+ * the protocol order: it refuses to run after a higher level was taken in this transaction.
+ */
+export async function acquireLocksSkipLocked(
+  tx: Tx,
+  kind: LockKind,
+  ids: readonly string[],
+): Promise<string[]> {
+  if (ids.length === 0) return [];
+  const state = stateOf(tx);
+  const index = LOCK_LEVELS.indexOf(kind);
+  if (index < state.level) {
+    throw new LockOrderViolationError(
+      `Cannot lock ${kind} after level ${LOCK_LEVELS[state.level] ?? ''}: levels must ascend`,
+    );
+  }
+  const rows = await tx.execute<{ id: string }>(
+    sql`SELECT id FROM ${sql.identifier(kind)}
+        WHERE id IN (${sql.join(
+          ids.map((id) => sql`${id}::uuid`),
+          sql`, `,
+        )})
+        ORDER BY id
+        FOR UPDATE SKIP LOCKED`,
+  );
+  const locked = rows.rows.map((row) => row.id);
+  state.level = Math.max(state.level, index);
+  const heldIds = state.ids.get(kind) ?? new Set<string>();
+  for (const id of locked) heldIds.add(id);
+  state.ids.set(kind, heldIds);
+  return locked;
+}

@@ -1673,7 +1673,10 @@
     "registerConsent": "By registering you accept the <terms>terms of the offer</terms> and the <privacy>privacy policy</privacy>.",
     "returnsPolicyStrict": "Within {days} days of delivery we accept requests for a defect, a wrong item or an item that does not match its description. Underwear and hosiery of proper quality cannot be exchanged or returned (Resolution No. 172 of the Cabinet of Ministers of Ukraine of 19 March 1994). A manager reviews each request.",
     "returnsPolicyVoluntary": "Within {days} days of delivery we accept return requests. A manager reviews each request.",
-    "returnsPolicyLink": "Read the returns and exchange terms"
+    "returnsPolicyLink": "Read the returns and exchange terms",
+    "marketingUnsubscribeTitle": "Unsubscribe from the mailing",
+    "marketingUnsubscribeIntro": "Confirm that you no longer want to receive our marketing emails.",
+    "marketingUnsubscribed": "Done: you will not receive marketing emails from us."
   },
   "legal": {
     "notSet": "Not set",
