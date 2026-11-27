@@ -56,6 +56,7 @@
     "./admin-template": "./src/catalog-admin/template.ts",
     "./content-readiness": "./src/content-readiness/report.ts",
     "./product-views": "./src/product-views/views.ts",
+    "./reports": "./src/reports/index.ts",
     "./admin-stock-read": "./src/catalog-admin/stock-read.ts",
     "./admin-stock": "./src/catalog-admin/stock.ts",
     "./orders-admin-read": "./src/orders-admin/read.ts",

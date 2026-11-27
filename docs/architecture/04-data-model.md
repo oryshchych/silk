@@ -132,3 +132,5 @@ shipping have their own records). The variant cannot be deleted while it has his
 products are deactivated, not deleted.
 
 > Phase 5 (migration 0014): `fiscal_documents` has `CHECK fiscal_docs_return_has_refund`: a return receipt always names the refund operation it returns (the unique index alone allowed NULL). `payment_attempts_open_idx` is gone; `payment_attempts_reconcile_idx` serves the reconcile job.
+
+**Phase 10 report indexes (migration 0023, partial):** `payment_attempts_captured_at_idx` on `completed_at` WHERE `captured_amount > 0`; `refund_settled_at_idx` on `settled_at` WHERE `state = 'succeeded'`; `return_requests_received_at_idx` on `received_at` WHERE `received_at IS NOT NULL`; `orders_cancelled_at_idx` on `cancelled_at` WHERE `cancelled_at IS NOT NULL`. They serve the report windows (docs/REPORTS.md); created `IF NOT EXISTS` so a hand-built concurrent index does not roll the migration back.
