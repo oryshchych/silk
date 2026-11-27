@@ -144,7 +144,7 @@ export async function runAdminSmoke({
     // A manager signs in with the password alone; an owner needs TOTP.
     const manager = `manager-${suffix}@example.test`;
     const owner = `owner-${suffix}@example.test`;
-    const contentEmail = `content-${suffix}@example.test`;
+    const contentEmail = `messages-content-${suffix}@example.test`;
     await db.transaction(async (tx) => {
       await createAdminUser(tx, { email: manager, password: PASSWORD, role: 'manager' });
       await createAdminUser(tx, { email: owner, password: PASSWORD, role: 'owner' });
