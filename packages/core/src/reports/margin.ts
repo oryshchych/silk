@@ -34,24 +34,41 @@ import { z } from 'zod';
 import type { Reader } from '@store/db/types';
 import type { MarginReportDto } from '@store/shared/dto/reports';
 import type { Money } from '@store/shared/money';
-import { moneyFromDb, ratioBps, subtract } from '@store/shared/money';
+import { moneyFromDb, ratioBps, subtract, sum } from '@store/shared/money';
 
 import { capturedRows, settledRefundRows } from './revenue.ts';
 import { isoUtc, lowerBound, upperBound, type Period } from './period.ts';
 
-/** The shared CTEs: `bounds`, `first_capture`, `sold`, `events`. */
-function marginCtes(from: string, to: string): SQL {
+/**
+ * An order has a sale in the journal (any time). A correlated EXISTS, so only the orders a window
+ * touches are checked, instead of grouping the whole attempts table.
+ */
+const hasCapture = (orderId: string) => sql`EXISTS (
+  SELECT 1 FROM payment_attempts a
+   WHERE a.order_id = ${sql.raw(orderId)} AND ${capturedRows} AND a.completed_at IS NOT NULL)`;
+
+/**
+ * The shared CTEs: `bounds`, `candidates`, `first_capture`, `sold`, `events`. Only the orders with a
+ * capture INSIDE the window are examined for their first capture (a semi-join through `candidates`),
+ * so the cost follows the window, not the history.
+ */
+export function marginCtes(from: string, to: string): SQL {
   return sql`
     bounds AS (SELECT ${lowerBound(from)} AS lo, ${upperBound(to)} AS hi),
+    candidates AS (
+      SELECT DISTINCT a.order_id
+        FROM payment_attempts a, bounds b
+       WHERE ${capturedRows} AND a.completed_at >= b.lo AND a.completed_at < b.hi
+    ),
     first_capture AS (
       SELECT a.order_id, min(a.completed_at) AS at
-        FROM payment_attempts a
+        FROM payment_attempts a JOIN candidates c ON c.order_id = a.order_id
        WHERE ${capturedRows} AND a.completed_at IS NOT NULL
        GROUP BY a.order_id
     ),
     sold AS (
-      SELECT o.id AS order_id, o.shipping_paid_by, o.shipping_cost_actual
-        FROM first_capture fc JOIN orders o ON o.id = fc.order_id, bounds b
+      SELECT fc.order_id
+        FROM first_capture fc, bounds b
        WHERE fc.at >= b.lo AND fc.at < b.hi
     ),
     events AS (
@@ -68,10 +85,9 @@ function marginCtes(from: string, to: string): SQL {
              -oi.quantity::bigint, -oi.line_total::bigint,
              -(oi.unit_cost_snapshot::bigint * oi.quantity), false, 0::bigint
         FROM orders o
-        JOIN first_capture fc ON fc.order_id = o.id
         JOIN order_items oi ON oi.order_id = o.id, bounds b
        WHERE o.status = 'cancelled' AND o.cancelled_at >= b.lo AND o.cancelled_at < b.hi
-         AND oi.unit_cost_snapshot IS NOT NULL
+         AND oi.unit_cost_snapshot IS NOT NULL AND ${hasCapture('o.id')}
       UNION ALL
       SELECT oi.product_uid_snapshot, oi.name_snapshot, coalesce(oi.category_path_snapshot, ''),
              -rri.received_quantity::bigint,
@@ -80,11 +96,10 @@ function marginCtes(from: string, to: string): SQL {
         FROM return_requests rr
         JOIN return_request_items rri ON rri.return_request_id = rr.id
         JOIN order_items oi ON oi.id = rri.order_item_id
-        JOIN orders o ON o.id = rr.order_id
-        JOIN first_capture fc ON fc.order_id = rr.order_id, bounds b
+        JOIN orders o ON o.id = rr.order_id, bounds b
        WHERE rr.received_at >= b.lo AND rr.received_at < b.hi
          AND rri.received_quantity > 0 AND oi.unit_cost_snapshot IS NOT NULL
-         AND o.status <> 'cancelled'
+         AND o.status <> 'cancelled' AND ${hasCapture('rr.order_id')}
     )`;
 }
 
@@ -112,9 +127,9 @@ export async function readMargin(db: Reader, period: Period): Promise<MarginRepo
         FROM events
     ),
     ship AS (
-      SELECT coalesce(sum(shipping_cost_actual) FILTER (WHERE shipping_paid_by = 'sender'), 0)::text AS cost,
-             count(*) FILTER (WHERE shipping_paid_by = 'sender' AND shipping_cost_actual IS NULL) AS missing
-        FROM sold
+      SELECT coalesce(sum(o.shipping_cost_actual) FILTER (WHERE o.shipping_paid_by = 'sender'), 0)::text AS cost,
+             count(*) FILTER (WHERE o.shipping_paid_by = 'sender' AND o.shipping_cost_actual IS NULL) AS missing
+        FROM sold s JOIN orders o ON o.id = s.order_id
     ),
     other AS (
       SELECT coalesce(sum(r.amount), 0)::text AS amount
@@ -224,8 +239,8 @@ export async function readMarginBreakdown(
           key: '',
           name: '',
           units: tail.reduce((sum, item) => sum + item.units, 0),
-          revenue: String(tail.reduce((sum, item) => sum + Number(item.revenue), 0)),
-          cost: String(tail.reduce((sum, item) => sum + Number(item.cost), 0)),
+          revenue: String(sum(tail.map((item) => moneyFromDb(item.revenue)))),
+          cost: String(sum(tail.map((item) => moneyFromDb(item.cost)))),
         });
   return { rows, rest };
 }

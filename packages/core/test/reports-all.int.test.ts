@@ -22,6 +22,7 @@ import {
   mayRunReport,
   parseReportRequest,
   runReport,
+  runReportOn,
 } from '../src/reports/run.ts';
 import { createWorld, type TestWorld } from './fixtures.ts';
 import { insertOrder } from './reports-fixture.ts';
@@ -32,7 +33,7 @@ const range = { from: '2026-06-01', to: '2026-06-30' };
 
 const run = async (name: ReportName, role: AdminRole, extra: Record<string, unknown> = {}) => {
   const handle = world.connect(1);
-  return await runReport(handle.db, parseReportRequest(name, { ...range, ...extra }), role);
+  return await runReportOn(handle.db, parseReportRequest(name, { ...range, ...extra }), role);
 };
 
 beforeAll(async () => {
@@ -193,11 +194,8 @@ describe('the role matrix on the serialised result', () => {
 
   it('a refused role gets the error BEFORE any query (a pool that is never used)', async () => {
     const never = {
-      select: () => {
-        throw new Error('queried');
-      },
-      execute: () => {
-        throw new Error('queried');
+      transaction: () => {
+        throw new Error('a connection was taken');
       },
     };
     await expect(
@@ -206,6 +204,13 @@ describe('the role matrix on the serialised result', () => {
     await expect(
       runReport(never, parseReportRequest('revenue', range), 'content'),
     ).rejects.toBeInstanceOf(ReportForbiddenError);
+  });
+
+  it('the public runReport runs read only: it answers on a real pool and cannot write', async () => {
+    const handle = world.connect(1);
+    const result = await runReport(handle.db, parseReportRequest('orders', range), 'owner');
+    expect(result.name).toBe('orders');
+    expect(result.asOf).toMatch(/Z$/);
   });
 
   it('no cost field name appears in any JSON a role without the cost permission can get', async () => {
@@ -311,7 +316,7 @@ describe('bad input is a typed refusal, never a query', () => {
   });
   it('the SQL of a report cannot be steered by a parameter', async () => {
     const handle = world.connect(1);
-    const result = await runReport(
+    const result = await runReportOn(
       handle.db,
       parseReportRequest('top-products', { ...range, sort: 'revenue' }),
       'owner',

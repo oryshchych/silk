@@ -1,10 +1,24 @@
+/**
+ * Public API of the reports module. Only functions that open their own read-only transaction are
+ * exported (`api.ts`, `run.ts`, `dashboard.ts`, `today.ts`), plus the period vocabulary, the CSV
+ * rendering and the transaction helper. The raw readers are not exported on purpose
+ * (`exports.unit.test.ts` pins this list).
+ */
 export * from './period.ts';
-export { readRevenue } from './revenue.ts';
-export { readMargin, readMarginBreakdown, MARGIN_BREAKDOWN_LIMIT } from './margin.ts';
+export * from './api.ts';
+export {
+  isReportName,
+  mayRunReport,
+  parseReportRequest,
+  reportParamsSchema,
+  ReportForbiddenError,
+  runReport,
+  type ParsedReport,
+  type ReportParams,
+} from './run.ts';
+export { runDashboard } from './dashboard.ts';
+export { shopToday } from './today.ts';
+export { resultToCsv, bpsPlainText } from './csv.ts';
+export { inReportTransaction, REPORT_STATEMENT_TIMEOUT_MS, type ReportDb } from './transaction.ts';
 export type { MarginRowDto } from './margin.ts';
-export { readRevenueComparison, changeOf } from './comparison.ts';
-export * from './run.ts';
-export { readStockReport, readOrdersReport } from './others.ts';
-export * from './csv.ts';
-export * from './alerts.ts';
-export { readDashboard } from './dashboard.ts';
+export { changeOf } from './comparison.ts';

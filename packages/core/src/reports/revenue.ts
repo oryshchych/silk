@@ -49,6 +49,10 @@ export const capturedRows = sql`a.captured_amount > 0 AND a.provider <> 'gift_ca
 /** The refund condition: settled, and not a refund onto a certificate. */
 export const settledRefundRows = sql`r.state = 'succeeded' AND (a.id IS NULL OR a.provider <> 'gift_card')`;
 
+/** Cash on delivery the shop is fulfilling and has not refunded: shown, never counted (Q85). */
+export const codRows = sql`o.payment_provider = 'cod'
+  AND o.status IN ('confirmed', 'processing', 'shipped', 'delivered') AND o.refunded_total = 0`;
+
 const rowSchema = z.object({
   now: z.string(),
   lo: z.string(),
@@ -67,6 +71,8 @@ const rowSchema = z.object({
     refund_ops: z.coerce.number(),
     untimed_captures: z.coerce.number(),
     untimed_refunds: z.coerce.number(),
+    cod_orders: z.coerce.number(),
+    cod_total: z.string(),
   }),
 });
 
@@ -120,7 +126,11 @@ export async function readRevenue(db: Reader, period: Period): Promise<RevenueRe
           WHERE ${capturedRows} AND a.completed_at IS NULL) AS untimed_captures,
         (SELECT count(*) FROM refund_operations r
            LEFT JOIN payment_attempts a ON a.id = r.payment_attempt_id
-          WHERE ${settledRefundRows} AND r.settled_at IS NULL) AS untimed_refunds
+          WHERE ${settledRefundRows} AND r.settled_at IS NULL) AS untimed_refunds,
+        (SELECT count(*) FROM orders o, bounds b
+          WHERE ${codRows} AND o.created_at >= b.lo AND o.created_at < b.hi) AS cod_orders,
+        (SELECT coalesce(sum(o.total::bigint), 0)::text FROM orders o, bounds b
+          WHERE ${codRows} AND o.created_at >= b.lo AND o.created_at < b.hi) AS cod_total
     )
     SELECT ${isoUtc(sql`now()`)} AS now, ${isoUtc(sql`b.lo`)} AS lo, ${isoUtc(sql`b.hi`)} AS hi,
            (SELECT coalesce(json_agg(s ORDER BY s.bucket), '[]'::json) FROM series s) AS series,
@@ -143,6 +153,7 @@ export async function readRevenue(db: Reader, period: Period): Promise<RevenueRe
     refundOperations: row.totals.refund_ops,
     untimedCaptures: row.totals.untimed_captures,
     untimedRefunds: row.totals.untimed_refunds,
+    codNotIncluded: { orders: row.totals.cod_orders, total: moneyFromDb(row.totals.cod_total) },
   };
   return {
     asOf: row.now,

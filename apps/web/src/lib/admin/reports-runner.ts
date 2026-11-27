@@ -1,9 +1,8 @@
 import { type AdminRole, can } from '@store/core/auth-permissions';
 import {
-  readDashboard,
-  readShopToday,
+  runDashboard,
   runReport,
-  setStatementTimeout,
+  shopToday as readShopToday,
   type ParsedReport,
   type Period,
 } from '@store/core/reports';
@@ -26,11 +25,7 @@ interface Context {
 
 const computation = createKeyedComputation<ReportResultDto, Context>(
   async ({ request, role }) => {
-    const db = await getDb();
-    return await db.transaction(
-      async (tx) => await runReport(tx, request, role, { statementTimeoutMs: 25_000 }),
-      { accessMode: 'read only' },
-    );
+    return await runReport(await getDb(), request, role);
   },
   { ttlMs: 60_000, minRefreshMs: 5_000, maxKeys: 200, maxRunning: 3 },
 );
@@ -62,14 +57,7 @@ interface DashboardContext {
 
 const dashboardComputation = createKeyedComputation<DashboardDto, DashboardContext>(
   async ({ period, includeCost }) => {
-    const db = await getDb();
-    return await db.transaction(
-      async (tx) => {
-        await setStatementTimeout(tx, 25_000);
-        return await readDashboard(tx, period, { includeCost });
-      },
-      { accessMode: 'read only' },
-    );
+    return await runDashboard(await getDb(), period, { includeCost });
   },
   { ttlMs: 60_000, minRefreshMs: 5_000, maxKeys: 50, maxRunning: 3 },
 );

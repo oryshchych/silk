@@ -190,6 +190,19 @@ describe('margin rules', () => {
     expect(totals).toMatchObject({ goodsRevenue: 0, costOfGoods: 0, margin: 0, marginBps: null });
   });
 
+  it('a cancelled order that was never paid has no sale and so nothing to reverse', async () => {
+    const m = month(11);
+    await db().transaction(async (tx) => {
+      await insertOrder(tx, {
+        status: 'cancelled',
+        cancelledAt: m.at(9),
+        lines: [{ quantity: 1, price: 50_000, cost: 20_000 }],
+      });
+    });
+    const { totals } = await readMargin(db(), m.period);
+    expect(totals).toMatchObject({ goodsRevenue: 0, costOfGoods: 0, margin: 0 });
+  });
+
   it('a goodwill refund (no return, no cancellation) is reported, not hidden', async () => {
     const m = month(8);
     await db().transaction(async (tx) => {

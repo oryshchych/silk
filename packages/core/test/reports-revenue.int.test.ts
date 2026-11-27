@@ -2,6 +2,7 @@
  * Revenue on real Postgres: the three figures from the payment journal, each by the date of its
  * own operation, in shop (Europe/Kyiv) days decided by the database.
  */
+import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { subtract, sum } from '@store/shared/money';
@@ -55,6 +56,9 @@ beforeAll(async () => {
       captures: [{ at: '2026-06-14T10:00:00Z', amount: 30_000 }],
       refunds: [
         { at: null, amount: 10_000, state: 'pending' },
+        // Anomalies pinned on purpose: a refund that is not `succeeded` is never counted, even with a settle time.
+        { at: '2026-06-15T09:00:00Z', amount: 10_000, state: 'pending' },
+        { at: '2026-06-15T09:30:00Z', amount: 10_000, state: 'in_flight' },
         { at: '2026-06-15T10:00:00Z', amount: 10_000, state: 'failed' },
         { at: '2026-06-15T11:00:00Z', amount: 10_000, state: 'unknown' },
       ],
@@ -86,6 +90,20 @@ describe('revenue: three figures from the journal', () => {
     expect(report.totals.net).toBe(135_000);
     expect(report.totals.captures).toBe(3);
     expect(report.totals.refundOperations).toBe(1);
+  });
+
+  it('cash on delivery is shown beside the figures, never inside them', async () => {
+    const report = await readRevenue(handle.db, june());
+    // The COD order of the fixture is 2 x 700.00 = 1 400.00 and is delivered; it is created "now", so
+    // look at the window that holds its creation day.
+    const today = await handle.db.execute<{ d: string }>(
+      sql`SELECT to_char(created_at AT TIME ZONE 'Europe/Kyiv', 'YYYY-MM-DD') AS d FROM orders WHERE payment_provider = 'cod'`,
+    );
+    const day = today.rows[0]?.d ?? '';
+    const around = await readRevenue(handle.db, parsePeriod({ from: day, to: day }));
+    expect(around.totals.codNotIncluded).toEqual({ orders: 1, total: 140_000 });
+    expect(around.totals.gross).toBe(0);
+    expect(report.totals.codNotIncluded).toEqual({ orders: 0, total: 0 });
   });
 
   it('a refund in a later period lowers THAT period and leaves the earlier one alone', async () => {

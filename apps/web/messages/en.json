@@ -1356,7 +1356,9 @@
         "noCostLines": "Sold lines without cost data",
         "noCostRevenue": "Revenue of lines without cost data",
         "noShippingCostOrders": "Seller-paid orders without a carrier cost",
-        "otherRefunds": "Refunds not tied to a return or a cancellation"
+        "otherRefunds": "Refunds not tied to a return or a cancellation",
+        "codNotIncludedOrders": "Cash on delivery orders NOT counted above",
+        "codNotIncludedTotal": "Value of those cash on delivery orders (cash not yet confirmed)"
       },
       "notes": {
         "codExcluded": "Cash on delivery is not counted: nothing is captured until the carrier's remittance is recorded (owner queue Q85).",

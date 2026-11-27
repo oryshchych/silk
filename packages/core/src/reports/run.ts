@@ -7,7 +7,6 @@
  * report (absent from the result, not hidden). A role without it never receives a shape that can
  * hold a cost.
  */
-import { sql } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { can, type AdminRole } from '../auth/permissions.ts';
@@ -32,11 +31,7 @@ import {
 } from './others.ts';
 import { parsePeriod, ReportInputError, type Period } from './period.ts';
 import { readRevenue } from './revenue.ts';
-
-/** Only inside a transaction: a slow report cannot hold its connection past this. */
-export async function setStatementTimeout(db: Reader, ms: number): Promise<void> {
-  await db.execute(sql.raw(`SET LOCAL statement_timeout = ${String(Math.trunc(ms))}`));
-}
+import { inReportTransaction, type ReportDb } from './transaction.ts';
 
 export class ReportForbiddenError extends Error {
   constructor() {
@@ -90,16 +85,13 @@ export function mayRunReport(role: AdminRole, name: ReportName): boolean {
   return !COST_REQUIRED.includes(name) || can(role, 'catalog.cost.view');
 }
 
-export async function runReport(
+/** Internal: runs on a reader the caller already put in a report transaction. Use `runReport`. */
+export async function runReportOn(
   db: Reader,
   request: ParsedReport,
   role: AdminRole,
-  options: { statementTimeoutMs?: number } = {},
 ): Promise<ReportResultDto> {
   if (!mayRunReport(role, request.name)) throw new ReportForbiddenError();
-  if (options.statementTimeoutMs !== undefined) {
-    await setStatementTimeout(db, options.statementTimeoutMs);
-  }
   const includeCost = can(role, 'catalog.cost.view');
   const { period } = request;
   const need = (): Period => {
@@ -130,6 +122,8 @@ export async function runReport(
         facts: [
           { key: 'captures', kind: 'int', value: report.totals.captures },
           { key: 'refundOperations', kind: 'int', value: report.totals.refundOperations },
+          { key: 'codNotIncludedOrders', kind: 'int', value: report.totals.codNotIncluded.orders },
+          { key: 'codNotIncludedTotal', kind: 'money', value: report.totals.codNotIncluded.total },
         ],
         chart: {
           labels: report.series.map((p) => p.bucket),
@@ -205,4 +199,15 @@ export async function runReport(
     case 'viewed-not-bought':
       return await readViewedNotBought(db, need());
   }
+}
+
+/** The one public way to run a report: in a read-only transaction with its own statement timeout. */
+export async function runReport(
+  db: ReportDb,
+  request: ParsedReport,
+  role: AdminRole,
+): Promise<ReportResultDto> {
+  // The role is judged before a connection is taken.
+  if (!mayRunReport(role, request.name)) throw new ReportForbiddenError();
+  return await inReportTransaction(db, async (tx) => await runReportOn(tx, request, role));
 }

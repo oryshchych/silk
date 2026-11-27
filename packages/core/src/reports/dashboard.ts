@@ -13,6 +13,7 @@ import { readAlerts } from './alerts.ts';
 import { readRevenueComparison } from './comparison.ts';
 import { readMargin } from './margin.ts';
 import { lastYearPeriod, previousPeriod, type Period } from './period.ts';
+import { inReportTransaction, type ReportDb } from './transaction.ts';
 
 const change = (previous: number, current: number): KpiChangeDto => ({
   previous,
@@ -21,6 +22,7 @@ const change = (previous: number, current: number): KpiChangeDto => ({
   percentBps: percentChangeBps(money(previous), money(current)),
 });
 
+/** Internal: runs on a reader already inside a report transaction. Use `runDashboard`. */
 export async function readDashboard(
   db: Reader,
   period: Period,
@@ -67,4 +69,12 @@ export async function readDashboard(
     kpis,
     alerts: await readAlerts(db),
   };
+}
+
+export async function runDashboard(
+  db: ReportDb,
+  period: Period,
+  options: { includeCost: boolean },
+): Promise<DashboardDto> {
+  return await inReportTransaction(db, async (tx) => await readDashboard(tx, period, options));
 }

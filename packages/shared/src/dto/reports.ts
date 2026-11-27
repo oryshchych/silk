@@ -74,6 +74,13 @@ export interface RevenueTotalsDto {
    */
   untimedCaptures: number;
   untimedRefunds: number;
+  /**
+   * NOT in any figure above: cash-on-delivery orders created in the period that the shop is fulfilling
+   * (confirmed, processing, shipped or delivered) and not refunded. The money is not confirmed yet:
+   * nothing writes a capture when the carrier pays out (owner queue Q85). Shown so a reader never
+   * mistakes "net receipts" for all the sales; whichever way the owner decides Q85, this line stays.
+   */
+  codNotIncluded: { orders: number; total: Money };
 }
 
 export interface RevenueReportDto extends AsOfDto {
