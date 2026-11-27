@@ -110,3 +110,27 @@ no raw reader (`exports.unit.test.ts`).
 Every report is one `ReportResultDto` (`columns`, `rows`, a totals row over the whole period, facts, notes, an
 optional chart). The screen and the CSV are two renderings of it. No funnel and nothing called conversion: views
 and purchases are unlinked aggregates (plan, phase 10).
+
+## Dashboard and alerts
+
+`/admin` (for `reports.view`; a content editor sees the plain welcome) shows the key figures of the last 30 shop
+days against the previous 30 days and the same dates a year earlier (only when the journal holds money that old):
+gross, refunds, net, payments received, and, only for a role with `catalog.cost.view`, the margin. Each is the SAME
+function as its report, so the dashboard and the report cannot disagree. The absolute change is always shown, the
+percentage only when the earlier value is not zero (a fall to zero is exactly -100 %). The data time is on the page.
+No materialised view exists, so nothing can be stale: each read is at most 60 s old (the shared computation).
+
+Alerts (counts and the age of the oldest row, no row data), each with a read-only link where a screen resolves it:
+
+| Alert | Counted when |
+|---|---|
+| outbox_stuck | an outbox row is unpublished for over 15 minutes (the relay is not delivering; no screen yet) |
+| refund_open | a refund is still pending, in flight or unknown for over 10 minutes |
+| payment_unknown | a payment attempt is in state `unknown` |
+| reservation_expiring | an unreleased reservation expires within 15 minutes |
+| low_stock | an active variant has 3 or fewer units available |
+| fiscal_failed | an order's fiscal receipt is `failed` |
+| waybill_unknown | a waybill operation is `unknown`, or pending or in flight for over 10 minutes |
+
+The dead-letter queue lives in the pg-boss schema, which the app role does not read; the stuck-outbox count is the
+visible symptom of it.
