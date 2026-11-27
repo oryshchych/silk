@@ -381,7 +381,16 @@ export async function runAdminSmoke({
         0,
         5,
       );
-      process.stdout.write(`     ${JSON.stringify(tagParts)} ${JSON.stringify(links)}\n`);
+      const enBoth = await get('/en/blog/tag/smoke-tag');
+      const enLinks = (enBoth.html.match(/<link rel="(?:alternate|canonical)"[^>]*>/g) ?? []).slice(
+        0,
+        5,
+      );
+      const ukTags = [...bothTag.html.matchAll(/href="\/blog\/tag\/([^"]+)"/g)].map((m) => m[1]);
+      const enTags = [...enBoth.html.matchAll(/href="\/en\/blog\/tag\/([^"]+)"/g)].map((m) => m[1]);
+      process.stdout.write(
+        `     ${JSON.stringify(tagParts)} ${JSON.stringify(links)} en:${String(enBoth.status)} ${JSON.stringify(enLinks)} ukTags=${JSON.stringify(ukTags)} enTags=${JSON.stringify(enTags)}\n`,
+      );
     }
     // A page past the last one is a 404 and builds no cache entry; a post without an excerpt gets its own description.
     const pastTheEnd = await get('/blog?page=99');
