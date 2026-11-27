@@ -45,7 +45,7 @@ export default async function PromoCodePage({ params }: { params: Promise<{ id: 
           <dt>{t('discountTotal')}</dt>
           <dd>{money(stats.discountTotal)}</dd>
           <dt>{t('captured')}</dt>
-          <dd>{money(stats.capturedTotal)}</dd>
+          <dd>{money(stats.netTotal)}</dd>
           <dt>{t('averageWith')}</dt>
           <dd>{money(stats.averageOrderWithCode)}</dd>
           <dt>{t('averageWithout')}</dt>
@@ -81,7 +81,7 @@ export default async function PromoCodePage({ params }: { params: Promise<{ id: 
                   </th>
                   <td className="pr-4">{formatWhen(order.createdAt, locale)}</td>
                   <td className="pr-4">−{money(order.discountAmount)}</td>
-                  <td>{money(order.capturedTotal)}</td>
+                  <td>{money(order.netTotal)}</td>
                 </tr>
               ))}
             </tbody>

@@ -16,6 +16,7 @@ import {
   PromoLimitBelowUsedError,
   PromoLockedError,
   PromoNotFoundError,
+  PromoTimeError,
   PromoScopeTargetError,
 } from './errors.ts';
 import type { PromoBulkInput, PromoCreateInput, PromoFields, PromoUpdateInput } from './schemas.ts';
@@ -23,6 +24,21 @@ import type { PromoBulkInput, PromoCreateInput, PromoFields, PromoUpdateInput } 
 /** Wall-clock Kyiv text to an instant, decided by Postgres. */
 const instant = (value: string | null) =>
   value === null ? sql`NULL` : sql`((${value})::timestamp AT TIME ZONE 'Europe/Kyiv')`;
+
+/**
+ * A wall-clock time must survive the round trip instant -> Kyiv wall clock: the hour skipped at the spring
+ * change (e.g. 2026-03-29T03:30) comes back an hour later and is refused. The ambiguous autumn hour has two
+ * valid instants; Postgres takes the first (summer time), which is documented in docs/PROMO_CODES.md.
+ */
+async function assertRealWallClocks(tx: Tx, values: readonly (string | null)[]): Promise<void> {
+  for (const value of values) {
+    if (value === null) continue;
+    const result = await tx.execute<{ real: boolean }>(
+      sql`SELECT ((${value})::timestamp AT TIME ZONE 'Europe/Kyiv') AT TIME ZONE 'Europe/Kyiv' = (${value})::timestamp AS real`,
+    );
+    if (result.rows[0]?.real !== true) throw new PromoTimeError();
+  }
+}
 
 async function assertScopeTarget(tx: Tx, fields: PromoFields): Promise<void> {
   if (fields.scopeCategoryId !== null) {
@@ -53,6 +69,7 @@ export async function createPromo(
   input: PromoCreateInput,
 ): Promise<{ id: string; code: string }> {
   await assertScopeTarget(tx, input);
+  await assertRealWallClocks(tx, [input.startsAt, input.endsAt]);
   const inserted = await tx
     .insert(promoCodes)
     .values({
@@ -140,6 +157,7 @@ export async function updatePromo(tx: Tx, input: PromoUpdateInput): Promise<Prom
   }
   if (input.maxUses !== null && input.maxUses < row.usesCount) throw new PromoLimitBelowUsedError();
   await assertScopeTarget(tx, input);
+  await assertRealWallClocks(tx, [input.startsAt, input.endsAt]);
 
   const diff: Record<string, [unknown, unknown]> = {};
   for (const name of SCALARS) {
@@ -181,6 +199,7 @@ export async function updatePromo(tx: Tx, input: PromoUpdateInput): Promise<Prom
       .where(eq(promoCodes.id, row.id));
   } catch (error) {
     if (pgCode(error) === '23514') throw new PromoDatesError();
+    if (pgCode(error) === '23503') throw new PromoScopeTargetError();
     throw error;
   }
   return { changed: true, diff };

@@ -170,7 +170,7 @@ export function PromoTable({
                   {row.consumedCount}
                   {row.maxUses === null ? '' : ` / ${String(row.maxUses)}`}
                 </td>
-                <td className="p-2">{formatMoney(row.capturedTotal, locale)}</td>
+                <td className="p-2">{formatMoney(row.netTotal, locale)}</td>
                 <td className="p-2">
                   {row.startsAt === null ? '—' : formatWhen(row.startsAt, locale)}
                   {' → '}

@@ -24,6 +24,14 @@ const HEADERS = {
 const refuse = (status: number, code: string, extra: Record<string, string> = {}): Response =>
   Response.json({ ok: false, code }, { status, headers: { ...HEADERS, ...extra } });
 
+/**
+ * Next answers HEAD by running GET, which would build the file, write an audit row and spend the
+ * rate-limit budget for a request that wants no body: HEAD is refused.
+ */
+export function HEAD(): Response {
+  return new Response(null, { status: 405, headers: { ...HEADERS, Allow: 'GET' } });
+}
+
 export async function GET(request: Request): Promise<Response> {
   const resolved = await currentSession();
   if (resolved?.kind !== 'full') return refuse(401, 'UNAUTHENTICATED');

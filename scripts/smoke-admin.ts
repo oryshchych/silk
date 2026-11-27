@@ -5,6 +5,8 @@
  * the cookie the server receives is a real one; forged, revoked and deactivated sessions are
  * tried against the real server too.
  */
+import en from '../apps/web/messages/en.json' with { type: 'json' };
+import uk from '../apps/web/messages/uk.json' with { type: 'json' };
 import { actionIds } from './smoke-http.ts';
 import { createDb } from '../packages/db/src/client.ts';
 import { redirects } from '../packages/db/src/schema.ts';
@@ -142,10 +144,17 @@ export async function runAdminSmoke({
     // A manager signs in with the password alone; an owner needs TOTP.
     const manager = `manager-${suffix}@example.test`;
     const owner = `owner-${suffix}@example.test`;
+    const contentEmail = `content-${suffix}@example.test`;
     await db.transaction(async (tx) => {
       await createAdminUser(tx, { email: manager, password: PASSWORD, role: 'manager' });
       await createAdminUser(tx, { email: owner, password: PASSWORD, role: 'owner' });
+      await createAdminUser(tx, { email: contentEmail, password: PASSWORD, role: 'content' });
     });
+    const contentLogin = await db.transaction(
+      async (tx) =>
+        await beginLogin(tx, config, { email: contentEmail, password: PASSWORD, client }),
+    );
+    if (!contentLogin.ok) throw new Error('smoke content account could not sign in');
     const managerLogin = await db.transaction(
       async (tx) => await beginLogin(tx, config, { email: manager, password: PASSWORD, client }),
     );
@@ -202,6 +211,30 @@ export async function runAdminSmoke({
     check(
       'admin: a junk theme cookie falls back to system and is never echoed',
       junk.html.includes('data-theme="system"') && !junk.html.includes('<script>x</script>'),
+    );
+
+    // 2b. Client message namespaces are per visitor (phase 11 review S1): the payload carries only what the
+    // role may open. Promo text goes to nobody without `promo.view`, the import hint (it names the cost
+    // column) to nobody without `catalog.import`, and an anonymous visitor gets the login flow only.
+    const IMPORT_MARKER = 'cost_price, weight_grams';
+    const promoMarkers = [
+      'PROMO_LOCKED',
+      'excludesGiftCards',
+      uk.admin.promo.bulkDeactivate,
+      en.admin.promo.capHint,
+    ];
+    const contentHome = await get('/admin', cookie(contentLogin.token));
+    const managerPage = await get('/admin', cookie(managerLogin.token));
+    const ownerPage = await get('/admin', cookie(ownerFull.token));
+    check(
+      'admin messages: anonymous and content get no promo text; manager no import hint; owner has both',
+      contentHome.status === 200 &&
+        promoMarkers.every(
+          (marker) => !login.html.includes(marker) && !contentHome.html.includes(marker),
+        ) &&
+        !managerPage.html.includes(IMPORT_MARKER) &&
+        managerPage.html.includes('PROMO_LOCKED') &&
+        ownerPage.html.includes(IMPORT_MARKER),
     );
 
     // 3. Sessions are read from the database.

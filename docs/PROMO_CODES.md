@@ -266,3 +266,17 @@ server action, не лише в UI.
 | Промокод на сертифікат | Відхилено |
 | Повернення коштів | `uses_count` **не** зменшився |
 | Однакове повідомлення для «немає» і «вичерпано» | Оракул перебору закритий |
+
+---
+
+## 10. Implementation notes (phase 11)
+
+- **Admin times** are Kyiv wall-clock text turned into instants by Postgres. A time the clocks skip (spring change) is
+  refused; the ambiguous autumn hour has two instants and Postgres takes the first (summer time).
+- **Money columns** in the list and the statistics are `captured_total - refunded_total` of the orders behind
+  `consumed` redemptions ("money kept"); the discount column counts every consumed redemption, unpaid orders included.
+- **Edit freeze**: any redemption row, consumed or released, freezes type, value and scope (`updatePromo`, under the
+  promo row lock).
+- **Rate limits (section 6)**: built: 10 per 10 minutes per client address, and 30 per hour per cart session (quote
+  and place order). Not built: Turnstile after 5 failures, the progressive delay, the Telegram alert on more than 100
+  failures from one subnet, `RateLimit-*` headers; the limiters are per instance (the shared limiter is phase 12).

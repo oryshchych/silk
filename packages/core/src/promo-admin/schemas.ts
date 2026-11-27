@@ -38,14 +38,20 @@ const wallClock = z
     return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value.slice(0, 10);
   }, 'not a real day');
 
-export const PROMO_CODE_PATTERN = /^[A-Z0-9][A-Z0-9_-]{2,31}$/;
+/** Tested on the TRIMMED RAW value, then folded to upper case ASCII: `ßale` or `ﬁve5` are refused, never rewritten. */
+export const PROMO_CODE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{2,31}$/;
 export const promoCodeField = z
   .string()
   .trim()
-  .transform((value) => value.toUpperCase())
-  .refine((value) => PROMO_CODE_PATTERN.test(value), 'letters, digits, "-" and "_", 3 to 32');
+  .refine((value) => PROMO_CODE_PATTERN.test(value), 'letters, digits, "-" and "_", 3 to 32')
+  .transform((value) => value.replace(/[a-z]/g, (char) => char.toUpperCase()));
 
-const positiveInt = z.coerce.number().int().min(1).max(1_000_000);
+/** Digits only: `0x10`, `1e3` and `true` are not counts. */
+const positiveInt = z
+  .string()
+  .regex(/^\d{1,7}$/)
+  .transform(Number)
+  .pipe(z.number().int().min(1).max(1_000_000));
 
 /** The fields a form can set, shared by create and update. */
 const editable = z.object({

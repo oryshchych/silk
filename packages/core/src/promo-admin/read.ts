@@ -43,7 +43,7 @@ export interface PromoFilters {
 }
 
 const escapeLike = (value: string): string => value.replace(/[\\%_]/g, (char) => `\\${char}`);
-const isRealDay = (value: string): boolean => {
+export const isRealDay = (value: string): boolean => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const date = new Date(`${value}T00:00:00Z`);
   return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value;
@@ -61,7 +61,7 @@ const STATUS_SQL = sql`CASE
 const SORT_SQL: Record<(typeof PROMO_SORT_KEYS)[number], string> = {
   code: 'upper(p.code)',
   uses: 'consumed',
-  revenue: 'captured',
+  revenue: 'net',
   created: 'p.created_at',
   ends: 'p.ends_at',
 };
@@ -70,7 +70,7 @@ const STATS_JOIN = sql`LEFT JOIN (
   SELECT r.promo_code_id,
          count(*)::int AS consumed,
          coalesce(sum(r.discount_amount), 0)::text AS discount,
-         coalesce(sum(o.captured_total), 0)::text AS captured
+         coalesce(sum(o.captured_total - o.refunded_total), 0)::text AS net
     FROM promo_code_redemptions r JOIN orders o ON o.id = r.order_id
    WHERE r.state = 'consumed'
    GROUP BY r.promo_code_id) s ON s.promo_code_id = p.id`;
@@ -138,7 +138,7 @@ function toDto(row: ListRow, withAuthor: boolean): AdminPromoRowDto | AdminPromo
     createdAt: iso(row['created_at']),
     consumedCount: row['consumed'],
     discountTotal: Number(row['discount']),
-    capturedTotal: Number(row['captured']),
+    netTotal: Number(row['net']),
     hasRedemptions: row['has_redemptions'],
   };
   return withAuthor
@@ -182,7 +182,7 @@ export async function listPromoCodes(
         sql`SELECT p.*, ${STATUS_SQL} AS status,
                    coalesce(s.consumed, 0) AS consumed,
                    coalesce(s.discount, '0') AS discount,
-                   coalesce(s.captured, '0') AS captured,
+                   coalesce(s.net, '0') AS net,
                    EXISTS (SELECT 1 FROM promo_code_redemptions h WHERE h.promo_code_id = p.id) AS has_redemptions,
                    u.email AS created_by
               FROM promo_codes p ${STATS_JOIN}
@@ -216,7 +216,7 @@ export async function getPromoCode(
         sql`SELECT p.*, ${STATUS_SQL} AS status,
                    coalesce(s.consumed, 0) AS consumed,
                    coalesce(s.discount, '0') AS discount,
-                   coalesce(s.captured, '0') AS captured,
+                   coalesce(s.net, '0') AS net,
                    EXISTS (SELECT 1 FROM promo_code_redemptions h WHERE h.promo_code_id = p.id) AS has_redemptions,
                    u.email AS created_by
               FROM promo_codes p ${STATS_JOIN}
@@ -245,8 +245,8 @@ export async function readPromoStats(db: ReportDb, id: string): Promise<AdminPro
         sql`SELECT count(*) FILTER (WHERE r.state = 'consumed')::int AS consumed,
                    count(*) FILTER (WHERE r.state = 'released')::int AS released,
                    coalesce(sum(r.discount_amount) FILTER (WHERE r.state = 'consumed'), 0)::text AS discount,
-                   coalesce(sum(o.captured_total) FILTER (WHERE r.state = 'consumed'), 0)::text AS captured,
-                   round(avg(o.captured_total) FILTER (WHERE r.state = 'consumed' AND o.captured_total > 0))::text AS avg_with,
+                   coalesce(sum(o.captured_total - o.refunded_total) FILTER (WHERE r.state = 'consumed'), 0)::text AS net,
+                   round(avg(o.captured_total - o.refunded_total) FILTER (WHERE r.state = 'consumed' AND o.captured_total > 0))::text AS avg_with,
                    count(DISTINCT lower(o.customer_email)) FILTER (
                      WHERE r.state = 'consumed' AND NOT EXISTS (
                        SELECT 1 FROM orders earlier
@@ -256,7 +256,7 @@ export async function readPromoStats(db: ReportDb, id: string): Promise<AdminPro
              WHERE r.promo_code_id = ${id}::uuid`,
       );
       const without = await tx.execute<{ avg_without: string | null }>(
-        sql`SELECT round(avg(o.captured_total))::text AS avg_without
+        sql`SELECT round(avg(o.captured_total - o.refunded_total))::text AS avg_without
               FROM orders o
              WHERE o.captured_total > 0 AND NOT EXISTS (
                SELECT 1 FROM promo_code_redemptions r
@@ -269,7 +269,7 @@ export async function readPromoStats(db: ReportDb, id: string): Promise<AdminPro
              GROUP BY 1 ORDER BY 1`,
       );
       const orders = await tx.execute(
-        sql`SELECT o.id, o.order_number, o.created_at, r.discount_amount, o.captured_total
+        sql`SELECT o.id, o.order_number, o.created_at, r.discount_amount, o.captured_total - o.refunded_total AS net
               FROM promo_code_redemptions r JOIN orders o ON o.id = r.order_id
              WHERE r.promo_code_id = ${id}::uuid AND r.state = 'consumed'
              ORDER BY o.created_at DESC, o.id LIMIT ${STATS_ORDER_LIMIT}`,
@@ -281,7 +281,7 @@ export async function readPromoStats(db: ReportDb, id: string): Promise<AdminPro
         consumedCount: t['consumed'] ?? 0,
         releasedCount: t['released'] ?? 0,
         discountTotal: Number(t['discount'] ?? 0),
-        capturedTotal: Number(t['captured'] ?? 0),
+        netTotal: Number(t['net'] ?? 0),
         averageOrderWithCode: optionalAmount(t['avg_with']),
         averageOrderWithout: optionalAmount(without.rows[0]?.avg_without),
         newCustomers: t['new_customers'] ?? 0,
@@ -291,7 +291,7 @@ export async function readPromoStats(db: ReportDb, id: string): Promise<AdminPro
           orderNumber: row['order_number'],
           createdAt: iso(row['created_at']),
           discountAmount: row['discount_amount'],
-          capturedTotal: row['captured_total'],
+          netTotal: row['net'],
         })),
       });
     },

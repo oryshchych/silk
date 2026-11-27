@@ -44,7 +44,7 @@ const row: AdminPromoRowDto = {
   createdAt: '2026-11-01T10:00:00.000Z',
   consumedCount: 3,
   discountTotal: money(1_000),
-  capturedTotal: money(50_000),
+  netTotal: money(50_000),
   hasRedemptions: true,
 };
 

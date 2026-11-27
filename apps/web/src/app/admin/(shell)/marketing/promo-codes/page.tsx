@@ -1,5 +1,5 @@
 import { can } from '@store/core/auth-permissions';
-import { listPromoCodes } from '@store/core/promo-admin';
+import { isRealDay, listPromoCodes } from '@store/core/promo-admin';
 import { getTranslations } from 'next-intl/server';
 import { cookies } from 'next/headers';
 
@@ -31,6 +31,12 @@ export default async function PromoCodesPage({
   const locale = parseAdminLocale((await cookies()).get(LOCALE_COOKIE)?.value);
   const t = await getTranslations({ locale, namespace: 'admin.promo' });
   const page = await listPromoCodes(await getDb(), filters, canManage);
+
+  const badDate = (value: string | string[] | undefined): boolean => {
+    const text = Array.isArray(value) ? value[0] : value;
+    return text !== undefined && text !== '' && !isRealDay(text);
+  };
+  const invalidDate = badDate(raw['createdFrom']) || badDate(raw['createdTo']);
 
   const query = (patch: Record<string, string | undefined>): string => {
     const params = new URLSearchParams();
@@ -156,6 +162,7 @@ export default async function PromoCodesPage({
           {t('apply')}
         </button>
       </form>
+      {invalidDate ? <p role="alert">{t('invalidDate')}</p> : null}
       <p className="mt-3 flex gap-4">
         {canManage ? (
           <>

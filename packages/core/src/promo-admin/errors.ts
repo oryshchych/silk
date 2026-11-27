@@ -38,3 +38,10 @@ export class PromoScopeTargetError extends DomainError {
     super('PROMO_SCOPE_TARGET', 'The category or product of the scope does not exist');
   }
 }
+
+/** A Kyiv wall-clock time that does not exist (the hour skipped when the clocks go forward). */
+export class PromoTimeError extends DomainError {
+  constructor() {
+    super('PROMO_TIME', 'That time does not exist in Kyiv (the clocks skip it)');
+  }
+}

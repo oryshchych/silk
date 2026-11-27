@@ -17,6 +17,11 @@ export const limiters = {
   quote: createRateLimiter({ limit: 60, windowMs: 60_000 }),
   /** Quotes that carry a promo code: a person tries a few, a script guesses codes. */
   quotePromo: createRateLimiter({ limit: 10, windowMs: 10 * 60_000 }),
+  /**
+   * Promo codes tried per CART SESSION (docs/PROMO_CODES.md section 6, 30 an hour): addresses rotate, the cart
+   * token does not. Keyed by the token, never logged.
+   */
+  promoCart: createRateLimiter({ limit: 30, windowMs: 60 * 60_000 }),
   /** Placing orders: a person needs a handful, a script needs hundreds. */
   place: createRateLimiter({ limit: 10, windowMs: 10 * 60_000 }),
   /** COD per (phone, client): the series of fake cash-on-delivery orders (ADR-3). */

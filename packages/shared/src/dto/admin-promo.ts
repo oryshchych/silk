@@ -42,10 +42,10 @@ export const adminPromoRowDto = z.object({
   createdAt: instant,
   /** Redemptions in state `consumed`: the real number of uses. */
   consumedCount: z.number().int(),
-  /** Sum of `discount_amount` over the consumed redemptions. */
+  /** Sum of `discount_amount` over the consumed redemptions, unpaid orders included. */
   discountTotal: moneyDto,
-  /** Sum of `captured_total` of the orders behind the consumed redemptions (money really received). */
-  capturedTotal: moneyDto,
+  /** Sum of `captured_total - refunded_total` of the orders behind the consumed redemptions: money really kept. */
+  netTotal: moneyDto,
   /** Any redemption row, consumed or released: the type, value and scope are then frozen. */
   hasRedemptions: z.boolean(),
 });
@@ -61,7 +61,7 @@ export const adminPromoStatsDto = z.object({
   consumedCount: z.number().int(),
   releasedCount: z.number().int(),
   discountTotal: moneyDto,
-  capturedTotal: moneyDto,
+  netTotal: moneyDto,
   /** Average captured amount of an order with the code, null when there is none. */
   averageOrderWithCode: moneyDto.nullable(),
   /** Average captured amount of the other paid orders, null when there is none. */
@@ -74,7 +74,7 @@ export const adminPromoStatsDto = z.object({
       orderNumber: z.string(),
       createdAt: instant,
       discountAmount: moneyDto,
-      capturedTotal: moneyDto,
+      netTotal: moneyDto,
     }),
   ),
 });

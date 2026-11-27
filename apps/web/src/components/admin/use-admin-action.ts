@@ -51,12 +51,17 @@ const KNOWN_CODES = [
   'LEGAL_EMPTY',
   'LEGAL_START_TAKEN',
   'LEGAL_START_TOO_EARLY',
+] as const;
+
+/** Promo failures are worded in the promo namespace: it reaches only roles that may open the promo tab. */
+const PROMO_CODES = [
   'PROMO_NOT_FOUND',
   'PROMO_CODE_TAKEN',
   'PROMO_LOCKED',
   'PROMO_LIMIT_BELOW_USED',
   'PROMO_DATES',
   'PROMO_SCOPE_TARGET',
+  'PROMO_TIME',
 ] as const;
 
 export type ActionOutcome = { ok: true; data?: unknown } | { ok: false; code: string };
@@ -71,6 +76,7 @@ export interface FormMessage {
  */
 export function useAdminAction() {
   const t = useTranslations('admin.errors');
+  const promo = useTranslations('admin.promo.errors');
   const [message, setMessage] = useState<FormMessage | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -85,8 +91,9 @@ export function useAdminAction() {
         setMessage({ kind: 'ok', text: typeof okText === 'string' ? okText : okText(result.data) });
         onOk?.();
       } else {
+        const promoCode = PROMO_CODES.find((code) => code === result.code);
         const known = KNOWN_CODES.find((code) => code === result.code) ?? 'GENERIC';
-        setMessage({ kind: 'error', text: t(known) });
+        setMessage({ kind: 'error', text: promoCode === undefined ? t(known) : promo(promoCode) });
       }
     });
   }

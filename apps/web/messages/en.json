@@ -460,13 +460,7 @@
       "LEGAL_NOT_DRAFT": "A published version cannot be changed. Create a new version.",
       "LEGAL_EMPTY": "Add a text or a PDF before publishing.",
       "LEGAL_START_TAKEN": "Another published version starts at the same time. Choose a different start.",
-      "LEGAL_START_TOO_EARLY": "A published version of this document already starts later. Pick a start after it, or leave the start as it is.",
-      "PROMO_NOT_FOUND": "This promo code no longer exists.",
-      "PROMO_CODE_TAKEN": "A promo code with this name already exists.",
-      "PROMO_LOCKED": "This code has been redeemed: its type, value and scope cannot change.",
-      "PROMO_LIMIT_BELOW_USED": "The limit cannot be lower than the number of uses already counted.",
-      "PROMO_DATES": "The end must be later than the start.",
-      "PROMO_SCOPE_TARGET": "The chosen category or product does not exist."
+      "LEGAL_START_TOO_EARLY": "A published version of this document already starts later. Pick a start after it, or leave the start as it is."
     },
     "editor": {
       "newTitle": "New product",
@@ -1476,7 +1470,7 @@
       "code": "Code",
       "discount": "Discount",
       "uses": "Uses",
-      "captured": "Money received",
+      "captured": "Money kept (received minus refunds)",
       "period": "Valid",
       "created": "Created",
       "select": "Select",
@@ -1516,12 +1510,22 @@
       "editTitle": "Edit",
       "stats": "Statistics",
       "released": "Released (order cancelled)",
-      "discountTotal": "Discount given",
-      "averageWith": "Average order with the code",
-      "averageWithout": "Average order without it",
+      "discountTotal": "Discount given (including unpaid orders)",
+      "averageWith": "Average net order with the code",
+      "averageWithout": "Average net order without it",
       "newCustomers": "New customers",
       "usesByDay": "Uses by day",
-      "orders": "Orders with this code"
+      "orders": "Orders with this code",
+      "errors": {
+        "PROMO_NOT_FOUND": "This promo code no longer exists.",
+        "PROMO_CODE_TAKEN": "A promo code with this name already exists.",
+        "PROMO_LOCKED": "This code has been redeemed: its type, value and scope cannot change.",
+        "PROMO_LIMIT_BELOW_USED": "The limit cannot be lower than the number of uses already counted.",
+        "PROMO_DATES": "The end must be later than the start.",
+        "PROMO_SCOPE_TARGET": "The chosen category or product does not exist.",
+        "PROMO_TIME": "That time does not exist in Kyiv: the clocks skip it. Pick another time."
+      },
+      "invalidDate": "A date in the filter is not a real day and was ignored."
     },
     "marketing": {
       "tabs": "Marketing sections",

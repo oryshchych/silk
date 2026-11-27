@@ -3,6 +3,11 @@
  * COUNTED from `promo_code_redemptions` in state `consumed`; a redeemed code keeps its type, value and
  * scope; cancelling one order by two paths at the same moment frees the use ONCE (separate
  * connections, a barrier); the list filters, sorts and pages in SQL; a manager's shape has no author.
+ *
+ * Mutations that survive on purpose (equivalent or layered, not gaps): dropping the lock in `bulkUpdatePromos`
+ * (the UPDATE takes the row locks itself), the `freed.rows.length` guard in `cancelOrder` (the order lock already
+ * serialises both cancel paths and `uses_count > 0` backs it), and one of the two freeze guards (`hasRedemptions`
+ * and `usesCount > 0` overlap). Dropping `acquireLocks` in `updatePromo` DOES fail the edit-versus-checkout gate test.
  */
 import { sql } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -14,6 +19,7 @@ import { createOrder } from '../src/orders/create-order.ts';
 import { cancelOrder } from '../src/orders/fulfilment.ts';
 import { quoteCheckout } from '../src/orders/quote.ts';
 import {
+  PromoTimeError,
   bulkUpdatePromos,
   createPromo,
   exportPromoCodesCsv,
@@ -328,5 +334,151 @@ describe('the oracle stays closed (PROMO_CODES.md section 2)', () => {
     const reference = await answer('DOES-NOT-EXIST');
     expect(reference).toContain('"promo":{"code":"X","accepted":false}');
     for (const code of ['GONE', 'OFF', 'OLD', 'BIG']) expect(await answer(code)).toBe(reference);
+  });
+});
+
+/** A promise that settles when `open()` is called: holds a transaction open at a chosen point. */
+function gate() {
+  let open!: () => void;
+  const opened = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  return { open, opened };
+}
+const settledWithin = async (promise: Promise<unknown>, ms: number): Promise<boolean> =>
+  await Promise.race([
+    promise.then(
+      () => true,
+      () => true,
+    ),
+    new Promise<boolean>((resolve) =>
+      setTimeout(() => {
+        resolve(false);
+      }, ms),
+    ),
+  ]);
+
+describe('an edit and a checkout cannot interleave (two pools, deterministic)', () => {
+  async function prepareCheckout(name: string) {
+    const token = `tok-gate-${name}`.padEnd(20, 'x');
+    await admin.db.execute(sql`UPDATE product_variants SET stock_quantity = 50`);
+    await admin.db.transaction(async (tx) => {
+      await setCartItem(tx, { cartToken: token, variantId: variants[0] ?? '', quantity: 1 });
+    });
+    const view = await admin.db.transaction(
+      async (tx) => await startCheckout(tx, { cartToken: token }),
+    );
+    return {
+      intentId: view.intentId,
+      ownerToken: token,
+      contact: { email: 'g@example.com', phone: '+380501119999', name: 'Buyer' },
+      delivery: { method: 'pickup' as const },
+      paymentProvider: 'mono' as const,
+      promoCode: 'GATE',
+      locale: 'uk' as const,
+      allowUnquoted: true,
+      termsAccepted: true,
+    };
+  }
+
+  it('a checkout holding the promo row makes the edit wait, and the edit then sees the redemption', async () => {
+    const { id } = await create({ code: 'GATE', value: '1' });
+    const details = await prepareCheckout('a');
+    const checkoutPool = world.connect();
+    const editPool = world.connect();
+    const held = gate();
+    const reached = gate();
+    const checkout = checkoutPool.db.transaction(async (tx) => {
+      await createOrder(tx, details);
+      reached.open();
+      await held.opened;
+    });
+    await reached.opened;
+    const edit = editPool.db.transaction(
+      async (tx) => await updatePromo(tx, promoUpdateSchema.parse({ ...form({ value: '2' }), id })),
+    );
+    const early = await settledWithin(edit, 500);
+    held.open();
+    await checkout;
+    expect(early).toBe(false);
+    await expect(edit).rejects.toBeInstanceOf(PromoLockedError);
+  });
+
+  it('an edit holding the promo row makes the checkout wait, and the redemption uses the new value', async () => {
+    const { id } = await create({ code: 'GATE', value: '1' });
+    const details = await prepareCheckout('b');
+    const editPool = world.connect();
+    const checkoutPool = world.connect();
+    const held = gate();
+    const reached = gate();
+    const edit = editPool.db.transaction(async (tx) => {
+      await updatePromo(tx, promoUpdateSchema.parse({ ...form({ value: '2' }), id }));
+      reached.open();
+      await held.opened;
+    });
+    await reached.opened;
+    const checkout = checkoutPool.db.transaction(async (tx) => await createOrder(tx, details));
+    const early = await settledWithin(checkout, 500);
+    held.open();
+    await edit;
+    await checkout;
+    expect(early).toBe(false);
+    const redemption = await admin.db.execute<{ discount_amount: number }>(
+      sql`SELECT discount_amount FROM promo_code_redemptions WHERE promo_code_id = ${id}`,
+    );
+    expect(redemption.rows[0]?.discount_amount).toBe(200);
+  });
+});
+
+describe('money columns are net of refunds', () => {
+  it('a fully refunded order contributes nothing to the money kept, but still counts as a use', async () => {
+    const { id } = await create({ code: 'NET', value: '1' });
+    const kept = await place('NET');
+    const refunded = await place('NET');
+    await place('NET'); // unpaid: counted as a use and in the discount, not in the money kept
+    for (const orderId of [kept, refunded]) {
+      await admin.db.execute(
+        sql`UPDATE orders SET payment_status = 'paid', captured_total = total WHERE id = ${orderId}`,
+      );
+    }
+    await admin.db.execute(
+      sql`UPDATE orders SET refunded_total = captured_total, payment_status = 'refunded' WHERE id = ${refunded}`,
+    );
+    const truth = await admin.db.execute<{ net: string }>(
+      sql`SELECT sum(captured_total - refunded_total)::text AS net FROM orders WHERE id IN (${kept}, ${refunded})`,
+    );
+    const total = await admin.db.execute<{ total: number }>(
+      sql`SELECT total FROM orders WHERE id = ${kept}`,
+    );
+    const row = (await listPromoCodes(admin.db, {}, false)).items.find((i) => i.id === id);
+    expect(row?.consumedCount).toBe(3);
+    expect(row?.netTotal).toBe(Number(truth.rows[0]?.net));
+    expect(row?.netTotal).toBe(total.rows[0]?.total);
+    const stats = await readPromoStats(admin.db, id);
+    expect(stats?.netTotal).toBe(row?.netTotal);
+    expect(stats?.averageOrderWithCode).toBe(
+      total.rows[0]?.total ? Math.round(total.rows[0].total / 2) : null,
+    );
+    expect(stats?.discountTotal).toBe(300);
+  });
+});
+
+describe('input edges', () => {
+  it('refuses a code that would be rewritten by case folding, and non-digit limits', () => {
+    for (const code of ['ßale', 'ﬁve5', 'ıd-sale', 'ab', 'SALE 10']) {
+      expect(promoCreateSchema.safeParse(form({ code })).success, code).toBe(false);
+    }
+    expect(promoCreateSchema.parse(form({ code: 'sale-10' })).code).toBe('SALE-10');
+    for (const maxUses of ['0x10', '1e3', 'true', '-1', '0', '1.5']) {
+      expect(promoCreateSchema.safeParse(form({ maxUses })).success, maxUses).toBe(false);
+    }
+    expect(promoCreateSchema.parse(form({ maxUses: '16' })).maxUses).toBe(16);
+  });
+
+  it('refuses a Kyiv time the clocks skip, accepts the neighbours', async () => {
+    await expect(create({ code: 'SKIP', startsAt: '2026-03-29T03:30' })).rejects.toBeInstanceOf(
+      PromoTimeError,
+    );
+    await create({ code: 'OKTIME', startsAt: '2026-03-29T04:30', endsAt: '2026-03-29T12:00' });
   });
 });
