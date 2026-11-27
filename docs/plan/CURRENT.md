@@ -15,8 +15,7 @@ session on the standing go-ahead (`docs/AUTONOMOUS_MODE.md`). English technical 
 | #113 | D: home banners, desktop and mobile pictures (migrations 0025 to 0027) | 2 (5 should-fix, then restore of reformatted files) |
 | #114 | E1: blog, tags, indexable posts, `Article` JSON-LD (migrations 0028, 0029) | 1 (8 should-fix) + 5 smoke-only fixes |
 
-Longest wait: about 1 h 25 min for #114 from opening to merge (review plus CI of about 6 min per push); not measured per step.
-
+Longest wait: about 1 h 25 min for #114, opening to merge (CI about 6 min per push).
 ## Acceptance criteria (all executed)
 - [x] Abandoned-cart mail once, not after an order: `apps/worker/test/cart-reminder-delivered.int` (real chain; later cron ticks send
   nothing; an order between claim and send sends nothing, `outbox.dead` empty) and `packages/core/test/marketing-carts.int`
@@ -30,7 +29,6 @@ Longest wait: about 1 h 25 min for #114 from opening to merge (review plus CI of
   looks the same", plus the 30 per hour per cart session limit in `apps/web/test/checkout-promo-limit.int`
 - [x] Blog post indexable with `Article` JSON-LD: `blog.int` (12+4 tests), `buildArticle` unit tests, and the blog checks of
   `scripts/smoke-admin.ts` in CI `smoke-web` (200, canonical, hreflang pair, index robots meta, `Article` markup, same bytes for every visitor)
-
 ## Not built, with the recommended default
 - **E2, CMS pages** (table `pages`): default NOT to build until a page that is not a legal page is needed (about, contacts and faq are
   legal pages already). If needed, copy the blog slice (admin tab, gate, ISR page, sitemap): about one slice.
@@ -48,16 +46,13 @@ Longest wait: about 1 h 25 min for #114 from opening to merge (review plus CI of
 - Snapshot `banners` and `blog_posts` before applying 0025 to 0029 (forward-only). Staging has no worker, so `carts.remind-abandoned` does not run
 
 ## Not built or not verified
-- No real browser pass (banner layout shift, LCP not measured); no Rich Results Test; no real Resend or R2 run; limiters are per process
-- No cover picture or in-post pictures for the blog; no feed; no campaign sending or subscribers screen; no promo product picker
-
-## Caveats
-- Flaky under load, pass alone: `webhook.int`, `auth.int` timing, `catalog-admin.int`, and "too many clients" in `locks.int`,
-  `reports-all.int`, `account-data.int` when the full suite shares a busy machine
+- No real browser pass (banner layout shift, LCP), no Rich Results Test, no real Resend or R2 run; limiters are per process
+- No blog pictures or feed, no campaign sending or subscribers screen, no promo product picker
+- Flaky under load, pass alone: `webhook.int`, `auth.int` timing, `catalog-admin.int`, "too many clients" in `locks.int` and `reports-all.int`
 
 ## Deviations from the plan
 - E split: only the blog was built; CMS pages, auto-linking and bought-together were stopped by the owner (machine load)
-- Seven migrations (0024 to 0029) where the plan had none: needed for consent integrity, banner rules and blog rules
+- Six migrations (0024 to 0029) where the plan had none: consent integrity, banner rules, blog rules
 - Process failures (author): `prettier --write` over `packages/db` reformatted 27 committed snapshots and `schema.ts` (caught in review,
   restored); my own first PASS comments on #110 and #111 missed what the specialists found (5 each); #112 had two consent blockers
   (a confirm link re-subscribed, a consumed link worked again); worker "dead letter empty" checks read `pgboss` through a role that
