@@ -51,6 +51,12 @@ const KNOWN_CODES = [
   'LEGAL_EMPTY',
   'LEGAL_START_TAKEN',
   'LEGAL_START_TOO_EARLY',
+  'PROMO_NOT_FOUND',
+  'PROMO_CODE_TAKEN',
+  'PROMO_LOCKED',
+  'PROMO_LIMIT_BELOW_USED',
+  'PROMO_DATES',
+  'PROMO_SCOPE_TARGET',
 ] as const;
 
 export type ActionOutcome = { ok: true; data?: unknown } | { ok: false; code: string };

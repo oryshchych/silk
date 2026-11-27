@@ -84,7 +84,8 @@
     "./returns-admin": "./src/returns/admin.ts",
     "./legal": "./src/legal/admin.ts",
     "./legal-read": "./src/legal/read.ts",
-    "./legal-company": "./src/legal/company.ts"
+    "./legal-company": "./src/legal/company.ts",
+    "./promo-admin": "./src/promo-admin/index.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"
