@@ -5,9 +5,11 @@ import { notFound } from 'next/navigation';
 
 import { buildAlternates } from '@store/shared/seo';
 
+import { HomeBanners } from '@/components/home-banners';
 import { ShowcaseSection } from '@/components/showcase-section';
 import { SiteShell } from '@/components/site-shell';
 import { resolveLocale } from '@/i18n/locale';
+import { loadBanners } from '@/lib/banners';
 import { loadShowcase } from '@/lib/catalog';
 import { loadCategoryTree } from '@/lib/navigation';
 import { pageMetadata } from '@/lib/metadata';
@@ -36,10 +38,11 @@ export default async function HomePage({ params }: PageProps<'/[locale]'>) {
   const { locale, known } = resolveLocale((await params).locale);
   if (!known) notFound();
   const t = await getTranslations('home');
-  const [tree, newest, bestsellers] = await Promise.all([
+  const [tree, newest, bestsellers, banners] = await Promise.all([
     loadCategoryTree(locale, { degrade: true }),
     loadShowcase('new', locale),
     loadShowcase('bestseller', locale),
+    loadBanners(locale),
   ]);
   const first = tree[0];
   const usp = [
@@ -50,6 +53,7 @@ export default async function HomePage({ params }: PageProps<'/[locale]'>) {
 
   return (
     <SiteShell locale={locale} path={paths.home} degrade>
+      <HomeBanners banners={banners} locale={locale} label={t('bannersLabel')} />
       <section className="flex flex-col items-start gap-4 py-8">
         <h1 className="font-display text-4xl tracking-wide">{t('heroTitle')}</h1>
         <p className="max-w-xl text-text-muted">{t('tagline')}</p>

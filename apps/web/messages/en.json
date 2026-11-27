@@ -17,7 +17,8 @@
     "usp3Text": "We help you find band and cup for a perfect fit.",
     "tagline": "Lingerie and homewear. Original products only.",
     "newTitle": "New arrivals",
-    "bestsellersTitle": "Bestsellers"
+    "bestsellersTitle": "Bestsellers",
+    "bannersLabel": "Promotions"
   },
   "errors": {
     "notFoundTitle": "Page not found",
@@ -1530,7 +1531,64 @@
     },
     "marketing": {
       "tabs": "Marketing sections",
-      "promoCodes": "Promo codes"
+      "promoCodes": "Promo codes",
+      "banners": "Banners"
+    },
+    "banners": {
+      "title": "Banners",
+      "intro": "Banners on the home page. A banner is shown only when it is switched on, has both pictures and alt text in both languages, and today is inside its period (Kyiv time).",
+      "create": "New banner",
+      "createTitle": "New banner",
+      "editTitle": "Edit banner",
+      "empty": "No banners yet.",
+      "shownNow": "Shown now",
+      "notShown": "Not shown",
+      "draft": "Draft: pictures missing",
+      "fields": {
+        "titleUk": "Title (Ukrainian)",
+        "titleEn": "Title (English)",
+        "subtitleUk": "Subtitle (Ukrainian)",
+        "subtitleEn": "Subtitle (English)",
+        "ctaLabelUk": "Button text (Ukrainian)",
+        "ctaLabelEn": "Button text (English)",
+        "altUk": "Picture description for screen readers (Ukrainian)",
+        "altEn": "Picture description for screen readers (English)",
+        "href": "Link (a path on this shop, for example /category/bras)",
+        "startsAt": "Shown from (Kyiv time)",
+        "endsAt": "Shown until (Kyiv time)",
+        "sortOrder": "Order (smaller first)",
+        "isActive": "Switched on"
+      },
+      "hrefHint": "Only a path on this shop is accepted, never an address elsewhere.",
+      "timezoneNote": "Times are Kyiv time.",
+      "save": "Save",
+      "saved": "Saved.",
+      "delete": "Delete the banner",
+      "deleted": "Deleted.",
+      "confirmDelete": "Delete this banner for good?",
+      "pictures": "Pictures",
+      "desktop": "Desktop picture (wide)",
+      "mobile": "Mobile picture (tall)",
+      "upload": "Upload a picture",
+      "uploading": "Uploading…",
+      "uploaded": "Picture saved.",
+      "noPicture": "No picture yet.",
+      "uploadErrors": {
+        "TOO_LARGE": "The file is too large.",
+        "IMAGE_UNSUPPORTED_TYPE": "Use a JPEG, PNG or WebP picture.",
+        "IMAGE_TOO_LARGE": "The picture has too many pixels.",
+        "IMAGE_CORRUPT": "The picture could not be read.",
+        "BUSY": "Another upload is running. Try again in a moment.",
+        "RATE_LIMITED": "Too many uploads. Try again later.",
+        "MEDIA_NOT_CONFIGURED": "Picture storage is not set up.",
+        "GENERIC": "The upload failed."
+      },
+      "errors": {
+        "BANNER_NOT_FOUND": "This banner no longer exists.",
+        "BANNER_INCOMPLETE": "A banner needs both pictures and alt text in both languages before it can be switched on.",
+        "BANNER_DATES": "The end must be later than the start.",
+        "BANNER_TOO_MANY": "Too many banners: delete an old one first."
+      }
     }
   },
   "consent": {

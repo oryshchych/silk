@@ -63,7 +63,7 @@ export async function runAdminSmoke({
   storedFiles,
 }: Context): Promise<void> {
   const config = { secret: authSecret };
-  const { db, close } = createDb(databaseUrl, { max: 2 });
+  const { db, pool, close } = createDb(databaseUrl, { max: 2 });
   const suffix = String(Date.now());
   let counter = 0;
   const nextClient = (): string => `203.0.113.${String(++counter + 10)}`;
@@ -235,6 +235,73 @@ export async function runAdminSmoke({
         !managerPage.html.includes(IMPORT_MARKER) &&
         managerPage.html.includes('PROMO_LOCKED') &&
         ownerPage.html.includes(IMPORT_MARKER),
+    );
+
+    // The banner namespace follows `banners.edit` (content, admin, owner; not a manager, not anonymous).
+    const bannerMarker = uk.admin.banners.confirmDelete;
+    check(
+      'admin messages: banner text goes to content and owner only, never to a manager or an anonymous visitor',
+      contentHome.html.includes(bannerMarker) &&
+        ownerPage.html.includes(bannerMarker) &&
+        !managerPage.html.includes(bannerMarker) &&
+        !login.html.includes(bannerMarker),
+    );
+
+    // A banner is gone on the VERY NEXT request after a save or a delete (read-your-writes: `updateTag`, not a stale
+    // answer while the cache refreshes). The row is made directly, complete; the action bumps its order (a change,
+    // so the tag is updated), the home page shows it; the delete action, and the next home page lacks it.
+    const bannerAlt = `Smoke banner ${suffix}`;
+    const bannerId = (
+      await pool.query<{ id: string }>(
+        `INSERT INTO banners (title_uk, title_en, alt_uk, alt_en, is_active, image_desktop_url, image_desktop_width, image_desktop_height,
+           image_mobile_url, image_mobile_width, image_mobile_height)
+         VALUES ('Smoke', 'Smoke', $1, $1, true,
+           'https://media.test/banners/00000000-0000-4000-8000-0000000000b1/00000000-0000-4000-8000-0000000000a1/full.webp', 1600, 600,
+           'https://media.test/banners/00000000-0000-4000-8000-0000000000b1/00000000-0000-4000-8000-0000000000a1/full.webp', 800, 1000)
+         RETURNING id`,
+        [bannerAlt],
+      )
+    ).rows[0]?.id;
+    const bannerBody = {
+      titleUk: 'Smoke',
+      titleEn: 'Smoke',
+      subtitleUk: '',
+      subtitleEn: '',
+      ctaLabelUk: '',
+      ctaLabelEn: '',
+      altUk: bannerAlt,
+      altEn: bannerAlt,
+      href: '',
+      startsAt: '',
+      endsAt: '',
+      sortOrder: '7',
+      isActive: true,
+      id: bannerId,
+    };
+    const bumped = await form(
+      'updateBannerAction',
+      bannerBody,
+      cookie(ownerFull.token),
+      '/admin/marketing/banners',
+    );
+    const bannerShown = await get('/en');
+    check(
+      'banners: after a save the very next home page shows the banner (picture element, own alt, no h2 above the h1)',
+      bumped.body.includes('"changed":true') &&
+        bannerShown.html.includes(bannerAlt) &&
+        bannerShown.html.includes('(max-width: 767px)') &&
+        bannerShown.cache.includes('no-store'),
+    );
+    const removed = await form(
+      'deleteBannerAction',
+      { id: bannerId },
+      cookie(ownerFull.token),
+      '/admin/marketing/banners',
+    );
+    const after = await get('/en');
+    check(
+      'banners: after a delete the very next home page no longer shows it',
+      removed.body.includes(String(bannerId)) && !after.html.includes(bannerAlt),
     );
 
     // 3. Sessions are read from the database.

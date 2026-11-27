@@ -61,6 +61,7 @@ confirmed TOTP before a session counts; so must anyone who enrolled one.
 | `reports.export` | owner, admin | Download a report as CSV (the same result as the screen; the cost columns only for `catalog.cost.view`; every download audited) |
 | `promo.view` | owner, admin, manager | Open the promo-code tab: list, filters, statistics. `content` has no access at all (a promo code is money); the author of a code is shown only with `promo.manage` |
 | `promo.manage` | owner, admin | Create and edit promo codes, deactivate or extend them in bulk, download the list as CSV. A code that was ever redeemed cannot change type, value or scope; every change audited |
+| `banners.edit` | owner, admin, content | Create, edit, upload pictures for and delete home-page banners: text, a link to a path on this shop (never an external address), the display period, a desktop and a mobile picture with alt text. A banner is shown only when complete (both pictures, alt text in both languages) and inside its period. Every change audited; the cached home banners are dropped after the commit |
 <!-- permissions:end -->
 
 ## Mutations: who may, where it is checked

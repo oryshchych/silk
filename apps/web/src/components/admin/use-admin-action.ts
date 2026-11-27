@@ -64,6 +64,14 @@ const PROMO_CODES = [
   'PROMO_TIME',
 ] as const;
 
+/** Banner failures are worded in the banner namespace (reaches only roles that may edit banners). */
+const BANNER_CODES = [
+  'BANNER_NOT_FOUND',
+  'BANNER_INCOMPLETE',
+  'BANNER_DATES',
+  'BANNER_TOO_MANY',
+] as const;
+
 export type ActionOutcome = { ok: true; data?: unknown } | { ok: false; code: string };
 export interface FormMessage {
   kind: 'ok' | 'error';
@@ -77,6 +85,7 @@ export interface FormMessage {
 export function useAdminAction() {
   const t = useTranslations('admin.errors');
   const promo = useTranslations('admin.promo.errors');
+  const banner = useTranslations('admin.banners.errors');
   const [message, setMessage] = useState<FormMessage | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -92,8 +101,17 @@ export function useAdminAction() {
         onOk?.();
       } else {
         const promoCode = PROMO_CODES.find((code) => code === result.code);
+        const bannerCode = BANNER_CODES.find((code) => code === result.code);
         const known = KNOWN_CODES.find((code) => code === result.code) ?? 'GENERIC';
-        setMessage({ kind: 'error', text: promoCode === undefined ? t(known) : promo(promoCode) });
+        setMessage({
+          kind: 'error',
+          text:
+            promoCode !== undefined
+              ? promo(promoCode)
+              : bannerCode !== undefined
+                ? banner(bannerCode)
+                : t(known),
+        });
       }
     });
   }

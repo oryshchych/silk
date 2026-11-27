@@ -1,7 +1,7 @@
 /**
  * The pre-generated renditions of an uploaded photo (`packages/media`): WebP and AVIF at 320, 800
  * and 1600 pixels, stored under keys that are a pure function of the ids
- * (`products/<productId>/<imageId>/<size>.<format>`). The photo's `url` is the full WebP, so its
+ * (`products/<productId>/<imageId>/<size>.<format>`, and the same shape under `banners/<bannerId>/`). The photo's `url` is the full WebP, so its
  * siblings are derived from it without any new column. A URL that is not of that shape (the seed
  * placeholder, a legacy address) has no renditions and is shown as it is.
  *
@@ -14,7 +14,7 @@ import { renditionWidth, type RenditionSize } from '@store/media/widths';
 const SIZES: readonly RenditionSize[] = ['thumb', 'card', 'full'];
 
 const FULL_WEBP =
-  /^(https:\/\/[^/\s?#]+(?:\/[^/\s?#]+)*\/products\/[0-9a-f-]{36}\/[0-9a-f-]{36})\/full\.webp$/;
+  /^(https:\/\/[^/\s?#]+(?:\/[^/\s?#]+)*\/(?:products|banners)\/[0-9a-f-]{36}\/[0-9a-f-]{36})\/full\.webp$/;
 
 export interface RenditionSources {
   avif: string;
