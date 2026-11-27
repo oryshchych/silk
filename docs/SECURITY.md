@@ -59,6 +59,8 @@ confirmed TOTP before a session counts; so must anyone who enrolled one.
 | `catalog.export` | owner, admin | CSV / XLSX export |
 | `reports.view` | owner, admin, manager | Open the reports and the dashboard (revenue, orders, products, returns, customers by key, providers, stock). No cost, no margin without `catalog.cost.view`; `content` sees no revenue at all |
 | `reports.export` | owner, admin | Download a report as CSV (the same result as the screen; the cost columns only for `catalog.cost.view`; every download audited) |
+| `promo.view` | owner, admin, manager | Open the promo-code tab: list, filters, statistics. `content` has no access at all (a promo code is money); the author of a code is shown only with `promo.manage` |
+| `promo.manage` | owner, admin | Create and edit promo codes, deactivate or extend them in bulk, download the list as CSV. A code that was ever redeemed cannot change type, value or scope; every change audited |
 <!-- permissions:end -->
 
 ## Mutations: who may, where it is checked

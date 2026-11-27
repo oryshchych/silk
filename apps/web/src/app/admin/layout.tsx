@@ -3,6 +3,8 @@ import { NextIntlClientProvider } from 'next-intl';
 import { getMessages, getTranslations } from 'next-intl/server';
 import { cookies } from 'next/headers';
 
+import { clientAdminMessages } from '@/lib/admin/client-messages';
+import { currentSession } from '@/lib/admin/session';
 import { LOCALE_COOKIE, THEME_COOKIE, parseAdminLocale, parseTheme } from '@/lib/admin/preferences';
 
 import '../globals.css';
@@ -28,11 +30,12 @@ export default async function AdminRootLayout({ children }: { children: React.Re
   const locale = parseAdminLocale(jar.get(LOCALE_COOKIE)?.value);
   const theme = parseTheme(jar.get(THEME_COOKIE)?.value);
   const messages = await getMessages({ locale });
-  // The report namespaces are rendered on the server only: they are not sent to the browser, so the
-  // labels of cost columns never reach a role that may not see them.
-  const SERVER_ONLY = new Set(['reports', 'dashboardReports']);
-  const clientAdmin = Object.fromEntries(
-    Object.entries(messages.admin).filter(([key]) => !SERVER_ONLY.has(key)),
+  // Per visitor, from the session: anonymous and half-signed-in visitors get the login flow only, a full
+  // session gets the namespaces its role may open (`client-messages.ts`); reports never leave the server.
+  const resolved = await currentSession();
+  const clientAdmin = clientAdminMessages(
+    messages.admin,
+    resolved?.kind === 'full' ? resolved.session.role : null,
   );
 
   return (

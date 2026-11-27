@@ -61,6 +61,14 @@ export default async function AdminShellLayout({ children }: { children: React.R
               {t('reviews')}
             </a>
           ) : null}
+          {session.permissions.includes('promo.view') ? (
+            <a
+              href="/admin/marketing/promo-codes"
+              className="ml-4 inline-flex min-h-11 items-center underline"
+            >
+              {t('marketing')}
+            </a>
+          ) : null}
           {session.permissions.includes('legal.edit') ? (
             <a href="/admin/legal" className="ml-4 inline-flex min-h-11 items-center underline">
               {t('legal')}

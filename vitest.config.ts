@@ -5,11 +5,15 @@ import { configDefaults, defineConfig } from 'vitest/config';
 // worktrees' tests (a doubled run, plus half-finished tests of another session).
 const exclude = [...configDefaults.exclude, '**/.claude/worktrees/**'];
 
+// The web app's `@/` alias, so a test can import app code (and mock it) by the path the app uses.
+const webAlias = { '@': new URL('./apps/web/src', import.meta.url).pathname };
+
 export default defineConfig({
   test: {
     // Projects, not one config: the test levels have different runners.
     projects: [
       {
+        resolve: { alias: webAlias },
         // Components under test are rendered to markup (`renderToStaticMarkup`); the tsconfig keeps
         // `jsx: preserve` for Next, so the unit project compiles JSX itself.
         oxc: { jsx: { runtime: 'automatic' } },
@@ -21,6 +25,7 @@ export default defineConfig({
         },
       },
       {
+        resolve: { alias: webAlias },
         test: {
           name: 'integration',
           include: ['**/*.int.test.ts'],

@@ -63,6 +63,12 @@ export async function quoteAction(input: unknown): Promise<QuoteResult> {
   }
   const token = await readCartToken();
   if (token === null) return { ok: false, code: 'CHECKOUT_EMPTY_CART' };
+  if (promoCode !== undefined && promoCode !== '') {
+    const cartVerdict = limiters.promoCart.check(token);
+    if (!cartVerdict.allowed) {
+      return { ok: false, code: RATE_LIMITED, retryAfterSeconds: cartVerdict.retryAfterSeconds };
+    }
+  }
   try {
     const db = await getDb();
     const intent = await db.transaction(
@@ -143,6 +149,17 @@ export async function placeOrderAction(input: unknown): Promise<PlaceOrderResult
   }
   const token = await readCartToken();
   if (token === null) return { ok: false, kind: 'error', code: 'CHECKOUT_EMPTY_CART' };
+  if (data.promoCode !== undefined && data.promoCode !== '') {
+    const cartVerdict = limiters.promoCart.check(token);
+    if (!cartVerdict.allowed) {
+      return {
+        ok: false,
+        kind: 'error',
+        code: RATE_LIMITED,
+        retryAfterSeconds: cartVerdict.retryAfterSeconds,
+      };
+    }
+  }
 
   const db = await getDb();
   let created: { orderId: string; orderNumber: string; accessToken: string | null };
