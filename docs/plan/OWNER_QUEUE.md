@@ -28,7 +28,7 @@ Only what needs the owner's own hands (credentials, accounts, a setting in an ex
 | Q24 | Set `TRUSTED_PROXY_HOPS` per environment in Dokploy (staging 1, production behind Cloudflare 2), Traefik `forwardedHeaders.trustedIPs` to the Cloudflare ranges, origin firewall to Cloudflare |
 | Q8 | Check the R2 backup bucket: `staging/` must hold a second file from the 2026-11-23 03:00 Kyiv run |
 | Q19 | Supply the brands' bra size charts when they exist (the standard table ships meanwhile) |
-| Q1 | Shop name, palette and fonts when decided (the placeholder and neutral tokens stay meanwhile) |
+| Q1 | DECIDED, implementation pending (a branding PR, not yet scheduled): shop name Damazla (short DMZ, written DaMaZla; named after the owner's children); base colour around `#ffc8dd` (a light surface/accent: text must stay dark and buttons use a darker rose to pass WCAG AA; semantic tokens only, ADR-21); fonts Cormorant Garamond (headings) + Inter (body), both with Cyrillic, via `next/font`. Everything is sold under Damazla: no Victoria's Secret branding anywhere. Update `TITLE_SUFFIX_RESERVE` (Q84) to the real name length |
 
 ## Deferred by phase 10 (default applied; the owner can overrule)
 
@@ -121,7 +121,7 @@ Only what needs the owner's own hands (credentials, accounts, a setting in an ex
 | Q13 | 2026-11-26 | Recommended default accepted by the owner: keep building against the fake; put the sandbox token in the local `.env` (never in chat), run the adapter against it once at the end of phase 0.5 and record the findings in `NOTES.md` |
 | Q24 | 2026-11-26 | Recommended default accepted by the owner: set `TRUSTED_PROXY_HOPS` per environment in the Dokploy project (staging has no Cloudflare: 1; production behind Cloudflare: 2), set Traefik `forwardedHeaders.trustedIPs` to the Cloudflare ranges so the origin only trusts what Cloudflare added, and restrict the origin firewall to Cloudflare. An edge rate limit (Cloudflare) in addition, see Q21 |
 | Q19 | 2026-11-26 | Recommended default accepted by the owner: ship the standard table; the owner supplies the brands' charts and `CUP_TABLE` in `packages/core/src/catalog/bra-size.ts` is edited, tests follow the table |
-| Q1 | 2026-11-26 | Recommended default accepted by the owner: Keep the placeholder and neutral tokens; branding is a token change, not a rewrite |
+| Q1 | 2026-11-27 | Owner decided: name Damazla (DMZ), palette around `#ffc8dd`, fonts Cormorant Garamond + Inter, no third-party brand (Victoria's Secret) used; until the branding PR lands the placeholder and neutral tokens stay (branding is a token change, not a rewrite) |
 | Q2 | 2026-11-26 | Recommended default accepted by the owner: Build against a recorded fake; plug the real key in at the end of phase 2 |
 | Q3 | 2026-11-26 | Recommended default accepted by the owner: Build `FiscalProvider` against the documented API with a fake; verify against the sandbox when the account exists |
 | Q8 | 2026-11-26 | Recommended default accepted by the owner: The orchestrator checks the R2 bucket (`staging/` must hold a second file); otherwise the owner does |
