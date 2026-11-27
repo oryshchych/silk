@@ -3,12 +3,15 @@
  * check AND the database CHECK), the public read decided by the database clock, an internal link only, the public
  * shape without any admin field, and the language picked per locale.
  */
+import { readFileSync } from 'node:fs';
+
 import { sql } from 'drizzle-orm';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { DbHandle } from '@store/db/client';
 
 import {
+  ALT_VISIBLE_CLASS,
   bannerKeysOfUrl,
   MAX_BANNERS,
   bannerCreateSchema,
@@ -260,5 +263,52 @@ describe('review round', () => {
     ]) {
       expect(bannerKeysOfUrl(url)).toEqual([]);
     }
+  });
+});
+
+describe('"visible alt text" is one explicit set, everywhere', () => {
+  const NBSP_ONLY = '\u00A0\u00A0';
+  const ZWSP_ONLY = '\u200B\u200C\u200D\u2060\uFEFF';
+
+  it('the schema, the migration and the public read carry the same character set as the Zod rule', () => {
+    const root = new URL('../../../', import.meta.url);
+    const read = (path: string) => readFileSync(new URL(path, root), 'utf8');
+    // In schema.ts the sql template is cooked, so every backslash is doubled in the source.
+    expect(read('packages/db/src/schema.ts')).toContain(ALT_VISIBLE_CLASS.replaceAll('\\', '\\\\'));
+    // In the migration the text is the SQL itself.
+    expect(read('packages/db/migrations/0027_banners_alt_visible.sql')).toContain(
+      ALT_VISIBLE_CLASS,
+    );
+    // The public read takes the class from the same constant, not from a copy.
+    const readSource = read('packages/core/src/banners/read.ts');
+    expect(readSource).toContain('ALT_VISIBLE_CLASS');
+    expect(readSource).not.toContain('[:space:]');
+  });
+
+  it('an alt of only no-break or zero-width characters is no alt: Zod empties it, activation refuses it, the database refuses it', async () => {
+    for (const alt of [NBSP_ONLY, ZWSP_ONLY]) {
+      expect(bannerCreateSchema.parse(form({ altUk: alt })).altUk).toBeNull();
+    }
+    const id = await create();
+    await pictures(id);
+    await expect(update(id, { isActive: true, altEn: NBSP_ONLY })).rejects.toBeInstanceOf(
+      BannerIncompleteError,
+    );
+    await expect(update(id, { isActive: true, altUk: ZWSP_ONLY })).rejects.toBeInstanceOf(
+      BannerIncompleteError,
+    );
+    await expect(
+      admin.db.execute(
+        sql`UPDATE banners SET alt_uk = ${NBSP_ONLY}, is_active = true WHERE id = ${id}::uuid`,
+      ),
+    ).rejects.toThrow();
+    await expect(
+      admin.db.execute(
+        sql`UPDATE banners SET alt_en = ${ZWSP_ONLY}, is_active = true WHERE id = ${id}::uuid`,
+      ),
+    ).rejects.toThrow();
+    // Text with one visible character among invisible ones is real text: activation passes and the public read shows it.
+    await update(id, { isActive: true, altUk: ' \u00A0 x \u200B' });
+    expect((await listActiveBanners(admin.db, 'uk')).map((b) => b.id)).toEqual([id]);
   });
 });

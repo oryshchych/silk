@@ -45,6 +45,20 @@ export const internalPath = z
       .nullable(),
   );
 
+/**
+ * A character that makes alt text VISIBLE: anything but ASCII whitespace, the no-break space, the Unicode spaces,
+ * line and paragraph separators, zero-width characters (U+200B to U+200D, U+2060) and the byte order mark. ONE
+ * explicit set, not the locale-dependent `[[:space:]]`: the same text is in the CHECK `banners_active_complete`
+ * (migration 0027), in `SHOWN_NOW` (`read.ts`) and in the Zod rule below, and a test pins that they agree.
+ */
+export const ALT_VISIBLE_CLASS =
+  '[^ \\t\\n\\r\\f\\v\\u00A0\\u2000-\\u200D\\u2028\\u2029\\u202F\\u205F\\u2060\\u3000\\uFEFF]';
+const ALT_VISIBLE = new RegExp(ALT_VISIBLE_CLASS);
+
+/** Alt text: cleaned like other text, and a text with nothing visible in it is no text (empty). */
+const altText = (max: number) =>
+  text(max).transform((value) => (value !== null && !ALT_VISIBLE.test(value) ? null : value));
+
 const fields = z.object({
   titleUk: text(200),
   titleEn: text(200),
@@ -52,8 +66,8 @@ const fields = z.object({
   subtitleEn: text(300),
   ctaLabelUk: text(80),
   ctaLabelEn: text(80),
-  altUk: text(300),
-  altEn: text(300),
+  altUk: altText(300),
+  altEn: altText(300),
   href: internalPath,
   startsAt: wallClock,
   endsAt: wallClock,
