@@ -30,6 +30,14 @@ Only what needs the owner's own hands (credentials, accounts, a setting in an ex
 | Q19 | Supply the brands' bra size charts when they exist (the standard table ships meanwhile) |
 | Q1 | Shop name, palette and fonts when decided (the placeholder and neutral tokens stay meanwhile) |
 
+## Deferred by phase 10 (default applied; the owner can overrule)
+
+| ID | Raised | Item | Default applied |
+|---|---|---|---|
+| Q85 | 2026-11-27 | Cash on delivery has no capture in the payment journal: `confirmCodOrder` confirms the order and captures nothing, and v1 has no way to record the carrier's remittance. So COD orders are in NO revenue or margin figure (in Ukraine COD may be a large share of sales) | Counted as zero until a remittance is recorded as a journal row (a new `cod` attempt written when the carrier pays out): a feature for phase 11 or later, decided by the owner. Documented in `docs/REPORTS.md`. Whichever way this is decided, the revenue report keeps showing the COD orders it does not count (`codNotIncluded`) |
+| Q86 | 2026-11-27 | The shipping fee a customer is charged (`shipping_total`) is not margin revenue; only the carrier cost counts, and only when the seller paid (`shipping_paid_by = 'sender'`) | Goods margin minus seller-paid carrier cost, as the plan says. Add the fee as income if the owner wants it |
+| Q87 | 2026-11-27 | Materialised views were planned for heavy aggregations. Measured on 50 000 synthetic orders every report runs in under 300 ms as plain SQL, so none was built (no stale data, no refresh job, no role question) | Plain SQL in a read-only transaction plus four partial indexes (migration 0023). At 200 000 orders a one-month report is under 400 ms, whole-history margin is about 1.0 to 1.4 s, so a view is not needed yet but is near; add a view and the hourly refresh job when a report measures over about 700 ms on real data |
+
 ## Deferred by phase 9 (default applied; the owner can overrule)
 
 | ID | Raised | Item | Default applied |

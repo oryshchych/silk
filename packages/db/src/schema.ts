@@ -644,6 +644,8 @@ export const orders = pgTable('orders', {
     .where(sql`${t.checkoutIntentId} IS NOT NULL`),
   index('orders_created_idx').on(t.createdAt),
   index('orders_status_idx').on(t.status),
+  /** Phase 10 reports: orders cancelled in a window. */
+  index('orders_cancelled_at_idx').on(t.cancelledAt).where(sql`${t.cancelledAt} IS NOT NULL`),
   index('orders_customer_idx').on(t.customerId),
   /** Phase 7: an account claims its guest orders by the verified mailbox (Q56). */
   index('orders_email_lower_idx').on(sql`lower(${t.customerEmail})`),
@@ -846,6 +848,8 @@ export const paymentAttempts = pgTable('payment_attempts', {
   index('payment_attempts_reconcile_idx')
     .on(sql`${t.lastReconciledAt} NULLS FIRST`, t.createdAt, t.id)
     .where(sql`${t.state} IN ('pending', 'in_flight', 'unknown')`),
+  /** Phase 10 reports: the money that was captured, by capture time (a window reads a range, not the table). */
+  index('payment_attempts_captured_at_idx').on(t.completedAt).where(sql`${t.capturedAmount} > 0`),
   check('payment_attempts_num_positive', sql`${t.attemptNumber} > 0`),
   check('payment_attempts_amount_positive', sql`${t.amount} > 0`),
   check('payment_attempts_captured_lte', sql`${t.capturedAmount} <= ${t.amount}`),
@@ -1228,6 +1232,8 @@ export const returnRequests = pgTable('return_requests', {
   uniqueIndex('return_requests_number_uq').on(t.requestNumber),
   index('return_requests_order_idx').on(t.orderId),
   index('return_requests_status_idx').on(t.status),
+  /** Phase 10 reports: returns by the day the parcel was received. */
+  index('return_requests_received_at_idx').on(t.receivedAt).where(sql`${t.receivedAt} IS NOT NULL`),
   index('return_requests_open_idx').on(t.createdAt)
     .where(sql`${t.status} IN ('requested', 'approved', 'in_transit', 'received')`),
 ]);
@@ -1425,6 +1431,8 @@ export const refundOperations = pgTable('refund_operations', {
   /** At most ONE live (or succeeded) refund per return: a FAILED one does not count, so a retry is possible. */
   uniqueIndex('refund_ops_return_live_uq').on(t.returnRequestId)
     .where(sql`${t.returnRequestId} IS NOT NULL AND ${t.state} IN ('pending', 'in_flight', 'unknown', 'succeeded')`),
+  /** Phase 10 reports: refunds that settled, by settle time. */
+  index('refund_settled_at_idx').on(t.settledAt).where(sql`${t.state} = 'succeeded'`),
   check('refund_amount_positive', sql`${t.amount} > 0`),
 ]);
 

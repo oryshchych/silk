@@ -1417,3 +1417,33 @@ describe('0021 and 0022: legal_documents', () => {
     expect(after.updated_at.getTime()).toBeGreaterThan(before.updated_at.getTime());
   });
 });
+
+describe('phase 10 report indexes (0023)', () => {
+  /** The EXACT definitions: a changed predicate, column or sort order must fail here. */
+  const EXPECTED: Record<string, string> = {
+    orders_cancelled_at_idx:
+      'CREATE INDEX orders_cancelled_at_idx ON public.orders USING btree (cancelled_at) WHERE (cancelled_at IS NOT NULL)',
+    payment_attempts_captured_at_idx:
+      'CREATE INDEX payment_attempts_captured_at_idx ON public.payment_attempts USING btree (completed_at) WHERE (captured_amount > 0)',
+    refund_settled_at_idx:
+      "CREATE INDEX refund_settled_at_idx ON public.refund_operations USING btree (settled_at) WHERE (state = 'succeeded'::operation_state)",
+    return_requests_received_at_idx:
+      'CREATE INDEX return_requests_received_at_idx ON public.return_requests USING btree (received_at) WHERE (received_at IS NOT NULL)',
+  };
+
+  it('have exactly the expected definitions, are valid and owned by the migration role', async () => {
+    const { rows } = await root.query<{ indexname: string; indexdef: string; tableowner: string }>(
+      `SELECT i.indexname, i.indexdef, t.tableowner
+         FROM pg_indexes i JOIN pg_tables t ON t.schemaname = i.schemaname AND t.tablename = i.tablename
+        WHERE i.indexname = ANY($1) ORDER BY i.indexname`,
+      [Object.keys(EXPECTED)],
+    );
+    expect(Object.fromEntries(rows.map((row) => [row.indexname, row.indexdef]))).toEqual(EXPECTED);
+    expect(rows.every((row) => row.tableowner === 'store_migrate')).toBe(true);
+    const invalid = await root.query(
+      `SELECT 1 FROM pg_index WHERE NOT indisvalid AND indexrelid::regclass::text = ANY($1)`,
+      [Object.keys(EXPECTED)],
+    );
+    expect(invalid.rowCount).toBe(0);
+  });
+});

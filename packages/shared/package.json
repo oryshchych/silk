@@ -25,6 +25,7 @@
     "./dto/return": "./src/dto/return.ts",
     "./dto/legal": "./src/dto/legal.ts",
     "./dto/content-readiness": "./src/dto/content-readiness.ts",
+    "./dto/reports": "./src/dto/reports.ts",
     "./content-bounds": "./src/content-bounds.ts",
     "./content-columns": "./src/content-columns.ts",
     "./content-text": "./src/content-text.ts",
