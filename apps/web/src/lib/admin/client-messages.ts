@@ -34,6 +34,7 @@ export const NAMESPACE_ACCESS = {
   legal: 'legal.edit',
   promo: 'promo.view',
   marketing: 'promo.view',
+  banners: 'banners.edit',
   reports: 'server',
   dashboardReports: 'server',
 } as const satisfies Record<string, Permission | 'public' | 'server'>;

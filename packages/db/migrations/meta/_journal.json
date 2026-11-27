@@ -176,6 +176,13 @@
       "when": 1795778761019,
       "tag": "0024_newsletter_request_nonce",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1795780635626,
+      "tag": "0025_banners_admin",
+      "breakpoints": true
     }
   ]
 }

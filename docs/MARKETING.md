@@ -57,3 +57,23 @@ Phase 11 marketing features: what each does, who it may mail, and where the cons
   source and the language, never the address or an IP.
 - One spelling per mailbox: addresses are lower-cased once and the schema forbids upper case (`newsletter_email_lower`).
 - Not built: sending campaigns (no bulk mailer), a subscribers screen in the admin, bounce handling.
+
+## Banners (home page)
+
+- **Admin:** `/admin/marketing/banners` (`banners.edit`: owner, admin, content). A banner has text and a button label in both
+  languages, alt text in both languages, a link that is a PATH on this shop (an external address is refused by the
+  schema and by a CHECK), a display period in Kyiv time, an order, and TWO pictures uploaded separately (a wide desktop one
+  and a tall mobile one) through `POST /admin/upload/banner-image` (same hardening as the product photo route: session and
+  role before the body, size cap while streaming, in-flight slots, type from the bytes, metadata stripped). The pictures
+  are stored as AVIF and WebP renditions under `banners/<banner id>/<image id>/`; a replaced picture's files are removed.
+- **A banner is born inactive** and can be switched on only when complete: both pictures and alt text in both languages
+  (the action checks it under a per-banner lock, and the CHECK `banners_active_complete` backs it).
+- **Cache-safe public rendering:** banners are read and rendered on the HOME page only, which is rendered per request and
+  never stored as a page. The read takes nothing about the visitor, its key is `['banners', locale]`, the period is decided
+  by Postgres' `now()` when the cache fills, a 60 second TTL moves it over a boundary and an admin change drops the tag
+  `banners` after the commit. The ISR pages (product, category) never import banners (pinned by `banners.unit.test.ts`),
+  so no banner change can make a shared page differ between visitors or go stale.
+- **Rendering:** one `<picture>` per banner, mobile sources under `(max-width: 767px)`, AVIF, WebP and the original, the box
+  reserved from the stored dimensions, the first banner the LCP candidate and the rest lazy.
+- Not built: banner positions other than `home_hero`, per-banner statistics, scheduling per locale. Files of a DELETED banner stay
+  in the bucket (the weekly orphan job of Q47 lists `products/` only).

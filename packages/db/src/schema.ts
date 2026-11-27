@@ -1001,17 +1001,50 @@ export const banners = pgTable('banners', {
   titleEn: varchar('title_en', { length: 200 }),
   subtitleUk: varchar('subtitle_uk', { length: 300 }),
   subtitleEn: varchar('subtitle_en', { length: 300 }),
-  imageDesktopUrl: text('image_desktop_url').notNull(),
-  imageMobileUrl: text('image_mobile_url').notNull(),
+  /**
+   * The two pictures, uploaded separately (a wide one and a tall one). `url` is the full WebP of a stored
+   * set of renditions; width and height are the SOURCE's, so the box is reserved. Empty until uploaded: a
+   * banner can exist as a draft, but only a complete one can be active (`banners_active_complete`).
+   */
+  imageDesktopUrl: text('image_desktop_url'),
+  imageDesktopWidth: integer('image_desktop_width'),
+  imageDesktopHeight: integer('image_desktop_height'),
+  imageMobileUrl: text('image_mobile_url'),
+  imageMobileWidth: integer('image_mobile_width'),
+  imageMobileHeight: integer('image_mobile_height'),
+  /** Alt text per language: required before a banner can be shown (accessibility). */
+  altUk: varchar('alt_uk', { length: 300 }),
+  altEn: varchar('alt_en', { length: 300 }),
   ctaLabelUk: varchar('cta_label_uk', { length: 80 }),
   ctaLabelEn: varchar('cta_label_en', { length: 80 }),
+  /** A path on this shop (`/category/bras`), never an address elsewhere. */
   href: text('href'),
   position: varchar('position', { length: 40 }).notNull().default('home_hero'),
   startsAt: timestamp('starts_at', { withTimezone: true }),
   endsAt: timestamp('ends_at', { withTimezone: true }),
   sortOrder: integer('sort_order').notNull().default(0),
   isActive: boolean('is_active').notNull().default(true),
-}, (t) => [index('banners_position_idx').on(t.position, t.sortOrder)]);
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+}, (t) => [
+  index('banners_position_idx').on(t.position, t.sortOrder),
+  check('banners_position_known', sql`${t.position} IN ('home_hero')`),
+  check('banners_href_internal', sql`${t.href} IS NULL OR ${t.href} ~ '^/[A-Za-z0-9]'`),
+  check('banners_dates_order', sql`${t.startsAt} IS NULL OR ${t.endsAt} IS NULL OR ${t.startsAt} < ${t.endsAt}`),
+  check('banners_images_both_or_none', sql`
+    (${t.imageDesktopUrl} IS NULL) = (${t.imageDesktopWidth} IS NULL)
+    AND (${t.imageDesktopUrl} IS NULL) = (${t.imageDesktopHeight} IS NULL)
+    AND (${t.imageMobileUrl} IS NULL) = (${t.imageMobileWidth} IS NULL)
+    AND (${t.imageMobileUrl} IS NULL) = (${t.imageMobileHeight} IS NULL)
+  `),
+  /** A banner that can be shown has both pictures and alt text in both languages. */
+  check('banners_active_complete', sql`
+    NOT ${t.isActive} OR (
+      ${t.imageDesktopUrl} IS NOT NULL AND ${t.imageMobileUrl} IS NOT NULL
+      AND coalesce(${t.altUk}, '') <> '' AND coalesce(${t.altEn}, '') <> ''
+    )
+  `),
+]);
 
 export const reviews = pgTable('reviews', {
   id: id(),

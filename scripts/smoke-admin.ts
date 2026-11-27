@@ -237,6 +237,16 @@ export async function runAdminSmoke({
         ownerPage.html.includes(IMPORT_MARKER),
     );
 
+    // The banner namespace follows `banners.edit` (content, admin, owner; not a manager, not anonymous).
+    const bannerMarker = uk.admin.banners.confirmDelete;
+    check(
+      'admin messages: banner text goes to content and owner only, never to a manager or an anonymous visitor',
+      contentHome.html.includes(bannerMarker) &&
+        ownerPage.html.includes(bannerMarker) &&
+        !managerPage.html.includes(bannerMarker) &&
+        !login.html.includes(bannerMarker),
+    );
+
     // 3. Sessions are read from the database.
     const ok = await get('/admin', cookie(managerLogin.token));
     check(

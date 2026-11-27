@@ -11,6 +11,18 @@ const IMG = '0190a1b2-0000-7000-8000-0000000000aa';
 const url = `https://media.shop.example/products/${ID}/${IMG}/full.webp`;
 const base = `https://media.shop.example/products/${ID}/${IMG}`;
 
+describe('renditionSources for banners', () => {
+  it('banner pictures have the same rendition shape under banners/', () => {
+    const banner = `https://media.shop.example/banners/${ID}/${IMG}`;
+    expect(renditionSources(`${banner}/full.webp`, 3000, 1000)?.webp).toBe(
+      `${banner}/thumb.webp 320w, ${banner}/card.webp 800w, ${banner}/full.webp 1600w`,
+    );
+    expect(
+      renditionSources(`https://media.shop.example/other/${ID}/${IMG}/full.webp`, 3000, 1000),
+    ).toBeNull();
+  });
+});
+
 describe('renditionSources', () => {
   it('derives AVIF and WebP srcsets at the three widths from the full WebP url (a large landscape photo)', () => {
     expect(renditionSources(url, 3000, 2000)).toEqual({

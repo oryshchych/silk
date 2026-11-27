@@ -21,6 +21,14 @@ export default async function MarketingLayout({ children }: { children: React.Re
             {t('promoCodes')}
           </a>
         ) : null}
+        {can(session.role, 'banners.edit') ? (
+          <a
+            href="/admin/marketing/banners"
+            className="inline-flex min-h-11 items-center underline"
+          >
+            {t('banners')}
+          </a>
+        ) : null}
       </nav>
       {children}
     </div>

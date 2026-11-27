@@ -25,3 +25,10 @@ export const SHOWCASE_TAG = 'showcase';
  */
 export const LEGAL_NAV_TAG = 'legal-nav';
 export const legalTag = (kind: string): string => `legal:${kind}`;
+
+/**
+ * The home-page banners. The read is cached for everybody alike (the display period is decided by the database
+ * clock when the cache is filled, and a short TTL moves it across a period boundary); any banner change in the admin
+ * drops it after the commit.
+ */
+export const BANNERS_TAG = 'banners';
