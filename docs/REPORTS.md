@@ -58,3 +58,22 @@ Open choices: Q85, Q86.
 local EMPTY database (refused in production, on a non-local host, on a database with orders).
 `reports-perf.int.test.ts` runs every report on it in a read-only transaction and fails over a 3 s CI
 bound (target 1 s); it prints the real timings. No materialised view was needed (Q87).
+
+## The ten reports (slice B)
+
+| Report | What it counts | Dated by |
+|---|---|---|
+| revenue | the three journal figures, by day, week or month | capture / settle time |
+| orders | orders by status, delivery and payment method | creation day |
+| top-products | units and ordered value of non-cancelled orders (NOT revenue) | creation day |
+| margin (cost roles) | event-dated goods margin by product or category, plus carrier cost | events, see above |
+| stock | variants with available stock up to a threshold; value at price, at cost for cost roles | now |
+| returns | requests by reason, received, refunded; requests per paid order | request creation |
+| promos | discount per code, share of orders with a code | creation day |
+| customers | new vs returning by first capture; top 20 by lifetime net receipts (key only) | capture time |
+| providers | attempts, succeeded, failed, success rate among settled, refunds | attempt creation, settle time |
+| viewed-not-bought | products with views and no purchase in the period (a list) | view day (UTC) |
+
+Every report is one `ReportResultDto` (`columns`, `rows`, a totals row over the whole period, facts, notes, an
+optional chart). The screen and the CSV are two renderings of it. No funnel and nothing called conversion: views
+and purchases are unlinked aggregates (plan, phase 10).

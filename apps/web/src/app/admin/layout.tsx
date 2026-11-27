@@ -28,11 +28,17 @@ export default async function AdminRootLayout({ children }: { children: React.Re
   const locale = parseAdminLocale(jar.get(LOCALE_COOKIE)?.value);
   const theme = parseTheme(jar.get(THEME_COOKIE)?.value);
   const messages = await getMessages({ locale });
+  // The report namespaces are rendered on the server only: they are not sent to the browser, so the
+  // labels of cost columns never reach a role that may not see them.
+  const SERVER_ONLY = new Set(['reports', 'dashboardReports']);
+  const clientAdmin = Object.fromEntries(
+    Object.entries(messages.admin).filter(([key]) => !SERVER_ONLY.has(key)),
+  );
 
   return (
     <html lang={locale} data-theme={theme}>
       <body className="min-h-dvh bg-surface text-text-primary antialiased">
-        <NextIntlClientProvider locale={locale} messages={{ admin: messages.admin }}>
+        <NextIntlClientProvider locale={locale} messages={{ admin: clientAdmin }}>
           {children}
         </NextIntlClientProvider>
       </body>

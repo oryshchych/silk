@@ -129,3 +129,110 @@ export interface MarginReportDto extends AsOfDto {
   period: PeriodDto;
   totals: MarginFiguresDto;
 }
+
+/* ───────────── the tabular form every report screen and every CSV export share ───────────── */
+
+export const reportNames = [
+  'revenue',
+  'orders',
+  'top-products',
+  'margin',
+  'stock',
+  'returns',
+  'promos',
+  'customers',
+  'providers',
+  'viewed-not-bought',
+] as const;
+export type ReportName = (typeof reportNames)[number];
+
+/** `money` cells hold integer kopiykas, `bps` cells integer basis points; both are `null` when there is nothing to show. */
+export const columnKinds = ['text', 'int', 'money', 'bps', 'date'] as const;
+export type ColumnKind = (typeof columnKinds)[number];
+
+export interface ReportColumnDto {
+  /** Machine name: the CSV header and the key of the translated label. */
+  key: string;
+  kind: ColumnKind;
+}
+
+export type ReportCell = string | number | null;
+
+export interface ReportTableDto {
+  columns: ReportColumnDto[];
+  rows: ReportCell[][];
+  /** A totals row over the WHOLE period (not only the rows shown), or `null`. */
+  totals: ReportCell[] | null;
+  /** The rows were cut at the report's row cap; the totals still cover everything. */
+  truncated: boolean;
+}
+
+/** Single figures shown above the table: `{ key, kind, value }`. */
+export interface ReportFactDto {
+  key: string;
+  kind: ColumnKind;
+  value: ReportCell;
+}
+
+/** A bar chart payload: labels and one numeric series per key (kopiykas for money series). */
+export interface ReportChartDto {
+  labels: string[];
+  series: { key: string; values: number[] }[];
+}
+
+export interface ReportResultDto extends AsOfDto {
+  name: ReportName;
+  /** `null` for a report that is not about a period (stock). */
+  period: PeriodDto | null;
+  table: ReportTableDto;
+  facts: ReportFactDto[];
+  chart: ReportChartDto | null;
+  /** Message keys of caveats the screen must show (`untimed`, `codExcluded`, `noCostLines`, ...). */
+  notes: string[];
+}
+
+/* ───────────────────────────────── the dashboard ───────────────────────────────── */
+
+export const alertCodes = [
+  'outbox_stuck',
+  'refund_open',
+  'payment_unknown',
+  'reservation_expiring',
+  'low_stock',
+  'fiscal_failed',
+  'waybill_unknown',
+] as const;
+export type AlertCode = (typeof alertCodes)[number];
+
+/** One thing that needs a person: a COUNT and the age of the oldest, never a row, a name or an address. */
+export interface AlertDto {
+  code: AlertCode;
+  count: number;
+  /** ISO instant of the oldest affected row, or `null` when there is none. */
+  oldestAt: string | null;
+}
+
+export interface KpiChangeDto {
+  previous: number;
+  current: number;
+  absolute: number;
+  percentBps: number | null;
+}
+
+export interface KpiDto {
+  key: 'gross' | 'refunds' | 'net' | 'captures' | 'margin';
+  kind: 'money' | 'int';
+  current: number;
+  vsPrevious: KpiChangeDto;
+  /** `null` when the shop has no data that old. */
+  vsLastYear: KpiChangeDto | null;
+}
+
+export interface DashboardDto extends AsOfDto {
+  period: PeriodDto;
+  previous: PeriodDto;
+  lastYear: PeriodDto | null;
+  /** Revenue KPIs for everybody who may read reports; the margin KPI only inside the cost shape. */
+  kpis: KpiDto[];
+  alerts: AlertDto[];
+}

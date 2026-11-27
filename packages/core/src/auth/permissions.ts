@@ -42,6 +42,8 @@ export const PERMISSIONS = {
   'media.upload': ['owner', 'admin', 'content'],
   'catalog.import': ['owner', 'admin'],
   'catalog.export': ['owner', 'admin'],
+  'reports.view': ['owner', 'admin', 'manager'],
+  'reports.export': ['owner', 'admin'],
 } as const satisfies Record<string, readonly AdminRole[]>;
 
 export type Permission = keyof typeof PERMISSIONS;

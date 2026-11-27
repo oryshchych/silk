@@ -50,6 +50,9 @@ const asDto = (report: RevenueReportDto): PeriodDto => report.period;
 export interface RevenueComparison {
   current: RevenueReportDto;
   comparison: ComparisonDto;
+  /** The two comparison reads themselves (the dashboard takes their capture counts). */
+  previous: RevenueReportDto;
+  lastYear: RevenueReportDto | null;
 }
 
 export async function readRevenueComparison(
@@ -68,6 +71,8 @@ export async function readRevenueComparison(
   });
   return {
     current,
+    previous,
+    lastYear,
     comparison: {
       previous: asDto(previous),
       lastYear: lastYear === null ? null : asDto(lastYear),

@@ -68,13 +68,12 @@ export interface OrderSpec {
   returns?: ReturnSpec[];
 }
 
-let counter = 0;
-const nextNumber = (): string => {
-  counter += 1;
-  return `LS-2026-${String(counter).padStart(6, '0')}`;
-};
+const nextNumber = (): string => `LS-T-${randomUUID().replaceAll('-', '').slice(0, 20)}`;
 const at = (value: string | null | undefined): Date | null =>
   value === null || value === undefined ? null : new Date(value);
+
+const createdAtOf = (value: string | null | undefined): { createdAt?: Date } =>
+  value === null || value === undefined ? {} : { createdAt: new Date(value) };
 
 export interface InsertedOrder {
   orderId: string;
@@ -159,6 +158,7 @@ export async function insertOrder(tx: Tx, spec: OrderSpec): Promise<InsertedOrde
         amount: capture.amount,
         capturedAmount: capture.amount,
         completedAt: at(capture.at),
+        ...createdAtOf(capture.at ?? spec.createdAt),
       })
       .returning({ id: paymentAttempts.id });
     if (row === undefined) throw new Error('fixture: attempt');
@@ -175,7 +175,7 @@ export async function insertOrder(tx: Tx, spec: OrderSpec): Promise<InsertedOrde
         reason: ret.reason ?? 'changed_mind',
         policyVersion: 'test',
         receivedAt: at(ret.receivedAt),
-        ...(ret.createdAt === undefined ? {} : { createdAt: new Date(ret.createdAt) }),
+        ...createdAtOf(ret.createdAt ?? spec.createdAt),
       })
       .returning({ id: returnRequests.id });
     if (row === undefined) throw new Error(`fixture: return ${String(index)}`);
@@ -203,6 +203,7 @@ export async function insertOrder(tx: Tx, spec: OrderSpec): Promise<InsertedOrde
       amount: refund.amount,
       state: refund.state ?? 'succeeded',
       settledAt: at(refund.at),
+      ...createdAtOf(refund.at ?? spec.createdAt),
     });
   }
   return { orderId: order.id, lineIds, attemptIds };

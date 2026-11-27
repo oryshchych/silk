@@ -7,6 +7,8 @@
 import { sql, type SQL } from 'drizzle-orm';
 import { z } from 'zod';
 
+import type { Reader } from '@store/db/types';
+
 import { granularityValues, type Granularity } from '@store/shared/dto/reports';
 
 export const SHOP_TIMEZONE = 'Europe/Kyiv';
@@ -119,3 +121,19 @@ export function lastYearPeriod(period: Pick<Period, 'from' | 'to'>): { from: str
 /** An instant as ISO 8601 UTC text, decided by the database (never the session time zone). */
 export const isoUtc = (expression: SQL): SQL =>
   sql`to_char(${expression} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
+
+/** A real day moved by whole days (pure date arithmetic on `YYYY-MM-DD`). */
+export function shiftDay(day: string, days: number): string {
+  const date = new Date(`${day}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+/** Today in the shop zone, decided by the database (the default period of a report screen). */
+export async function readShopToday(db: Reader): Promise<string> {
+  const result = await db.execute(
+    sql`SELECT to_char((now() AT TIME ZONE ${TZ})::date, 'YYYY-MM-DD') AS today`,
+  );
+  const row = z.object({ today: z.string() }).parse(result.rows[0]);
+  return row.today;
+}
