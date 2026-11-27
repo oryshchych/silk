@@ -16,12 +16,16 @@ import { seedSynthetic, SYNTHETIC_DEFAULT_ORDERS } from '@store/db/seed/syntheti
 import { createTestDatabase, type TestDatabase } from '@store/db/test/db';
 import type { Reader } from '@store/db/types';
 
+import { inReportTransaction } from '../src/reports/transaction.ts';
 import { readRevenueComparison } from '../src/reports/comparison.ts';
 import { readMargin, readMarginBreakdown } from '../src/reports/margin.ts';
 import { parsePeriod, type Period } from '../src/reports/period.ts';
 import { readRevenue } from '../src/reports/revenue.ts';
 
 /** One second is the target; the bound CI enforces is generous on purpose. */
+/** REPORTS_PERF_ORDERS=200000 runs the same checks at four times the size (not in CI). */
+// eslint-disable-next-line no-restricted-properties -- a local measuring knob, never read by the app
+const ORDERS = Number(process.env['REPORTS_PERF_ORDERS'] ?? SYNTHETIC_DEFAULT_ORDERS);
 export const TARGET_MS = 1_000;
 export const CI_BOUND_MS = 3_000;
 
@@ -33,32 +37,24 @@ beforeAll(async () => {
   testDb = await createTestDatabase();
   handle = createDb(testDb.appUrl, { max: 2, statementTimeoutMs: 25_000 });
   await handle.db.transaction(async (tx) => {
-    await seedSynthetic(tx, { orders: SYNTHETIC_DEFAULT_ORDERS });
+    await seedSynthetic(tx, { orders: ORDERS });
   });
-  await handle.db.execute(sql`ANALYZE`);
+  // What a live database looks like: vacuumed (hint bits, visibility map), so index-only scans work.
+  await handle.db.execute(sql`VACUUM ANALYZE`);
 }, 300_000);
 afterAll(async () => {
   const lines = timings.map(
     (t) =>
       `  ${t.name.padEnd(34)} cold ${String(t.coldMs).padStart(5)} ms   warm ${String(t.warmMs).padStart(5)} ms`,
   );
-  process.stdout.write(
-    `\nreport timings on ${String(SYNTHETIC_DEFAULT_ORDERS)} orders:\n${lines.join('\n')}\n`,
-  );
+  process.stdout.write(`\nreport timings on ${String(ORDERS)} orders:\n${lines.join('\n')}\n`);
   await handle.close();
   await testDb.drop();
 });
 
-/** The way the admin runs a report: one read-only transaction with its own statement timeout. */
-async function asAdmin<T>(run: (tx: Reader) => Promise<T>): Promise<T> {
-  return await handle.db.transaction(
-    async (tx) => {
-      await tx.execute(sql`SET LOCAL statement_timeout = 25000`);
-      return await run(tx);
-    },
-    { accessMode: 'read only' },
-  );
-}
+/** The way the admin runs a report: the module's own read-only transaction with its statement timeout. */
+const asAdmin = async <T>(run: (tx: Reader) => Promise<T>): Promise<T> =>
+  await inReportTransaction(handle.db, run);
 
 async function measure<T>(name: string, run: (tx: Reader) => Promise<T>): Promise<T> {
   const t0 = performance.now();
@@ -87,9 +83,9 @@ describe('reports on 50 000 orders', () => {
       SELECT (SELECT count(*) FROM orders)::text AS orders,
              (SELECT count(*) FROM payment_attempts)::text AS attempts,
              (SELECT count(*) FROM refund_operations)::text AS refunds`);
-    expect(Number(result.rows[0]?.orders)).toBe(50_000);
-    expect(Number(result.rows[0]?.attempts)).toBeGreaterThan(30_000);
-    expect(Number(result.rows[0]?.refunds)).toBeGreaterThan(3_000);
+    expect(Number(result.rows[0]?.orders)).toBe(ORDERS);
+    expect(Number(result.rows[0]?.attempts)).toBeGreaterThan(ORDERS * 0.6);
+    expect(Number(result.rows[0]?.refunds)).toBeGreaterThan(ORDERS * 0.06);
   });
 
   it('the synthetic seed refuses a database that already holds orders', async () => {
@@ -135,6 +131,15 @@ describe('reports on 50 000 orders', () => {
     expect(add(sum(products.rows.map((r) => r.margin)), products.rest?.margin ?? ZERO)).toBe(goods);
     expect(sum(categories.rows.map((r) => r.margin))).toBe(goods);
     expect(margin.totals.noCostLines).toBeGreaterThan(0);
+  });
+
+  it('a one-month window (the usual screen) on margin and revenue', async () => {
+    const month = parsePeriod({ from: '2026-03-01', to: '2026-03-31', granularity: 'day' });
+    await measure('revenue (one month, day)', (tx) => readRevenue(tx, month));
+    await measure('margin totals (one month)', (tx) => readMargin(tx, month));
+    await measure('margin by product (one month)', (tx) =>
+      readMarginBreakdown(tx, month, { by: 'product', limit: 100 }),
+    );
   });
 
   it('the dashboard comparison (three periods)', async () => {

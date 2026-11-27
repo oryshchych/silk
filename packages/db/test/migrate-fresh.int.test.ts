@@ -1417,3 +1417,27 @@ describe('0021 and 0022: legal_documents', () => {
     expect(after.updated_at.getTime()).toBeGreaterThan(before.updated_at.getTime());
   });
 });
+
+describe('phase 10 report indexes (0023)', () => {
+  it('exist, are partial on exactly the rows the reports filter, and are owned by the migration role', async () => {
+    const { rows } = await root.query<{ indexname: string; indexdef: string }>(
+      `SELECT indexname, indexdef FROM pg_indexes
+        WHERE indexname IN ('payment_attempts_captured_at_idx', 'refund_settled_at_idx',
+                            'return_requests_received_at_idx', 'orders_cancelled_at_idx')
+        ORDER BY indexname`,
+    );
+    expect(rows.map((row) => row.indexname)).toEqual([
+      'orders_cancelled_at_idx',
+      'payment_attempts_captured_at_idx',
+      'refund_settled_at_idx',
+      'return_requests_received_at_idx',
+    ]);
+    for (const row of rows) expect(row.indexdef).toContain('WHERE');
+    expect(
+      rows.find((r) => r.indexname === 'payment_attempts_captured_at_idx')?.indexdef,
+    ).toContain('captured_amount > 0');
+    expect(rows.find((r) => r.indexname === 'refund_settled_at_idx')?.indexdef).toContain(
+      `state = 'succeeded'`,
+    );
+  });
+});
