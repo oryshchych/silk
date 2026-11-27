@@ -159,3 +159,45 @@ export function toHryvniasText(a: Money): string {
   const fraction = String(abs % 100).padStart(2, '0');
   return `${a < 0 ? '-' : ''}${String(whole)}.${fraction}`;
 }
+
+/**
+ * Percent change from `previous` to `current` in basis points (1 % = 100), rounded half away from
+ * zero, with BigInt so large totals stay exact. `null` when `previous` is zero: a percentage of
+ * nothing is not a number, so the screen shows the absolute change only (phase 10 divide-by-zero
+ * rule). A fall from 1000 to 0 is -10000 (minus 100 %).
+ */
+export function percentChangeBps(previous: Money, current: Money): number | null {
+  if (previous === 0) return null;
+  const scaled = (BigInt(current) - BigInt(previous)) * 10_000n;
+  const base = BigInt(Math.abs(previous));
+  const magnitude = ((scaled < 0n ? -scaled : scaled) * 2n + base) / (2n * base);
+  return Number(scaled < 0n ? -magnitude : magnitude);
+}
+
+/** `part / whole` in basis points, half-up; `null` when `whole` is not positive. */
+export function ratioBps(part: number, whole: number): number | null {
+  if (!Number.isSafeInteger(part) || !Number.isSafeInteger(whole) || whole <= 0) return null;
+  const scaled = BigInt(part) * 10_000n;
+  const base = BigInt(whole);
+  const magnitude = ((scaled < 0n ? -scaled : scaled) * 2n + base) / (2n * base);
+  return Number(scaled < 0n ? -magnitude : magnitude);
+}
+
+/** `1234` basis points -> `"12,3 %"` style text for a locale: one decimal, no float. */
+export function formatBps(bps: number, locale: MoneyLocale): string {
+  const abs = Math.abs(bps);
+  const tenths = Math.floor((abs + 5) / 10);
+  const text = `${String(Math.floor(tenths / 10))}${locale === 'uk' ? ',' : '.'}${String(tenths % 10)}`;
+  return `${bps < 0 && tenths > 0 ? '-' : ''}${text}${locale === 'uk' ? ' %' : '%'}`;
+}
+
+/**
+ * An amount read from the database. `sum(integer)` is a `bigint`, which node-postgres returns as a
+ * string: converting with `Number()` silently loses precision past 2^53, so this refuses anything
+ * that is not a safe integer instead of rounding it.
+ */
+export function moneyFromDb(value: string | number | bigint | null | undefined): Money {
+  if (value === null || value === undefined) return ZERO;
+  const parsed = typeof value === 'number' ? value : Number(value);
+  return money(parsed);
+}
