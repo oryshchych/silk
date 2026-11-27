@@ -8,6 +8,16 @@ export async function SizeGuide({ bands }: { bands: readonly number[] }) {
   const half = Math.floor(BAND_STEP / 2);
   return (
     <div className="flex flex-col gap-4 text-sm">
+      <section aria-labelledby="size-guide-measure" className="flex flex-col gap-2">
+        <h3 id="size-guide-measure" className="font-medium">
+          {t('guideMeasureTitle')}
+        </h3>
+        <ol className="flex list-decimal flex-col gap-1 pl-5">
+          <li>{t('guideMeasureUnderbust')}</li>
+          <li>{t('guideMeasureBust')}</li>
+        </ol>
+        <p className="text-text-muted">{t('guideMeasureTip')}</p>
+      </section>
       <p className="text-text-muted">{t('guideHint')}</p>
       <table className="w-full max-w-md border-collapse text-left">
         <thead>
