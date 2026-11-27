@@ -366,13 +366,18 @@ export async function runAdminSmoke({
     // A tag used in one language only has no counterpart: no hreflang pair and no language switch to a 404.
     const enOnlyTag = await get('/en/blog/tag/en-only-tag');
     const bothTag = await get('/blog/tag/smoke-tag');
+    const tagParts = {
+      enOnlyStatus: enOnlyTag.status === 200,
+      enOnlyNoPair: !enOnlyTag.html.includes('hrefLang='),
+      bothStatus: bothTag.status === 200,
+      bothPair: bothTag.html.includes('hrefLang="en"'),
+    };
     check(
       'blog: a tag in one language has no hreflang and no language switch; a tag in both has the pair',
-      enOnlyTag.status === 200 &&
-        !enOnlyTag.html.includes('hrefLang=') &&
-        bothTag.status === 200 &&
-        bothTag.html.includes('hrefLang="en"'),
+      Object.values(tagParts).every(Boolean),
     );
+    if (!Object.values(tagParts).every(Boolean))
+      process.stdout.write(`     ${JSON.stringify(tagParts)}\n`);
     // A page past the last one is a 404 and builds no cache entry; a post without an excerpt gets its own description.
     const pastTheEnd = await get('/blog?page=99');
     const firstPage = await get('/blog');
