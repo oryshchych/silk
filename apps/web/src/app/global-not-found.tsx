@@ -1,7 +1,6 @@
 import type { Metadata } from 'next';
 
-import en from '../../messages/en.json';
-import uk from '../../messages/uk.json';
+import { en, uk } from '../lib/last-resort-messages';
 
 import './globals.css';
 

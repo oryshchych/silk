@@ -5,10 +5,14 @@
  */
 import { randomUUID } from 'node:crypto';
 
+import { eq } from 'drizzle-orm';
+
 import {
   orderItems,
   orders,
   paymentAttempts,
+  promoCodeRedemptions,
+  promoCodes,
   refundOperations,
   returnRequestItems,
   returnRequests,
@@ -39,6 +43,10 @@ export interface RefundSpec {
   state?: 'succeeded' | 'pending' | 'failed' | 'unknown' | 'in_flight';
   /** Index into `captures`. */
   capture?: number;
+  /** A refund with no payment attempt behind it (the column is nullable). */
+  unlinked?: boolean;
+  /** When the operation was created, if not the settle time (a refund can settle long after it was made). */
+  createdAt?: string;
   returnIndex?: number;
 }
 
@@ -61,6 +69,8 @@ export interface OrderSpec {
   shippingCostActual?: number | null;
   cancelledAt?: string | null;
   promoCode?: string | null;
+  /** A promo code redemption of this order (the record the promo report reads). */
+  redemption?: { code: string; discount: number; state?: 'consumed' | 'released' };
   email?: string;
   customerId?: string | null;
   captures?: CaptureSpec[];
@@ -68,13 +78,12 @@ export interface OrderSpec {
   returns?: ReturnSpec[];
 }
 
-let counter = 0;
-const nextNumber = (): string => {
-  counter += 1;
-  return `LS-2026-${String(counter).padStart(6, '0')}`;
-};
+const nextNumber = (): string => `LS-T-${randomUUID().replaceAll('-', '').slice(0, 20)}`;
 const at = (value: string | null | undefined): Date | null =>
   value === null || value === undefined ? null : new Date(value);
+
+const createdAtOf = (value: string | null | undefined): { createdAt?: Date } =>
+  value === null || value === undefined ? {} : { createdAt: new Date(value) };
 
 export interface InsertedOrder {
   orderId: string;
@@ -159,6 +168,7 @@ export async function insertOrder(tx: Tx, spec: OrderSpec): Promise<InsertedOrde
         amount: capture.amount,
         capturedAmount: capture.amount,
         completedAt: at(capture.at),
+        ...createdAtOf(capture.at ?? spec.createdAt),
       })
       .returning({ id: paymentAttempts.id });
     if (row === undefined) throw new Error('fixture: attempt');
@@ -175,7 +185,7 @@ export async function insertOrder(tx: Tx, spec: OrderSpec): Promise<InsertedOrde
         reason: ret.reason ?? 'changed_mind',
         policyVersion: 'test',
         receivedAt: at(ret.receivedAt),
-        ...(ret.createdAt === undefined ? {} : { createdAt: new Date(ret.createdAt) }),
+        ...createdAtOf(ret.createdAt ?? spec.createdAt),
       })
       .returning({ id: returnRequests.id });
     if (row === undefined) throw new Error(`fixture: return ${String(index)}`);
@@ -194,15 +204,47 @@ export async function insertOrder(tx: Tx, spec: OrderSpec): Promise<InsertedOrde
     }
   }
   for (const refund of spec.refunds ?? []) {
-    const attemptId = attemptIds[refund.capture ?? 0];
+    const attemptId = refund.unlinked === true ? undefined : attemptIds[refund.capture ?? 0];
     const returnRequestId = refund.returnIndex === undefined ? null : returnIds[refund.returnIndex];
-    await tx.insert(refundOperations).values({
+    const [op] = await tx
+      .insert(refundOperations)
+      .values({
+        orderId: order.id,
+        paymentAttemptId: attemptId ?? null,
+        returnRequestId: returnRequestId ?? null,
+        amount: refund.amount,
+        state: refund.state ?? 'succeeded',
+        settledAt: at(refund.at),
+        ...createdAtOf(refund.createdAt ?? refund.at ?? spec.createdAt),
+      })
+      .returning({ id: refundOperations.id });
+    if (op !== undefined && returnRequestId !== null && returnRequestId !== undefined) {
+      await tx
+        .update(returnRequests)
+        .set({ refundOperationId: op.id, refundAmount: refund.amount })
+        .where(eq(returnRequests.id, returnRequestId));
+    }
+  }
+  if (spec.redemption !== undefined) {
+    const code = spec.redemption.code;
+    const existing = await tx
+      .select({ id: promoCodes.id })
+      .from(promoCodes)
+      .where(eq(promoCodes.code, code));
+    const promoId =
+      existing[0]?.id ??
+      (
+        await tx
+          .insert(promoCodes)
+          .values({ code, type: 'fixed', value: 100 })
+          .returning({ id: promoCodes.id })
+      )[0]?.id;
+    if (promoId === undefined) throw new Error('fixture: promo');
+    await tx.insert(promoCodeRedemptions).values({
+      promoCodeId: promoId,
       orderId: order.id,
-      paymentAttemptId: attemptId ?? null,
-      returnRequestId: returnRequestId ?? null,
-      amount: refund.amount,
-      state: refund.state ?? 'succeeded',
-      settledAt: at(refund.at),
+      discountAmount: spec.redemption.discount,
+      state: spec.redemption.state ?? 'consumed',
     });
   }
   return { orderId: order.id, lineIds, attemptIds };

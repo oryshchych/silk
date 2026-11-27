@@ -28,6 +28,7 @@ import { runCheckoutSmoke } from './smoke-checkout.ts';
 import { runImportSmoke } from './smoke-import.ts';
 import { runLegalSmoke } from './smoke-legal.ts';
 import { runPaymentSmoke } from './smoke-payments.ts';
+import { runReportsSmoke } from './smoke-reports.ts';
 import { runViewsSmoke } from './smoke-views.ts';
 import { runAnalyticsSmoke, runPostFloodSmoke, runSeoSmoke } from './smoke-seo.ts';
 
@@ -444,6 +445,13 @@ try {
     authSecret: AUTH_SECRET_FOR_SMOKE,
     buildRoot: copy,
     siteOrigin: SITE,
+    check,
+  });
+  await runReportsSmoke({
+    base,
+    databaseUrl,
+    authSecret: AUTH_SECRET_FOR_SMOKE,
+    staticDir: join(root, 'apps/web/.next/static'),
     check,
   });
   await runViewsSmoke({ base, databaseUrl, siteOrigin: SITE, check });

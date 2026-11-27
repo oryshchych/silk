@@ -1,7 +1,6 @@
 'use client';
 
-import en from '../../messages/en.json';
-import uk from '../../messages/uk.json';
+import { en, uk } from '../lib/last-resort-messages';
 
 /**
  * Last resort: the locale layout itself failed, so no provider or locale is

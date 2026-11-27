@@ -38,6 +38,17 @@ describe('parsePeriod', () => {
   });
 });
 
+describe('the point cap', () => {
+  it('limits a daily series only', () => {
+    const wide = { from: '2024-01-01', to: '2026-11-26', granularity: 'day' };
+    expect(() => parsePeriod(wide)).toThrow(ReportInputError);
+    expect(parsePeriod(wide, { series: false }).from).toBe('2024-01-01');
+    expect(() => parsePeriod({ ...wide, from: '2020-01-01' }, { series: false })).toThrow(
+      ReportInputError,
+    );
+  });
+});
+
 describe('period arithmetic', () => {
   it('counts days inclusively, across a leap day', () => {
     expect(daysInRange('2026-06-01', '2026-06-01')).toBe(1);

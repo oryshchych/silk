@@ -91,3 +91,62 @@ the orders a window touches. When whole-history margin on real data passes about
 Every report runs in `inReportTransaction` (`reports/transaction.ts`): READ ONLY (a write is refused by Postgres),
 repeatable read (one snapshot), its own `statement_timeout`, a recognisable `application_name`. The module exports
 no raw reader (`exports.unit.test.ts`).
+
+## The ten reports (slice B)
+
+| Report | What it counts | Dated by |
+|---|---|---|
+| revenue | the three journal figures, by day, week or month | capture / settle time |
+| orders | orders by status, delivery and payment method | creation day |
+| top-products | units and ordered value of non-cancelled orders (NOT revenue) | creation day |
+| margin (cost roles) | event-dated goods margin by product or category, plus carrier cost | events, see above |
+| stock | variants with available stock up to a threshold; value at price, at cost for cost roles | now |
+| returns | requests by reason, received, refunded; requests per paid order | request creation |
+| promos | discount per code, share of orders with a code | creation day |
+| customers | new vs returning by first capture; top 20 by lifetime net receipts (key only) | capture time |
+| providers | attempts, succeeded, failed, success rate among settled, refunds | attempt creation, settle time |
+| viewed-not-bought | products with views and no purchase in the period (a list) | view day (UTC) |
+
+Every report is one `ReportResultDto` (`columns`, `rows`, a totals row over the whole period, facts, notes, an
+optional chart). The screen and the CSV are two renderings of it. No funnel and nothing called conversion: views
+and purchases are unlinked aggregates (plan, phase 10).
+
+## Dashboard and alerts
+
+`/admin` (for `reports.view`; a content editor sees the plain welcome) shows the key figures of the last 30 shop
+days against the previous 30 days and the same dates a year earlier (only when the journal holds money that old):
+gross, refunds, net, payments received, and, only for a role with `catalog.cost.view`, the margin. Each is the SAME
+function as its report, so the dashboard and the report cannot disagree. The absolute change is always shown, the
+percentage only when the earlier value is not zero (a fall to zero is exactly -100 %). The data time is on the page.
+No materialised view exists, so nothing can be stale: each read is at most 60 s old (the shared computation).
+
+Alerts (counts and the age of the oldest row, no row data), each with a read-only link where a screen resolves it:
+
+| Alert | Counted when |
+|---|---|
+| outbox_stuck | an outbox row is unpublished for over 15 minutes (the relay is not delivering; no screen yet) |
+| refund_open | a refund is still pending, in flight or unknown for over 10 minutes |
+| payment_unknown | a payment attempt is in state `unknown` |
+| reservation_expiring | an unreleased reservation expires within 15 minutes |
+| low_stock | an active variant has 3 or fewer units available |
+| fiscal_failed | an order's fiscal receipt is `failed` |
+| waybill_unknown | a waybill operation is `unknown`, or pending or in flight for over 10 minutes |
+
+The dead-letter queue lives in the pg-boss schema, which the app role does not read; the stuck-outbox count is the
+visible symptom of it.
+
+## Rules pinned by review (phase 10, slice B)
+
+- **Orders report:** the amount column is ordered value of orders that are NOT cancelled (a cancelled row still counts the
+  order and shows 0); it is not revenue.
+- **Top products:** `orderedValue` is the ordered value of non-cancelled lines, not net of returns and including unpaid
+  orders; it is not revenue.
+- **Promo codes:** the discount is the sum of CONSUMED `promo_code_redemptions` of non-cancelled orders; a released
+  redemption gave nothing. A code used on an order with another kind of discount is not credited with it.
+- **Payment providers:** refunds are listed by the provider of the attempt behind them; a succeeded refund with no
+  attempt is the explicit `unlinked` row, so the refund total equals the revenue report to the kopiyka. Dated by the settle
+  time (a refund made in May and settled in June belongs to June).
+- **Ranges:** a daily series (revenue by day) is capped at 366 days; every other report accepts up to about three years
+  (1100 days); `granularity` means nothing to them.
+- **Audit:** an export records `includedCost` from what the file holds (a cost column or fact), not from the role.
+- **Alerts:** until the worker runs (owner queue Q31) every outbox row ages and the "stuck outbox" alert is permanent.

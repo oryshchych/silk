@@ -16,6 +16,7 @@ import { seedSynthetic, SYNTHETIC_DEFAULT_ORDERS } from '@store/db/seed/syntheti
 import { createTestDatabase, type TestDatabase } from '@store/db/test/db';
 import type { Reader } from '@store/db/types';
 
+import { runReportOn as runReport, parseReportRequest } from '../src/reports/run.ts';
 import { inReportTransaction } from '../src/reports/transaction.ts';
 import { readRevenueComparison } from '../src/reports/comparison.ts';
 import { readMargin, readMarginBreakdown } from '../src/reports/margin.ts';
@@ -39,6 +40,29 @@ beforeAll(async () => {
   await handle.db.transaction(async (tx) => {
     await seedSynthetic(tx, { orders: ORDERS });
   });
+  // 200 products (the ids the synthetic lines point at), 150 000 views and 400 variants for the
+  // product-based reports.
+  await handle.db.execute(sql`INSERT INTO categories (slug, name_uk, name_en, size_system)
+    VALUES ('syn', 'Syn', 'Syn', 'apparel')`);
+  await handle.db
+    .execute(sql`INSERT INTO products (id, sku, slug, brand, category_id, name_uk, name_en, base_price, cost_price, is_active)
+    SELECT ('00000000-0000-4000-8000-' || lpad(g::text, 12, '0'))::uuid, 'SYN-' || g, 'syn-' || g, 'Syn',
+           (SELECT id FROM categories LIMIT 1), 'Product ' || g, 'Product ' || g, 50000, 20000, true
+      FROM generate_series(0, 199) g`);
+  await handle.db.execute(
+    sql`INSERT INTO sizes (system, label, sort_order) VALUES ('apparel', 'M', 1)`,
+  );
+  await handle.db.execute(
+    sql`INSERT INTO colors (slug, name_uk, name_en, hex) VALUES ('syn', 'Syn', 'Syn', '#000000')`,
+  );
+  await handle.db
+    .execute(sql`INSERT INTO product_variants (product_id, size_id, color_id, sku, stock_quantity)
+    SELECT p.id, (SELECT id FROM sizes LIMIT 1), (SELECT id FROM colors LIMIT 1), 'V-' || p.sku, (length(p.sku) * 3) % 9
+      FROM products p`);
+  await handle.db.execute(sql`INSERT INTO product_views (product_id, session_hash, viewed_on)
+    SELECT ('00000000-0000-4000-8000-' || lpad((g % 200)::text, 12, '0'))::uuid, md5(g::text),
+           date '2026-01-01' + (g % 300)
+      FROM generate_series(1, 150000) g ON CONFLICT DO NOTHING`);
   // What a live database looks like: vacuumed (hint bits, visibility map), so index-only scans work.
   await handle.db.execute(sql`VACUUM ANALYZE`);
 }, 300_000);
@@ -131,6 +155,30 @@ describe('reports on 50 000 orders', () => {
     expect(add(sum(products.rows.map((r) => r.margin)), products.rest?.margin ?? ZERO)).toBe(goods);
     expect(sum(categories.rows.map((r) => r.margin))).toBe(goods);
     expect(margin.totals.noCostLines).toBeGreaterThan(0);
+  });
+
+  it('every other report through the registry (owner, the heaviest shape)', async () => {
+    const window = { from: '2025-06-01', to: '2026-05-31' };
+    for (const name of [
+      'orders',
+      'top-products',
+      'returns',
+      'promos',
+      'customers',
+      'providers',
+      'viewed-not-bought',
+    ] as const) {
+      const request = parseReportRequest(name, window);
+      const result = await measure(`${name} (1 year)`, (tx) => runReport(tx, request, 'owner'));
+      if (name !== 'viewed-not-bought') expect(result.table.rows.length, name).toBeGreaterThan(0);
+    }
+    const stock = await measure('stock', (tx) =>
+      runReport(tx, parseReportRequest('stock', { threshold: 5 }), 'owner'),
+    );
+    expect(stock.table.rows.length).toBeGreaterThan(0);
+    await measure('margin by product (registry)', (tx) =>
+      runReport(tx, parseReportRequest('margin', { ...window, by: 'product' }), 'owner'),
+    );
   });
 
   it('a one-month window (the usual screen) on margin and revenue', async () => {

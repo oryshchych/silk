@@ -107,6 +107,15 @@ export async function seedSynthetic(tx: Tx, options: SyntheticOptions): Promise<
            created_at
       FROM syn_tot t
   `);
+  // The promo report reads redemptions (the record written with the order), so the orders that carry a code get one.
+  await tx.execute(sql`
+    INSERT INTO promo_codes (code, type, value)
+    SELECT 'SYN' || g, 'fixed', 5000 FROM generate_series(0, 4) g`);
+  await tx.execute(sql`
+    INSERT INTO promo_code_redemptions (promo_code_id, order_id, discount_amount, state)
+    SELECT pc.id, t.id, t.disc1, 'consumed'
+      FROM syn_tot t JOIN promo_codes pc ON pc.code = 'SYN' || (t.i % 5)
+     WHERE t.has_promo`);
   await tx.execute(sql`
     INSERT INTO order_items (order_id, product_uid_snapshot, variant_uid_snapshot, name_snapshot, sku_snapshot,
                              size_label, color_name, category_path_snapshot, unit_price, line_discount,
