@@ -376,8 +376,13 @@ export async function runAdminSmoke({
       'blog: a tag in one language has no hreflang and no language switch; a tag in both has the pair',
       Object.values(tagParts).every(Boolean),
     );
-    if (!Object.values(tagParts).every(Boolean))
-      process.stdout.write(`     ${JSON.stringify(tagParts)}\n`);
+    if (!Object.values(tagParts).every(Boolean)) {
+      const links = (bothTag.html.match(/<link rel="(?:alternate|canonical)"[^>]*>/g) ?? []).slice(
+        0,
+        5,
+      );
+      process.stdout.write(`     ${JSON.stringify(tagParts)} ${JSON.stringify(links)}\n`);
+    }
     // A page past the last one is a 404 and builds no cache entry; a post without an excerpt gets its own description.
     const pastTheEnd = await get('/blog?page=99');
     const firstPage = await get('/blog');
