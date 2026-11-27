@@ -384,9 +384,32 @@ describe('scheduled jobs', () => {
         JOB_NAMES.sweepRefunds,
         JOB_NAMES.purgePendingAccounts,
         JOB_NAMES.notifyRestocked,
+        JOB_NAMES.cleanViews,
       ].sort(),
     );
     expect(schedules.every((s) => s.timezone === 'Europe/Kyiv')).toBe(true);
+  });
+
+  it('the views cleanup removes product views older than 90 days and keeps newer ones', async () => {
+    const [product] = (await app.db.execute<{ id: string }>(sql`SELECT id FROM products LIMIT 1`))
+      .rows;
+    const productId = product?.id ?? '';
+    await app.db.execute(sql`INSERT INTO product_views (product_id, session_hash, viewed_on) VALUES
+      (${productId}::uuid, ${'a'.repeat(64)}, (now() AT TIME ZONE 'UTC')::date - 120),
+      (${productId}::uuid, ${'b'.repeat(64)}, (now() AT TIME ZONE 'UTC')::date - 5)`);
+    const logs: string[] = [];
+    const handlers = createJobHandlers({
+      db: app.db,
+      directory: null,
+      providers: {},
+      log: (line) => logs.push(line),
+    });
+    await handlers[JOB_NAMES.cleanViews]();
+    const left = await app.db.execute<{ n: number }>(
+      sql`SELECT count(*)::int AS n FROM product_views`,
+    );
+    expect(left.rows[0]?.n).toBe(1);
+    expect(logs.join('')).toContain('"removed":1');
   });
 
   it('the reconcile job reports a drifted counter at error level, ids only', async () => {

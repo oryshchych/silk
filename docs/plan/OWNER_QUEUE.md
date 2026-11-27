@@ -30,6 +30,12 @@ Only what needs the owner's own hands (credentials, accounts, a setting in an ex
 | Q19 | Supply the brands' bra size charts when they exist (the standard table ships meanwhile) |
 | Q1 | Shop name, palette and fonts when decided (the placeholder and neutral tokens stay meanwhile) |
 
+## Deferred by phase 10 (default applied; the owner can overrule)
+
+| ID | Raised | Item | Default applied |
+|---|---|---|---|
+| Q88 | 2026-11-27 | The product view counter stores a daily opaque hash derived from the visitor's address and user agent (HMAC under the server secret): no address, agent or cookie is kept, but whether a hash derived from an address is personal data is a legal question; the privacy text (phase 8) should mention anonymous view counts kept for 90 days | Counter on, hash per day, 90 days, `do not track` respected. Remove `ProductViewBeacon` from the product page (one line) to turn it off |
+
 ## Deferred by phase 9 (default applied; the owner can overrule)
 
 | ID | Raised | Item | Default applied |

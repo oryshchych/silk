@@ -18,6 +18,7 @@ import { ProductBuyBox } from '@/components/product-buy-box';
 import { ProductReviews } from '@/components/product-reviews';
 import { TrackEvent } from '@/components/track-event';
 import { SiteShell } from '@/components/site-shell';
+import { ProductViewBeacon } from '@/components/product-view-beacon';
 import { SizeGuide } from '@/components/size-guide';
 import { resolveLocale } from '@/i18n/locale';
 import { productItem, variantItems } from '@/lib/analytics/items';
@@ -178,6 +179,7 @@ export default async function ProductPage({ params }: Props) {
         <h1 className="font-display text-3xl">{product.name}</h1>
         <p className="text-xs text-text-muted">{t('sku', { sku: product.sku })}</p>
       </div>
+      <ProductViewBeacon productId={product.id} />
       <div className="mt-6">
         <ProductBuyBox
           cartHref={href(locale, paths.cart)}
