@@ -27,7 +27,7 @@ Only what needs the owner's own hands (credentials, accounts, a setting in an ex
 | Q32 | WayForPay merchant account for the sandbox run (with Q13 and Q3 the three sandbox checks happen together) |
 | Q24 | Set `TRUSTED_PROXY_HOPS` per environment in Dokploy (staging 1, production behind Cloudflare 2), Traefik `forwardedHeaders.trustedIPs` to the Cloudflare ranges, origin firewall to Cloudflare |
 | Q8 | Check the R2 backup bucket: `staging/` must hold a second file from the 2026-11-23 03:00 Kyiv run |
-| Q19 | Supply the brands' bra size charts when they exist (the standard table ships meanwhile) |
+| Q19 | Supply the size charts of the brands the shop actually resells (per brand, from the supplier) when they exist; the standard table and original measuring instructions (uk/en, in the size guide) ship meanwhile. No third-party chart or text is copied (the Victoria's Secret chart the owner pasted is reference only) |
 | Q1 | DECIDED, implementation pending (a branding PR, not yet scheduled): shop name Damazla (short DMZ, written DaMaZla; named after the owner's children); base colour around `#ffc8dd` (a light surface/accent: text must stay dark and buttons use a darker rose to pass WCAG AA; semantic tokens only, ADR-21); fonts Cormorant Garamond (headings) + Inter (body), both with Cyrillic, via `next/font`. Everything is sold under Damazla: no Victoria's Secret branding anywhere. Update `TITLE_SUFFIX_RESERVE` (Q84) to the real name length |
 
 ## Deferred by phase 10 (default applied; the owner can overrule)
