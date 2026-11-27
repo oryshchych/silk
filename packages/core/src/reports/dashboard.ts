@@ -74,7 +74,13 @@ export async function readDashboard(
 export async function runDashboard(
   db: ReportDb,
   period: Period,
-  options: { includeCost: boolean },
+  options: { includeCost: boolean; statementTimeoutMs?: number },
 ): Promise<DashboardDto> {
-  return await inReportTransaction(db, async (tx) => await readDashboard(tx, period, options));
+  return await inReportTransaction(
+    db,
+    async (tx) => await readDashboard(tx, period, options),
+    options.statementTimeoutMs === undefined
+      ? {}
+      : { statementTimeoutMs: options.statementTimeoutMs },
+  );
 }

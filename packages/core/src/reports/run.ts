@@ -206,8 +206,9 @@ export async function runReport(
   db: ReportDb,
   request: ParsedReport,
   role: AdminRole,
+  options: { statementTimeoutMs?: number } = {},
 ): Promise<ReportResultDto> {
   // The role is judged before a connection is taken.
   if (!mayRunReport(role, request.name)) throw new ReportForbiddenError();
-  return await inReportTransaction(db, async (tx) => await runReportOn(tx, request, role));
+  return await inReportTransaction(db, async (tx) => await runReportOn(tx, request, role), options);
 }

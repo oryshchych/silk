@@ -18,6 +18,9 @@ import { createKeyedComputation } from '@/lib/keyed-computation';
  * carries whether the caller may see the cost: a cost-bearing result is never handed to a role
  * without the permission, and the role check runs before the cache is consulted.
  */
+/** A page or an export waits at most this long for a report (the module default of 25 s is too long for a page). */
+const PAGE_STATEMENT_TIMEOUT_MS = 5_000;
+
 interface Context {
   request: ParsedReport;
   role: AdminRole;
@@ -25,7 +28,9 @@ interface Context {
 
 const computation = createKeyedComputation<ReportResultDto, Context>(
   async ({ request, role }) => {
-    return await runReport(await getDb(), request, role);
+    return await runReport(await getDb(), request, role, {
+      statementTimeoutMs: PAGE_STATEMENT_TIMEOUT_MS,
+    });
   },
   { ttlMs: 60_000, minRefreshMs: 5_000, maxKeys: 200, maxRunning: 3 },
 );
@@ -57,7 +62,10 @@ interface DashboardContext {
 
 const dashboardComputation = createKeyedComputation<DashboardDto, DashboardContext>(
   async ({ period, includeCost }) => {
-    return await runDashboard(await getDb(), period, { includeCost });
+    return await runDashboard(await getDb(), period, {
+      includeCost,
+      statementTimeoutMs: PAGE_STATEMENT_TIMEOUT_MS,
+    });
   },
   { ttlMs: 60_000, minRefreshMs: 5_000, maxKeys: 50, maxRunning: 3 },
 );
