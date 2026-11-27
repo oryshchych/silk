@@ -237,6 +237,7 @@ describe('the message router', () => {
               'AccountEmailError',
               'BackInStockEmailError',
               'CartReminderEmailError',
+              'NewsletterConfirmEmailError',
             ].includes(outcome),
         topic,
       ).toBe(true);

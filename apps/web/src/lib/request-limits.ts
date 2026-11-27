@@ -22,6 +22,8 @@ export const limiters = {
    * token does not. Keyed by the token, never logged.
    */
   promoCart: createRateLimiter({ limit: 30, windowMs: 60 * 60_000 }),
+  /** Newsletter requests: each one can send a mail to a stranger, so few per client. */
+  newsletter: createRateLimiter({ limit: 5, windowMs: 10 * 60_000 }),
   /** Placing orders: a person needs a handful, a script needs hundreds. */
   place: createRateLimiter({ limit: 10, windowMs: 10 * 60_000 }),
   /** COD per (phone, client): the series of fake cash-on-delivery orders (ADR-3). */

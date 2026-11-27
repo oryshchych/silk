@@ -26,7 +26,10 @@ export function isAccountPath(pathname: string): boolean {
     path === '/account' ||
     path.startsWith('/account/') ||
     path === '/unsubscribe' ||
-    path.startsWith('/unsubscribe/')
+    path.startsWith('/unsubscribe/') ||
+    // The newsletter form and its confirmation link (a credential in the query): private, never indexed.
+    path === '/newsletter' ||
+    path.startsWith('/newsletter/')
   );
 }
 

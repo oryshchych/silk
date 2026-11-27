@@ -14,6 +14,7 @@ import type { MessageSender, OutboundMessage } from './deliver.ts';
 import { handleAccountLink } from './email/account-emails.ts';
 import { handleBackInStock } from './email/back-in-stock.ts';
 import { handleCartReminder } from './email/cart-reminder.ts';
+import { handleNewsletterConfirm } from './email/newsletter-confirm.ts';
 import { handleOrderCreated } from './email/order-created.ts';
 import {
   handlePaymentFailed,
@@ -101,6 +102,10 @@ export function createMessageSender(deps: {
       }
       if (message.topic === 'email.cart-reminder') {
         await handleCartReminder({ ...mail, authSecret: deps.authSecret }, envelope);
+        return;
+      }
+      if (message.topic === 'email.newsletter-confirm') {
+        await handleNewsletterConfirm({ ...mail, authSecret: deps.authSecret }, envelope);
         return;
       }
       if (message.topic === 'fiscal.issue-receipt') {
