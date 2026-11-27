@@ -320,18 +320,26 @@ export async function runAdminSmoke({
     const postUk = await get(`/blog/${blogSlug}`);
     const postEn = await get(`/en/blog/${blogSlug}`, { Cookie: 'silk_cart=anything; other=1' });
     const postUkAgain = await get(`/blog/${blogSlug}`, { Cookie: 'visitor=different' });
+    const blogParts = {
+      status: postUk.status === 200,
+      article: postUk.html.includes('"@type":"Article"'),
+      canonical: postUk.html.includes('rel="canonical"'),
+      hreflangEn: postUk.html.includes('hreflang="en"'),
+      hreflangUk: postUk.html.includes('hreflang="uk"'),
+      // The page's own robots meta says index (the `X-Robots-Tag` header is noindex outside production on EVERY page).
+      robotsMeta: /<meta name="robots" content="index, follow"/.test(postUk.html),
+      enStatus: postEn.status === 200,
+      enLanguage: postEn.html.includes('"inLanguage":"en"'),
+    };
     check(
       'blog: a published post is 200 with Article JSON-LD, a self canonical, a hreflang pair and an index robots meta',
-      postUk.status === 200 &&
-        postUk.html.includes('"@type":"Article"') &&
-        postUk.html.includes('rel="canonical"') &&
-        postUk.html.includes('hreflang="en"') &&
-        postUk.html.includes('hreflang="uk"') &&
-        // The page's own robots meta says index (the `X-Robots-Tag` header is noindex outside production on EVERY page).
-        /<meta name="robots" content="index, follow"/.test(postUk.html) &&
-        postEn.status === 200 &&
-        postEn.html.includes('"inLanguage":"en"'),
+      Object.values(blogParts).every(Boolean),
     );
+    if (!Object.values(blogParts).every(Boolean)) {
+      process.stdout.write(
+        `     ${JSON.stringify(blogParts)} ${JSON.stringify(/<meta name="robots"[^>]*>/.exec(postUk.html)?.[0] ?? 'no robots meta')}\n`,
+      );
+    }
     check(
       'blog: the post page is byte-identical for every visitor',
       postUk.html === postUkAgain.html,
