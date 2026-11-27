@@ -86,6 +86,21 @@ async function abandonedCart(email: string): Promise<{ cartId: string; subscribe
   return { cartId, subscriberId: sub.rows[0]?.id ?? '' };
 }
 
+/** pg-boss tables belong to their own role: read them with the boss connection (a check through the app role proves nothing). */
+async function jobStates(name: string): Promise<{ state: string; n: number }[]> {
+  const client = new pg.Client({ connectionString: testDb.bossUrl });
+  await client.connect();
+  try {
+    const result = await client.query<{ state: string; n: number }>(
+      `SELECT state::text AS state, count(*)::int AS n FROM pgboss.job WHERE name = $1 GROUP BY state ORDER BY state`,
+      [name],
+    );
+    return result.rows;
+  } finally {
+    await client.end();
+  }
+}
+
 async function waitFor(check: () => boolean, ms = 20_000): Promise<void> {
   const until = Date.now() + ms;
   while (Date.now() < until) {
@@ -161,11 +176,7 @@ describe('the cart reminder is delivered, once, and not after an order', () => {
     await relayOutbox(app.db, bossPublisher(boss));
     await new Promise((resolve) => setTimeout(resolve, 2_500));
     expect(email.sent).toHaveLength(0);
-    const dead = await app.db
-      .execute<{ n: number }>(
-        sql`SELECT count(*)::int AS n FROM pgboss.job WHERE name = 'outbox.dead'`,
-      )
-      .catch(() => null);
-    expect(dead === null ? 0 : dead.rows[0]?.n).toBe(0);
+    expect(await jobStates('outbox.dead')).toEqual([]);
+    expect(await jobStates('email.cart-reminder')).toEqual([{ state: 'completed', n: 1 }]);
   });
 });

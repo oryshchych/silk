@@ -19,7 +19,7 @@ export async function unsubscribeMarketingByToken(
   const id = readMarketingUnsubscribeToken(secret, token);
   if (id === null) return false;
   const changed = await tx.execute<{ email: string }>(
-    sql`UPDATE newsletter_subscribers SET unsubscribed_at = now()
+    sql`UPDATE newsletter_subscribers SET unsubscribed_at = now(), request_nonce = gen_random_uuid()
          WHERE id = ${id}::uuid AND unsubscribed_at IS NULL RETURNING email`,
   );
   const email = changed.rows[0]?.email;

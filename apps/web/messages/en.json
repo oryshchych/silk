@@ -69,7 +69,8 @@
   "footer": {
     "about": "Original lingerie and homewear delivered across Ukraine.",
     "legalNav": "Legal information",
-    "trademark": "All trademarks and brand names belong to their respective owners and are used on this site only to identify products."
+    "trademark": "All trademarks and brand names belong to their respective owners and are used on this site only to identify products.",
+    "newsletter": "Newsletter"
   },
   "listing": {
     "title": "Catalog",
@@ -1705,6 +1706,29 @@
       "about": "About the shop of original women's lingerie and homewear.",
       "faq": "Answers to common questions about orders, delivery, payment and returns.",
       "contacts": "Contact details of the shop: phone, e-mail and address."
+    }
+  },
+  "newsletter": {
+    "title": "Newsletter",
+    "intro": "News, new arrivals and offers from Damazla. We send a confirmation email first: nothing is sent until you confirm.",
+    "email": "Email address",
+    "consent": "I agree to receive marketing emails from Damazla (news, new arrivals, offers). I can unsubscribe at any time with the link in every email.",
+    "consentVersion": "v1",
+    "submit": "Subscribe",
+    "sent": "Check your inbox: if the address can receive the newsletter, a confirmation link is on its way.",
+    "error": {
+      "invalid": "Enter a valid email address.",
+      "consent": "Tick the box to agree to receive emails.",
+      "rateLimited": "Too many attempts. Try again later."
+    },
+    "confirmTitle": "Confirm your subscription",
+    "confirmIntro": "Press the button to confirm that you want to receive our newsletter.",
+    "confirmButton": "Confirm subscription",
+    "confirmed": "Done: you are subscribed. Every email has an unsubscribe link.",
+    "confirmError": {
+      "invalid": "This link is not valid.",
+      "expired": "This link has expired. Sign up again to get a new one.",
+      "rateLimited": "Too many attempts. Try again later."
     }
   }
 }

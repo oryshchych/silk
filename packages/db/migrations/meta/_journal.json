@@ -169,6 +169,13 @@
       "when": 1795761576510,
       "tag": "0023_report_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1795778761019,
+      "tag": "0024_newsletter_request_nonce",
+      "breakpoints": true
     }
   ]
 }

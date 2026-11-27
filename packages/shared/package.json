@@ -28,6 +28,7 @@
     "./dto/reports": "./src/dto/reports.ts",
     "./dto/admin-promo": "./src/dto/admin-promo.ts",
     "./promo-code": "./src/promo-code.ts",
+    "./newsletter": "./src/newsletter.ts",
     "./content-bounds": "./src/content-bounds.ts",
     "./content-columns": "./src/content-columns.ts",
     "./content-text": "./src/content-text.ts",

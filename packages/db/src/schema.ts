@@ -1068,8 +1068,20 @@ export const newsletterSubscribers = pgTable('newsletter_subscribers', {
   source: varchar('source', { length: 60 }),
   confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
   unsubscribedAt: timestamp('unsubscribed_at', { withTimezone: true }),
+  /**
+   * The request generation. The confirmation link is signed over it and the confirm UPDATE compares it, so a link
+   * works for exactly the request it was mailed for: every new request AND every unsubscribe (link or account
+   * toggle) rotates it, which kills older links (a consumed link, a link from before an unsubscribe).
+   */
+  requestNonce: uuid('request_nonce').notNull().default(sql`gen_random_uuid()`),
+  /** When a confirmation mail was last queued: the sliding one-hour cap per subscriber reads it. */
+  confirmMailQueuedAt: timestamp('confirm_mail_queued_at', { withTimezone: true }),
   createdAt: createdAt(),
-}, (t) => [uniqueIndex('newsletter_email_uq').on(t.email)]);
+}, (t) => [
+  uniqueIndex('newsletter_email_uq').on(t.email),
+  // One spelling per mailbox, so the unique index above means what it says (same rule as customers.email).
+  check('newsletter_email_lower', sql`${t.email} = lower(${t.email})`),
+]);
 
 /* ═══════════════════════════ КОНТЕНТ ═══════════════════════════ */
 

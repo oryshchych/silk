@@ -1,14 +1,21 @@
 'use server';
 
 import { unsubscribeByToken } from '@store/core/account-alerts';
-import { unsubscribeMarketingByToken } from '@store/core/marketing';
+import {
+  canonicalMailbox,
+  confirmSubscription,
+  mailboxDomain,
+  requestSubscription,
+  subscribeSchema,
+  unsubscribeMarketingByToken,
+} from '@store/core/marketing';
 import { z } from 'zod';
 
 import { requestOriginOk } from '@/lib/admin/bound-action';
 import { authConfig } from '@/lib/admin/config';
 import { getDb } from '@/lib/db';
 import { createRateLimiter } from '@/lib/rate-limit';
-import { checkLimit } from '@/lib/request-limits';
+import { checkLimit, limiters } from '@/lib/request-limits';
 
 const limiter = createRateLimiter({ limit: 20, windowMs: 10 * 60_000 });
 
@@ -49,4 +56,64 @@ export async function unsubscribeMarketingAction(input: unknown): Promise<Unsubs
     async (tx) => await unsubscribeMarketingByToken(tx, config.secret, parsed.data.token),
   );
   return ok ? { status: 'done' } : { status: 'error', code: 'invalid' };
+}
+
+export type SubscribeResult =
+  { status: 'sent' } | { status: 'error'; code: 'invalid' | 'consent' | 'rateLimited' };
+
+/**
+ * The newsletter form. A request only creates a PENDING subscription and queues the confirmation mail: the
+ * answer is the same for a new, a pending, a subscribed and a previously unsubscribed address (nobody learns
+ * who is on the list). A filled honeypot is answered as a success and does nothing. The consent box must be ticked.
+ */
+export async function subscribeNewsletterAction(input: unknown): Promise<SubscribeResult> {
+  const raw = z
+    .object({ website: z.string().max(200).optional() })
+    .loose()
+    .safeParse(input);
+  if (raw.success && raw.data.website !== undefined && raw.data.website !== '') {
+    return { status: 'sent' };
+  }
+  // Origin and the client limits come BEFORE any validation, so every attempt is metered.
+  if (!(await requestOriginOk())) return { status: 'error', code: 'invalid' };
+  if (!(await checkLimit(limiters.newsletter)).allowed) {
+    return { status: 'error', code: 'rateLimited' };
+  }
+  const global = limiters.newsletterGlobal.check('all');
+  if (!global.allowed) return { status: 'error', code: 'rateLimited' };
+  const parsed = subscribeSchema.safeParse(input);
+  if (!parsed.success) {
+    const missingConsent = parsed.error.issues.some((issue) => issue.path[0] === 'consent');
+    return { status: 'error', code: missingConsent ? 'consent' : 'invalid' };
+  }
+  // The mailbox and domain caps answer like the client cap: nothing says which limit was hit.
+  if (
+    !limiters.newsletterDomain.check(mailboxDomain(parsed.data.email)).allowed ||
+    !limiters.newsletterMailbox.check(canonicalMailbox(parsed.data.email)).allowed
+  ) {
+    return { status: 'error', code: 'rateLimited' };
+  }
+  const db = await getDb();
+  await db.transaction(async (tx) => await requestSubscription(tx, parsed.data));
+  return { status: 'sent' };
+}
+
+export type ConfirmNewsletterResult =
+  | { status: 'confirmed' | 'already' }
+  | { status: 'error'; code: 'invalid' | 'expired' | 'rateLimited' };
+
+/** The click on the mailed link (the page's button POSTs: a mail scanner that fetches the link confirms nothing). */
+export async function confirmNewsletterAction(input: unknown): Promise<ConfirmNewsletterResult> {
+  const parsed = z.object({ token: z.string().min(1).max(200) }).safeParse(input);
+  if (!parsed.success) return { status: 'error', code: 'invalid' };
+  if (!(await requestOriginOk())) return { status: 'error', code: 'invalid' };
+  if (!(await checkLimit(limiter)).allowed) return { status: 'error', code: 'rateLimited' };
+  const config = await authConfig();
+  const db = await getDb();
+  const result = await db.transaction(
+    async (tx) => await confirmSubscription(tx, config.secret, parsed.data.token),
+  );
+  return result === 'confirmed' || result === 'already'
+    ? { status: result }
+    : { status: 'error', code: result };
 }

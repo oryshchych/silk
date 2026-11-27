@@ -6,6 +6,9 @@
  * The mailed link is rebuilt from the token id in the database, exactly as the worker does (nothing
  * is sent anywhere).
  */
+import { buildConfirmToken } from '../packages/core/src/marketing/confirm-token.ts';
+import en from '../apps/web/messages/en.json' with { type: 'json' };
+import uk from '../apps/web/messages/uk.json' with { type: 'json' };
 import { buildUnsubscribeToken } from '../packages/core/src/account/unsubscribe-token.ts';
 import { parseSizesCookie } from '../apps/web/src/lib/my-sizes.ts';
 import { buildEmailToken } from '../packages/core/src/customer-auth/tokens.ts';
@@ -695,6 +698,107 @@ export async function runAccountSmoke(ctx: Context): Promise<void> {
         brief(real),
       );
     }
+
+    // 5c2. The newsletter (phase 11): the form pages render their real text in both languages and are private;
+    // a request stores a PENDING row only; opening the confirmation link confirms nothing, its button does.
+    for (const [prefix, copy] of [
+      ['', uk.newsletter],
+      ['/en', en.newsletter],
+    ] as const) {
+      const form = await page(`${prefix}/newsletter`);
+      check(
+        `newsletter ${prefix === '' ? 'uk' : 'en'}: the form page shows its text, private, never indexed, no raw key`,
+        form.status === 200 &&
+          form.html.includes(copy.title) &&
+          form.cache.includes('no-store') &&
+          form.robots.includes('noindex') &&
+          !/newsletter\.[a-zA-Z]+|MISSING_MESSAGE/.test(form.html),
+        brief(form),
+      );
+    }
+    const newsHome = await page('/en');
+    check(
+      'newsletter: the footer of the home page links to the form',
+      newsHome.html.includes('href="/en/newsletter"') &&
+        newsHome.html.includes(en.footer.newsletter),
+      brief(newsHome),
+    );
+    const subscriber = `smoke-news-${stamp}@example.test`;
+    const asked = await act(
+      'subscribeNewsletterAction',
+      { email: subscriber.toUpperCase(), locale: 'en', consent: true },
+      new Map(),
+      newClient(),
+      '/newsletter',
+    );
+    const { rows: pendingRows } = await handle.pool.query<{ confirmed: boolean }>(
+      `SELECT confirmed_at IS NOT NULL AS confirmed FROM newsletter_subscribers WHERE email = $1`,
+      [subscriber],
+    );
+    const { rows: queuedRows } = await handle.pool.query(
+      `SELECT 1 FROM outbox WHERE topic = 'email.newsletter-confirm'
+         AND payload->>'subscriberId' = (SELECT id::text FROM newsletter_subscribers WHERE email = $1)`,
+      [subscriber],
+    );
+    check(
+      'newsletter: a request stores a lower-cased PENDING row and queues one confirmation mail',
+      asked.body.includes('"status":"sent"') &&
+        pendingRows.length === 1 &&
+        pendingRows[0]?.confirmed === false &&
+        queuedRows.length === 1,
+      brief(asked),
+    );
+    const noBox = await act(
+      'subscribeNewsletterAction',
+      { email: `other-${subscriber}`, locale: 'en', consent: false },
+      new Map(),
+      newClient(),
+      '/newsletter',
+    );
+    check(
+      'newsletter: without the consent box nothing is stored',
+      noBox.body.includes('"code":"consent"'),
+      brief(noBox),
+    );
+    const { rows: subscriberIds } = await handle.pool.query<{ id: string; nonce: string }>(
+      `SELECT id, request_nonce::text AS nonce FROM newsletter_subscribers WHERE email = $1`,
+      [subscriber],
+    );
+    const confirmToken = buildConfirmToken(
+      ctx.authSecret,
+      subscriberIds[0]?.id ?? '',
+      subscriberIds[0]?.nonce ?? '',
+    );
+    const confirmPage = await page(`/en/newsletter/confirm?t=${encodeURIComponent(confirmToken)}`);
+    const { rows: afterGet } = await handle.pool.query<{ confirmed: boolean }>(
+      `SELECT confirmed_at IS NOT NULL AS confirmed FROM newsletter_subscribers WHERE email = $1`,
+      [subscriber],
+    );
+    check(
+      'newsletter confirm page: opening the link confirms nothing, no-store, no referrer, real text',
+      confirmPage.status === 200 &&
+        afterGet[0]?.confirmed === false &&
+        confirmPage.cache.includes('no-store') &&
+        confirmPage.referrer === 'no-referrer' &&
+        confirmPage.html.includes(en.newsletter.confirmTitle),
+      brief(confirmPage),
+    );
+    const confirmed = await act(
+      'confirmNewsletterAction',
+      { token: confirmToken },
+      new Map(),
+      newClient(),
+      '/en/newsletter/confirm',
+    );
+    const { rows: afterPost } = await handle.pool.query<{ confirmed: boolean }>(
+      `SELECT confirmed_at IS NOT NULL AS confirmed FROM newsletter_subscribers WHERE email = $1`,
+      [subscriber],
+    );
+    check(
+      'newsletter confirm: the button confirms; the forged token does not',
+      confirmed.body.includes('"status":"confirmed"') && afterPost[0]?.confirmed === true,
+      brief(confirmed),
+    );
 
     // 5d. Returns, with two customers: A's delivered order, B cannot touch it, the request changes nothing yet.
     await handle.pool.query(

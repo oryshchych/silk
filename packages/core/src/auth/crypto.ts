@@ -30,7 +30,8 @@ export type KeyPurpose =
   | 'customer-session'
   | 'email-token'
   | 'unsubscribe'
-  | 'marketing-unsubscribe';
+  | 'marketing-unsubscribe'
+  | 'newsletter-confirm';
 
 /** A 32-byte key for one purpose. Throws (fails closed) when the server secret is missing or weak. */
 export function deriveKey(secret: string | undefined, purpose: KeyPurpose): Buffer {

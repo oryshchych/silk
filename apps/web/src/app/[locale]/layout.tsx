@@ -50,6 +50,8 @@ export default async function LocaleLayout({ children, params }: LayoutProps<'/[
             // The account area and the unsubscribe page are client components (forms, buttons, sign-out):
             // without this namespace they render raw keys. It is interface copy only, nothing private.
             account: messages.account,
+            // The newsletter form and confirmation button (interface copy only).
+            newsletter: messages.newsletter,
           }}
         >
           {/* Before the page content, so its effect (the tracker) runs before the page's events. */}

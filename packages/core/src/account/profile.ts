@@ -168,6 +168,8 @@ export async function setNewsletter(
         set: {
           confirmedAt: sql`now()`,
           unsubscribedAt: null,
+          // Any link mailed before this moment is dead: the generation changes with every consent change.
+          requestNonce: sql`gen_random_uuid()`,
           source: 'account',
           locale: customer.locale,
         },
@@ -175,7 +177,7 @@ export async function setNewsletter(
   } else {
     await tx
       .update(newsletterSubscribers)
-      .set({ unsubscribedAt: sql`now()` })
+      .set({ unsubscribedAt: sql`now()`, requestNonce: sql`gen_random_uuid()` })
       .where(eq(newsletterSubscribers.email, customer.email));
   }
   await writeAudit(tx, {

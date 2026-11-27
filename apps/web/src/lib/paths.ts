@@ -21,6 +21,8 @@ export const paths = {
   legal: (kind: LegalKind): string => legalPath(kind),
   unsubscribe: '/unsubscribe',
   unsubscribeMarketing: '/unsubscribe/marketing',
+  newsletter: '/newsletter',
+  newsletterConfirm: '/newsletter/confirm',
   accountProfile: '/account/profile',
   accountAddresses: '/account/addresses',
   accountLogin: '/account/login',
