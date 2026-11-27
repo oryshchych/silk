@@ -3,7 +3,7 @@ import { getTranslations } from 'next-intl/server';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
-import { isBlogSlug } from '@store/shared/blog';
+import { descriptionFromHtml, isBlogSlug } from '@store/shared/blog';
 import { buildArticle, buildBreadcrumbList } from '@store/shared/schema-org';
 import { buildAlternates, type SiteLocale } from '@store/shared/seo';
 
@@ -47,11 +47,13 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const meta = await getTranslations({ locale, namespace: 'meta' });
   return pageMetadata({
     title: `${post.metaTitle ?? post.title} | ${meta('siteName')}`,
-    description: post.metaDescription ?? post.excerpt,
+    // Never the site-wide sentence on every post: the first paragraph when there is no excerpt or meta description.
+    description: post.metaDescription ?? post.excerpt ?? descriptionFromHtml(post.bodyHtml),
     locale,
     siteName: meta('siteName'),
     alternates: alternatesOf(await getSiteUrl(), locale, slug, post.locales),
     hasCounterpart: post.locales.length === 2,
+    article: { publishedTime: post.publishedAt, modifiedTime: post.updatedAt },
     index: true,
   });
 }

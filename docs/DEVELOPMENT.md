@@ -543,3 +543,10 @@ the target database already holds two variants with the same barcode the migrati
 ```sql
 SELECT barcode FROM product_variants WHERE barcode IS NOT NULL GROUP BY 1 HAVING count(*) > 1;
 ```
+
+
+## A migration that stops on old data (blog 0028 and 0029)
+
+A migration that guards a new rule stops with a message and the ids of the rows that break it (`RAISE EXCEPTION ... DETAIL`). The
+run is one transaction, so nothing is half applied and nothing is recorded. Fix the listed rows by id (with `psql`, on a snapshot
+first), then run `pnpm db:migrate` again.

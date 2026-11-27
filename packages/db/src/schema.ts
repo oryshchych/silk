@@ -1165,11 +1165,13 @@ export const blogPosts = pgTable('blog_posts', {
   index('blog_published_idx').on(t.publishedAt),
   index('blog_tags_idx').using('gin', t.tags),
   check('blog_slug_format', sql`${t.slug} ~ '^[a-z0-9]+(-[a-z0-9]+)*$' AND length(${t.slug}) <= 120`),
-  check('blog_tags_valid', sql`
-    cardinality(${t.tags}) <= 10
-    AND (cardinality(${t.tags}) = 0
-      OR (array_to_string(${t.tags}, ',') ~ '^[a-z0-9]+(-[a-z0-9]+)*(,[a-z0-9]+(-[a-z0-9]+)*)*$'
-          AND length(array_to_string(${t.tags}, ',')) <= 410))
+  // Per element (the function checks one dimension, no NULL element, each tag a word-with-hyphens of at most 40, at most ten).
+  check('blog_tags_valid', sql`blog_tags_ok(${t.tags})`),
+  // `/blog/tag` is the tag index path: a post with this address would shadow it.
+  check('blog_slug_reserved', sql`${t.slug} <> 'tag'`),
+  // A published post has a body in at least one language (the reads hide it otherwise; the database says it too).
+  check('blog_published_has_body', sql`
+    ${t.publishedAt} IS NULL OR btrim(coalesce(${t.contentUk}, '')) <> '' OR btrim(coalesce(${t.contentEn}, '')) <> ''
   `),
   check('blog_content_length', sql`
     char_length(coalesce(${t.contentUk}, '')) <= 100000 AND char_length(coalesce(${t.contentEn}, '')) <= 100000

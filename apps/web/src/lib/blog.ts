@@ -6,7 +6,12 @@
  */
 import { unstable_cache } from 'next/cache';
 
-import { getPublishedPost, listPublishedPosts, listPublishedTags } from '@store/core/blog';
+import {
+  countPublishedPosts,
+  getPublishedPost,
+  listPublishedPosts,
+  listPublishedTags,
+} from '@store/core/blog';
 import { BLOG_TAG, blogPostTag } from '@store/shared/cache-tags';
 import type { SiteLocale } from '@store/shared/seo';
 
@@ -21,7 +26,14 @@ export const getCachedPost = (slug: string, locale: SiteLocale) =>
     { tags: [blogPostTag(slug), BLOG_TAG], revalidate: TTL },
   )();
 
-export const getCachedPosts = (locale: SiteLocale, tag: string | undefined, page: number) =>
+const getCachedCount = (locale: SiteLocale, tag: string | undefined) =>
+  unstable_cache(
+    async () => await countPublishedPosts(await getDb(), locale, tag),
+    ['blog-count', locale, tag ?? ''],
+    { tags: [BLOG_TAG], revalidate: TTL },
+  )();
+
+const getCachedPosts = (locale: SiteLocale, tag: string | undefined, page: number) =>
   unstable_cache(
     async () => await listPublishedPosts(await getDb(), locale, { tag, page }),
     ['blog-list', locale, tag ?? '', String(page)],
@@ -37,3 +49,27 @@ export const getCachedTags = (locale: SiteLocale) =>
       revalidate: TTL,
     },
   )();
+
+export type BlogPageResult =
+  { status: 'ok'; posts: Awaited<ReturnType<typeof getCachedPosts>> } | { status: 'missing' };
+
+/**
+ * One page of a list, for a page number a client chose. The (cached, one key per list) count is read FIRST: a page past
+ * the last one is `missing` (a 404 for the caller) and never gets a cache key, so a sweep of `?page=1..200` creates at most
+ * one entry per page that really exists. Page 1 always exists (an empty list is an honest page).
+ */
+export async function loadBlogPage(
+  locale: SiteLocale,
+  tag: string | undefined,
+  page: number,
+): Promise<BlogPageResult> {
+  const { totalPages } = await getCachedCount(locale, tag);
+  if (page > totalPages) return { status: 'missing' };
+  return { status: 'ok', posts: await getCachedPosts(locale, tag, page) };
+}
+
+/** True when the tag is in use in BOTH languages: only then does a tag page have a counterpart (hreflang, language switch). */
+export async function tagInBothLanguages(tag: string): Promise<boolean> {
+  const [uk, en] = await Promise.all([getCachedTags('uk'), getCachedTags('en')]);
+  return uk.some((entry) => entry.tag === tag) && en.some((entry) => entry.tag === tag);
+}

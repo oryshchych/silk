@@ -20,6 +20,8 @@ export function pageMetadata(input: {
   image?: string | null;
   /** False for a page with no counterpart in the other language: no `og:locale:alternate`. */
   hasCounterpart?: boolean;
+  /** `article` for a blog post (with its time); `website` otherwise. */
+  article?: { publishedTime: string; modifiedTime: string } | undefined;
 }): Metadata {
   const {
     title,
@@ -30,6 +32,7 @@ export function pageMetadata(input: {
     index,
     image,
     hasCounterpart = true,
+    article,
   } = input;
   const other = locale === 'uk' ? 'en' : 'uk';
   const images = image === undefined || image === null ? undefined : [image];
@@ -42,7 +45,13 @@ export function pageMetadata(input: {
     },
     robots: index ? { index: true, follow: true } : { index: false, follow: true },
     openGraph: {
-      type: 'website',
+      ...(article === undefined
+        ? { type: 'website' as const }
+        : {
+            type: 'article' as const,
+            publishedTime: article.publishedTime,
+            modifiedTime: article.modifiedTime,
+          }),
       title,
       ...(description === null ? {} : { description }),
       url: alternates.canonical,

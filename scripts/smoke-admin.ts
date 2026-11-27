@@ -312,10 +312,11 @@ export async function runAdminSmoke({
     const blogDraft = `smoke-draft-${suffix}`;
     await pool.query(
       `INSERT INTO blog_posts (slug, title_uk, title_en, content_uk, content_en, tags, published_at) VALUES
-         ($1, 'Smoke uk', 'Smoke en', '## Hello', '## Hello', ARRAY['smoke-tag'], now() - interval '1 hour'),
+         ($1, 'Smoke uk', 'Smoke en', '## Hello\n\nFirst paragraph of the smoke post.', '## Hello\n\nFirst paragraph of the smoke post.', ARRAY['smoke-tag'], now() - interval '1 hour'),
          ($2, 'Only uk', 'Only en', '## Hello', NULL, ARRAY[]::text[], now() - interval '1 hour'),
-         ($3, 'Draft', 'Draft', '## Hello', '## Hello', ARRAY[]::text[], NULL)`,
-      [blogSlug, ukOnly, blogDraft],
+         ($3, 'Draft', 'Draft', '## Hello', '## Hello', ARRAY[]::text[], NULL),
+         ($4, 'Only en', 'Only en', NULL, '## Hello', ARRAY['en-only-tag'], now() - interval '1 hour')`,
+      [blogSlug, ukOnly, blogDraft, `smoke-en-${suffix}`],
     );
     const postUk = await get(`/blog/${blogSlug}`);
     const postEn = await get(`/en/blog/${blogSlug}`, { Cookie: 'silk_cart=anything; other=1' });
@@ -361,6 +362,25 @@ export async function runAdminSmoke({
         unknownPage.status === 404 &&
         badShape.status === 404 &&
         unknownPage.cache.includes('no-store'),
+    );
+    // A tag used in one language only has no counterpart: no hreflang pair and no language switch to a 404.
+    const enOnlyTag = await get('/en/blog/tag/en-only-tag');
+    const bothTag = await get('/blog/tag/smoke-tag');
+    check(
+      'blog: a tag in one language has no hreflang and no language switch; a tag in both has the pair',
+      enOnlyTag.status === 200 &&
+        !enOnlyTag.html.includes('hrefLang=') &&
+        bothTag.status === 200 &&
+        bothTag.html.includes('hrefLang="en"'),
+    );
+    // A page past the last one is a 404 and builds no cache entry; a post without an excerpt gets its own description.
+    const pastTheEnd = await get('/blog?page=99');
+    const firstPage = await get('/blog');
+    check(
+      'blog: a page past the last is a 404, page 1 is 200, a post without an excerpt describes itself from its first paragraph',
+      pastTheEnd.status === 404 &&
+        firstPage.status === 200 &&
+        /<meta name="description" content="First paragraph of the smoke post\."/.test(postUk.html),
     );
     const sitemapPages = await get('/sitemaps/pages.xml');
     const homeForFooter = await get('/en');

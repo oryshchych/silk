@@ -9,7 +9,7 @@ import { buildAlternates } from '@store/shared/seo';
 import { BlogList } from '@/components/blog-list';
 import { SiteShell } from '@/components/site-shell';
 import { resolveLocale } from '@/i18n/locale';
-import { getCachedPosts, getCachedTags } from '@/lib/blog';
+import { getCachedTags, loadBlogPage } from '@/lib/blog';
 import { pageMetadata } from '@/lib/metadata';
 import { paths } from '@/lib/paths';
 import { getSiteUrl } from '@/lib/site-url';
@@ -42,10 +42,13 @@ export default async function BlogIndexPage({ params, searchParams }: Props) {
   if (!known) notFound();
   const raw = (await searchParams)['page'];
   const page = pageSchema.parse(typeof raw === 'string' ? raw : undefined);
-  const [posts, tags] = await Promise.all([
-    getCachedPosts(locale, undefined, page),
+  const [result, tags] = await Promise.all([
+    loadBlogPage(locale, undefined, page),
     getCachedTags(locale),
   ]);
+  // A page past the last one is a 404, and never got a cache key (the count is read first).
+  if (result.status === 'missing') notFound();
+  const posts = result.posts;
   const t = await getTranslations('blog');
   return (
     <SiteShell locale={locale} path={paths.blog} degrade>

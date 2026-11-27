@@ -55,6 +55,9 @@ function toCard(row: Row): PublicPostCardDto {
   });
 }
 
+/** `@>` (not `= ANY`): the GIN index `blog_tags_idx` serves containment only. Exported so a test can EXPLAIN it. */
+export const tagFilter = (tag: string) => sql`AND p.tags @> ARRAY[${tag}]::text[]`;
+
 export interface PostsPage {
   items: PublicPostCardDto[];
   page: number;
@@ -71,14 +74,14 @@ export async function listPublishedPosts(
   const page = Number.isFinite(requested)
     ? Math.max(1, Math.min(Math.trunc(requested), BLOG_MAX_PAGE))
     : 1;
-  const tagFilter = options.tag === undefined ? sql`` : sql`AND ${options.tag}::text = ANY(p.tags)`;
+  const filter = options.tag === undefined ? sql`` : tagFilter(options.tag);
   const counted = await reader.execute<{ n: number }>(
-    sql`SELECT count(*)::int AS n FROM blog_posts p WHERE ${visible(locale)} ${tagFilter}`,
+    sql`SELECT count(*)::int AS n FROM blog_posts p WHERE ${visible(locale)} ${filter}`,
   );
   const total = counted.rows[0]?.n ?? 0;
   const rows = await reader.execute<Row>(
     sql`SELECT p.slug, ${col(locale, 'title')} AS title, ${col(locale, 'excerpt')} AS excerpt, p.published_at, p.tags
-          FROM blog_posts p WHERE ${visible(locale)} ${tagFilter}
+          FROM blog_posts p WHERE ${visible(locale)} ${filter}
          ORDER BY p.published_at DESC, p.id
          LIMIT ${BLOG_PAGE_SIZE} OFFSET ${(page - 1) * BLOG_PAGE_SIZE}`,
   );
@@ -88,6 +91,20 @@ export async function listPublishedPosts(
     total,
     totalPages: Math.max(1, Math.ceil(total / BLOG_PAGE_SIZE)),
   };
+}
+
+/** How many posts a list has (and so how many pages): the caller reads this BEFORE it builds a key for a page number. */
+export async function countPublishedPosts(
+  reader: Reader,
+  locale: Locale,
+  tag?: string,
+): Promise<{ total: number; totalPages: number }> {
+  const filter = tag === undefined ? sql`` : tagFilter(tag);
+  const counted = await reader.execute<{ n: number }>(
+    sql`SELECT count(*)::int AS n FROM blog_posts p WHERE ${visible(locale)} ${filter}`,
+  );
+  const total = counted.rows[0]?.n ?? 0;
+  return { total, totalPages: Math.max(1, Math.ceil(total / BLOG_PAGE_SIZE)) };
 }
 
 /** The post by address in this language, or null (unknown, draft, scheduled, or no body in this language). */
@@ -133,12 +150,13 @@ export async function listPublishedTags(
   return rows.rows.map((row) => ({ tag: row.tag, count: row.n }));
 }
 
-/** `locale:slug` of every visible post, and `locale:tag:<tag>` of every tag in use: what the proxy gate admits. */
+/**
+ * `locale:slug` of every visible post, and `locale:tag:<tag>` of every tag in use: what the proxy gate admits. */
 export async function listBlogGateKeys(reader: Reader): Promise<string[]> {
   const out: string[] = [];
   for (const locale of ['uk', 'en'] as const) {
     const posts = await reader.execute<{ slug: string }>(
-      sql`SELECT p.slug FROM blog_posts p WHERE ${visible(locale)} LIMIT 5000`,
+      sql`SELECT p.slug FROM blog_posts p WHERE ${visible(locale)} LIMIT 5000`, // a bound, not a feature: a blog past 5000 visible posts per language needs a different gate
     );
     out.push(...posts.rows.map((row) => `${locale}:${row.slug}`));
     for (const { tag } of await listPublishedTags(reader, locale)) out.push(`${locale}:tag:${tag}`);

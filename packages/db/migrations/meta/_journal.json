@@ -204,6 +204,13 @@
       "when": 1795785001799,
       "tag": "0028_blog_constraints",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1795788352391,
+      "tag": "0029_blog_tags_per_element",
+      "breakpoints": true
     }
   ]
 }

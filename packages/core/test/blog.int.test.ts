@@ -8,7 +8,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { DbHandle } from '@store/db/client';
 
+import { isBlogTag, POST_FORM_MAX_BYTES } from '@store/shared/blog';
+
 import {
+  countPublishedPosts,
+  tagFilter,
   createPost,
   deletePost,
   getPostAdmin,
@@ -249,5 +253,109 @@ describe('the body is rendered and sanitised at read time', () => {
 
   it('a body too large for the sanitiser renders empty, never an error', () => {
     expect(renderPostBody('a'.repeat(300_000))).toBe('');
+  });
+});
+
+describe('review round', () => {
+  it('the address `tag` is reserved and a post larger than one request can carry is refused by the schema', () => {
+    expect(postCreateSchema.safeParse(form({ slug: 'tag' })).success).toBe(false);
+    expect(postCreateSchema.safeParse(form({ slug: 'tags' })).success).toBe(true);
+    const half = 'я'.repeat(POST_FORM_MAX_BYTES / 4);
+    expect(postCreateSchema.safeParse(form({ contentUk: half, contentEn: half })).success).toBe(
+      false,
+    );
+    expect(postCreateSchema.safeParse(form({ contentUk: 'я'.repeat(10_000) })).success).toBe(true);
+  });
+
+  it('the audit diff holds no author name and no meta text, only "changed"; titles keep both values', async () => {
+    const post = await create({
+      slug: 'audit-names',
+      author: 'Іван Петренко',
+      metaDescriptionUk: 'old meta',
+    });
+    const changed = await update(post.id, {
+      author: 'Марія Коваль',
+      metaDescriptionUk: 'new meta',
+      metaTitleEn: 'a title',
+      titleUk: 'Новий заголовок',
+    });
+    expect(changed.diff['author']).toBe('changed');
+    expect(changed.diff['metaDescriptionUk']).toBe('changed');
+    expect(changed.diff['metaTitleEn']).toBe('changed');
+    expect(changed.diff['titleUk']).toEqual(['Як обрати бюстгальтер', 'Новий заголовок']);
+    const text = JSON.stringify(changed.diff);
+    for (const secret of ['Іван', 'Марія', 'old meta', 'new meta', 'a title'])
+      expect(text).not.toContain(secret);
+  });
+
+  it('the tag filter can use the GIN index (containment, not = ANY), and counts agree with the list', async () => {
+    await admin.db.execute(
+      sql`INSERT INTO blog_posts (slug, title_uk, title_en, tags) SELECT 'bulk-' || g, 'x', 'x', ARRAY['t' || (g % 50)]::text[] FROM generate_series(1, 3000) g`,
+    );
+    await admin.db.execute(sql`ANALYZE blog_posts`);
+    const plan = await admin.db.transaction(async (tx) => {
+      await tx.execute(sql`SET LOCAL enable_seqscan = off`);
+      return (
+        await tx.execute<Record<string, string>>(
+          sql`EXPLAIN SELECT 1 FROM blog_posts p WHERE true ${tagFilter('t7')}`,
+        )
+      ).rows
+        .map((row) => Object.values(row)[0])
+        .join('\n');
+    });
+    expect(plan).toContain('blog_tags_idx');
+    await create({ slug: 'counted', tags: 'counted-tag', publishNow: true });
+    expect(await countPublishedPosts(admin.db, 'uk', 'counted-tag')).toEqual({
+      total: 1,
+      totalPages: 1,
+    });
+    expect(await countPublishedPosts(admin.db, 'uk', 'nothing')).toEqual({
+      total: 0,
+      totalPages: 1,
+    });
+  });
+
+  it('differential: the database rule for a tag list agrees with isBlogTag on thousands of strings', async () => {
+    // mulberry32: a seeded generator whose low bits are as good as its high bits (a plain LCG cycles on `% small`).
+    let state = 12345;
+    const next = (): number => {
+      state = (state + 0x6d2b79f5) | 0;
+      let t = Math.imul(state ^ (state >>> 15), 1 | state);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) % 1_000_000_007;
+    };
+    const alphabet = ['a', 'b', 'z', '0', '9', '-', '-', ',', '_', ' ', 'A', 'é', '\n', '.'];
+    const samples = new Set<string>([
+      'a',
+      'a-b',
+      'a--b',
+      '-a',
+      'a-',
+      'a,b',
+      'x'.repeat(40),
+      'x'.repeat(41),
+      'x'.repeat(410),
+      '',
+      'a\n',
+    ]);
+    while (samples.size < 4000) {
+      const length = 1 + (next() % 45);
+      samples.add(Array.from({ length }, () => alphabet[next() % alphabet.length]).join(''));
+    }
+    const list = [...samples];
+    const rows = await admin.db.execute<{ t: string; ok: boolean }>(
+      sql`SELECT t, blog_tags_ok(ARRAY[t]) AS ok FROM unnest(${sql.raw(`ARRAY[${list.map((value) => `'${value.replace(/'/g, "''")}'`).join(',')}]::text[]`)}) AS t`,
+    );
+    expect(rows.rows).toHaveLength(list.length);
+    const disagreements = rows.rows.filter((row) => row.ok !== isBlogTag(row.t));
+    expect(disagreements.map((row) => row.t)).toEqual([]);
+    // The shapes the old check let through, directly.
+    const direct = async (literal: string) =>
+      (await admin.db.execute<{ ok: boolean }>(sql`SELECT blog_tags_ok(${sql.raw(literal)}) AS ok`))
+        .rows[0]?.ok;
+    expect(await direct(`ARRAY[NULL,'a']::text[]`)).toBe(false);
+    expect(await direct(`ARRAY[['a'],['b']]::text[]`)).toBe(false);
+    expect(await direct(`ARRAY[]::text[]`)).toBe(true);
+    expect(await direct(`ARRAY['a','b']::text[]`)).toBe(true);
   });
 });

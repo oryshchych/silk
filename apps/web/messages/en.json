@@ -1621,7 +1621,7 @@
         "publishedAt": "Publish at (Kyiv time)"
       },
       "slugHint": "Lower-case words joined by hyphens, for example how-to-choose-a-bra. It becomes the public address and cannot change later.",
-      "markdownHint": "Markdown: ## heading, **bold**, *italic*, lists, links. Leave empty for a language the post is not written in.",
+      "markdownHint": "Supported Markdown: ## and ### headings (a single # is not a heading), **bold**, *italic*, bullet and numbered lists, > quotes, [text](https://link) links (a link address must not contain parentheses). Pictures are not supported yet. Leave empty for a language the post is not written in.",
       "tagsHint": "Separated by commas: lower-case words joined by hyphens, at most ten.",
       "publishedAtHint": "Leave empty to keep the current time. Use Publish now to publish at once, or set a future time to schedule.",
       "save": "Save",
@@ -1636,7 +1636,9 @@
         "BLOG_SLUG_TAKEN": "Another post already uses this address.",
         "BLOG_EMPTY": "A post needs text in at least one language before it can be published.",
         "BLOG_TIME": "That time does not exist in Kyiv: the clocks skip it. Pick another time."
-      }
+      },
+      "sizeCounter": "Size of the post text: {used} of {max} bytes.",
+      "tooLarge": "The post text is too large to save (more than {max} bytes in all, both languages together). Shorten it or split the post."
     }
   },
   "consent": {

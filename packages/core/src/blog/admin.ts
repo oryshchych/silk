@@ -84,16 +84,20 @@ export interface PostChange {
   diff: Record<string, [unknown, unknown] | 'changed'>;
 }
 
-const SCALARS = [
-  'titleUk',
-  'titleEn',
+/** Public and short: both values go into the audit row. */
+const SCALARS = ['titleUk', 'titleEn'] as const;
+/** Free text or a person's name: the audit row only says "changed". */
+const TEXTS = [
+  'excerptUk',
+  'excerptEn',
+  'contentUk',
+  'contentEn',
   'author',
   'metaTitleUk',
   'metaTitleEn',
   'metaDescriptionUk',
   'metaDescriptionEn',
 ] as const;
-const TEXTS = ['excerptUk', 'excerptEn', 'contentUk', 'contentEn'] as const;
 
 export async function updatePost(tx: Tx, input: PostUpdateInput): Promise<PostChange> {
   await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtextextended(${`blog:${input.id}`}, 0))`);

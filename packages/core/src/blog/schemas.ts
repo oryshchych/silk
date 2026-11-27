@@ -7,7 +7,15 @@
  */
 import { z } from 'zod';
 
-import { BLOG_MAX_TAGS, BLOG_SLUG, BLOG_SLUG_MAX, BLOG_TAG_MAX } from '@store/shared/blog';
+import {
+  BLOG_MAX_TAGS,
+  BLOG_SLUG,
+  BLOG_SLUG_MAX,
+  BLOG_TAG_MAX,
+  POST_FORM_MAX_BYTES,
+  postPayloadBytes,
+  RESERVED_BLOG_SLUGS,
+} from '@store/shared/blog';
 import { cleanText } from '@store/shared/content-text';
 import { MAX_RICH_TEXT_CHARS } from '@store/shared/rich-text';
 
@@ -88,10 +96,21 @@ const slug = z
   .string()
   .trim()
   .max(BLOG_SLUG_MAX)
-  .refine((value) => BLOG_SLUG.test(value), 'lower-case words joined by hyphens');
+  .refine((value) => BLOG_SLUG.test(value), 'lower-case words joined by hyphens')
+  .refine((value) => !RESERVED_BLOG_SLUGS.includes(value), 'this address is reserved');
 
-export const postCreateSchema = z.object({ slug, ...fields });
+/** The same measure the form counts: the text of a post must fit the one request that carries it. */
+const withinPayload = (input: Record<string, unknown>, ctx: z.RefinementCtx): void => {
+  const text = Object.fromEntries(
+    Object.entries(input).filter(([key]) => key !== 'slug' && key !== 'id'),
+  );
+  if (postPayloadBytes(text) > POST_FORM_MAX_BYTES) {
+    ctx.addIssue({ code: 'custom', message: 'the post is larger than one request can carry' });
+  }
+};
+
+export const postCreateSchema = z.object({ slug, ...fields }).superRefine(withinPayload);
 export type PostCreateInput = z.output<typeof postCreateSchema>;
-export const postUpdateSchema = z.object({ id: z.uuid(), ...fields });
+export const postUpdateSchema = z.object({ id: z.uuid(), ...fields }).superRefine(withinPayload);
 export type PostUpdateInput = z.output<typeof postUpdateSchema>;
 export const postIdSchema = z.object({ id: z.uuid() });

@@ -18,3 +18,40 @@ export const isBlogTag = (value: string): boolean =>
 export const BLOG_PATH = '/blog';
 export const blogPostPath = (slug: string): string => `${BLOG_PATH}/${slug}`;
 export const blogTagPath = (tag: string): string => `${BLOG_PATH}/tag/${tag}`;
+
+/** The address `tag` is the tag index (`/blog/tag`): a post with it would shadow it. */
+export const RESERVED_BLOG_SLUGS: readonly string[] = ['tag'];
+
+/**
+ * The serialised size of the text a post form sends. The whole action body travels in ONE request that the proxy caps at
+ * 64 KB (`proxyClientMaxBodySize`), and a larger one is a failure with no message; the form counts this and refuses to
+ * submit above `POST_FORM_MAX_BYTES` (a margin under the cap for the other fields and the framing), and the schema refuses
+ * the same measure on the server. Both languages' bodies share it: about 28 000 Cyrillic characters in total.
+ */
+export const POST_FORM_MAX_BYTES = 60_000;
+
+export function postPayloadBytes(fields: Readonly<Record<string, unknown>>): number {
+  return new TextEncoder().encode(JSON.stringify(fields)).length;
+}
+
+const ENTITY = { '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'" } as const;
+
+/**
+ * A plain description from the first paragraph of the SANITISED body html, for a post that has neither an excerpt nor a
+ * meta description: tags dropped, the basic entities decoded, whitespace collapsed, cut at a word near `max` characters
+ * with an ellipsis. Null when the body has no paragraph text.
+ */
+export function descriptionFromHtml(html: string, max = 155): string | null {
+  const paragraph = /<p[^>]*>([\s\S]*?)<\/p>/.exec(html)?.[1];
+  if (paragraph === undefined) return null;
+  const text = paragraph
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&(?:amp|lt|gt|quot|#39);/g, (entity) => ENTITY[entity as keyof typeof ENTITY])
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (text === '') return null;
+  if (text.length <= max) return text;
+  const cut = text.slice(0, max - 1);
+  const space = cut.lastIndexOf(' ');
+  return `${(space > max / 2 ? cut.slice(0, space) : cut).replace(/[\s,;:.-]+$/, '')}…`;
+}

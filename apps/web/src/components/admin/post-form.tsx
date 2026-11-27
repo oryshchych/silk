@@ -1,9 +1,10 @@
 'use client';
 
-import { blogPostPath } from '@store/shared/blog';
+import { blogPostPath, POST_FORM_MAX_BYTES, postPayloadBytes } from '@store/shared/blog';
 import type { AdminPostDto } from '@store/shared/dto/blog';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 
 import { createPostAction, deletePostAction, updatePostAction } from '@/actions/admin-blog';
 
@@ -28,6 +29,25 @@ const F = {
   publishedAt: 'publishedAt',
 } as const;
 
+/** The text fields of the form as the action receives them (the same object the size is measured on). */
+function textOfForm(data: FormData): Record<string, string> {
+  return {
+    titleUk: textOf(data, F.titleUk),
+    titleEn: textOf(data, F.titleEn),
+    excerptUk: textOf(data, F.excerptUk),
+    excerptEn: textOf(data, F.excerptEn),
+    contentUk: textOf(data, F.contentUk),
+    contentEn: textOf(data, F.contentEn),
+    author: textOf(data, F.author),
+    tags: textOf(data, F.tags),
+    metaTitleUk: textOf(data, F.metaTitleUk),
+    metaTitleEn: textOf(data, F.metaTitleEn),
+    metaDescriptionUk: textOf(data, F.metaDescriptionUk),
+    metaDescriptionEn: textOf(data, F.metaDescriptionEn),
+    publishedAt: textOf(data, F.publishedAt),
+  };
+}
+
 const SUBMIT_SAVE = 'save';
 const SUBMIT_PUBLISH = 'publish';
 const SUBMIT_UNPUBLISH = 'unpublish';
@@ -41,12 +61,19 @@ export function PostForm({
   const router = useRouter();
   const { message, pending, run } = useAdminAction();
   const post = existing?.post;
+  // The whole post travels in ONE request the proxy caps at 64 KB: count it, refuse above the ceiling (a larger one fails with no message).
+  const [bytes, setBytes] = useState(0);
+  const tooLarge = bytes > POST_FORM_MAX_BYTES;
   return (
     <form
       className="flex max-w-3xl flex-col gap-3"
+      onChange={(event) => {
+        setBytes(postPayloadBytes(textOfForm(readForm(event.currentTarget))));
+      }}
       onSubmit={(event) => {
         event.preventDefault();
         const data = readForm(event.currentTarget);
+        if (postPayloadBytes(textOfForm(data)) > POST_FORM_MAX_BYTES) return;
         const submitter =
           event.nativeEvent instanceof SubmitEvent ? event.nativeEvent.submitter : null;
         const action = submitter instanceof HTMLButtonElement ? submitter.value : '';
@@ -193,10 +220,20 @@ export function PostForm({
         <span className="mt-1 block text-sm text-text-muted">{t('publishedAtHint')}</span>
       </label>
       <div className="flex flex-wrap gap-3">
-        <button type="submit" value={SUBMIT_SAVE} disabled={pending} className={buttonClass}>
+        <button
+          type="submit"
+          value={SUBMIT_SAVE}
+          disabled={pending || tooLarge}
+          className={buttonClass}
+        >
           {t('save')}
         </button>
-        <button type="submit" value={SUBMIT_PUBLISH} disabled={pending} className={buttonClass}>
+        <button
+          type="submit"
+          value={SUBMIT_PUBLISH}
+          disabled={pending || tooLarge}
+          className={buttonClass}
+        >
           {t('publishNow')}
         </button>
         {post === undefined || post.state === 'draft' ? null : (
@@ -224,6 +261,11 @@ export function PostForm({
           </button>
         )}
       </div>
+      <p aria-live="polite" className={tooLarge ? 'text-danger' : 'text-sm text-text-muted'}>
+        {tooLarge
+          ? t('tooLarge', { max: POST_FORM_MAX_BYTES })
+          : t('sizeCounter', { used: bytes, max: POST_FORM_MAX_BYTES })}
+      </p>
       <StatusLine message={message} />
     </form>
   );
