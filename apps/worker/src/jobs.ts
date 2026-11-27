@@ -11,6 +11,7 @@ import type { PgBoss } from 'pg-boss';
 
 import { DomainError } from '@store/core/errors';
 
+import { claimAbandonedCarts } from '@store/core/marketing';
 import { notifyRestocked } from '@store/core/account-alerts';
 import { syncAllReturnRefunds } from '@store/core/returns-admin';
 import { purgeEmailTokens, purgePendingAccounts } from '@store/core/customer-auth';
@@ -44,6 +45,8 @@ export const JOB_NAMES = {
   notifyRestocked: 'stock.notify-back-in-stock',
   /** Phase 10: product views older than 90 days are removed (the table must not grow without bound). */
   cleanViews: 'views.cleanup',
+  /** Phase 11: queue the one reminder mail for carts left idle by a customer who agreed to marketing. */
+  remindAbandonedCarts: 'carts.remind-abandoned',
 } as const;
 
 /** Cron expressions and their timezone (ADR-17): the timezone moves the schedule, nothing else. */
@@ -62,6 +65,7 @@ const SCHEDULES = {
   // Every ten minutes: a restock reaches the customer within one cycle (and with the reservation expiry too).
   [JOB_NAMES.notifyRestocked]: '*/10 * * * *',
   [JOB_NAMES.cleanViews]: '0 5 * * *',
+  [JOB_NAMES.remindAbandonedCarts]: '*/15 * * * *',
 } as const;
 const CRON_TZ = 'Europe/Kyiv';
 const RESTOCK_BATCH = 200;
@@ -151,6 +155,17 @@ export function createJobHandlers(deps: JobDeps): JobHandlers {
         if (claimed < RESTOCK_BATCH) break;
       }
       line({ level: 'info', scope: JOB_NAMES.notifyRestocked, queued });
+    },
+    [JOB_NAMES.remindAbandonedCarts]: async () => {
+      let queued = 0;
+      for (let batch = 0; batch < RESTOCK_MAX_BATCHES; batch += 1) {
+        const claimed = await deps.db.transaction(
+          async (tx) => await claimAbandonedCarts(tx, RESTOCK_BATCH),
+        );
+        queued += claimed;
+        if (claimed < RESTOCK_BATCH) break;
+      }
+      line({ level: 'info', scope: JOB_NAMES.remindAbandonedCarts, queued });
     },
     [JOB_NAMES.cleanViews]: async () => {
       const removed = await purgeProductViews(deps.db);

@@ -26,6 +26,8 @@ export const OUTBOX_TOPICS = [
   'email.account-verify',
   'email.password-reset',
   'email.back-in-stock',
+  // Phase 11: the one reminder of an abandoned cart.
+  'email.cart-reminder',
 ] as const;
 
 /** Jobs that exhausted their retries land here. Someone must watch this queue. */

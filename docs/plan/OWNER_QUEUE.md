@@ -29,6 +29,12 @@ Only what needs the owner's own hands (credentials, accounts, a setting in an ex
 | Q19 | Supply the size charts of the brands the shop actually resells (per brand, from the supplier) when they exist; the standard table and original measuring instructions (uk/en, in the size guide) ship meanwhile. No third-party chart or text is copied (the Victoria's Secret chart the owner pasted is reference only) |
 | Q1 | DECIDED, implementation pending (a branding PR, not yet scheduled): shop name Damazla (short DMZ, written DaMaZla; named after the owner's children); base colour around `#ffc8dd` (a light surface/accent: text must stay dark and buttons use a darker rose to pass WCAG AA; semantic tokens only, ADR-21); fonts Cormorant Garamond (headings) + Inter (body), both with Cyrillic, via `next/font`. Everything is sold under Damazla: no Victoria's Secret branding anywhere. Update `TITLE_SUFFIX_RESERVE` (Q84) to the real name length |
 
+## Deferred by phase 11 (default applied; the owner can overrule)
+
+| ID | Raised | Item | Default applied |
+|---|---|---|---|
+| Q89 | 2026-11-27 | The abandoned-cart reminder can reach only signed-in customers who gave marketing consent: a guest cart has no address until the last checkout step. Mailing guests would need an address captured earlier (a field with its own consent text, probably a schema change) and a legal view of reminding someone who never subscribed | Only consenting signed-in customers get the one reminder (`docs/MARKETING.md`); no guest address is collected. Revisit after launch with real abandonment numbers |
+
 ## Deferred by phase 10 (default applied; the owner can overrule)
 
 | ID | Raised | Item | Default applied |
