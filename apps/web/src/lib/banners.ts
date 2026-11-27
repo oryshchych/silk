@@ -23,7 +23,7 @@ import { getDb } from './db';
 import { errorReason } from './error-reason';
 import { createLastGood } from './last-good';
 
-export const BANNERS_TTL_SECONDS = 60;
+const BANNERS_TTL_SECONDS = 60;
 
 const getCachedBanners = (locale: SiteLocale) =>
   unstable_cache(async () => await listActiveBanners(await getDb(), locale), ['banners', locale], {
